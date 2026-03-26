@@ -1,3 +1,32 @@
 import { prisma } from '../../config/prisma.js';
-function startOfToday(){const d=new Date(); d.setHours(0,0,0,0); return d;}
-export async function operational(req,res){const data=req.query.data?new Date(req.query.data):startOfToday(); const agendamentos=await prisma.agendamento.findMany({where:{dataAgendada:data},include:{unidade:true,doca:true,fornecedor:true,transportadora:true,motorista:true,veiculo:true},orderBy:[{horaAgendada:'asc'}]}); const kpis={total:agendamentos.length,pendentesAprovacao:agendamentos.filter(x=>x.status==='PENDENTE_APROVACAO').length,aprovados:agendamentos.filter(x=>x.status==='APROVADO').length,chegou:agendamentos.filter(x=>x.status==='CHEGOU').length,emDescarga:agendamentos.filter(x=>x.status==='EM_DESCARGA').length,finalizados:agendamentos.filter(x=>x.status==='FINALIZADO').length,cancelados:agendamentos.filter(x=>x.status==='CANCELADO').length,noShow:agendamentos.filter(x=>x.status==='NO_SHOW').length}; res.json({data:data.toISOString().slice(0,10),kpis,agendamentos}); }
+
+export async function operacional(req, res) {
+  const today = new Date();
+  const start = new Date(`${today.toISOString().slice(0, 10)}T00:00:00`);
+  const end = new Date(`${today.toISOString().slice(0, 10)}T23:59:59.999`);
+
+  const agendamentos = await prisma.agendamento.findMany({
+    where: { dataAgendada: { gte: start, lte: end } },
+    include: {
+      fornecedor: true,
+      transportadora: true,
+      motorista: true,
+      doca: true,
+      unidade: true,
+      documentos: true,
+    },
+    orderBy: [{ horaAgendada: 'asc' }],
+  });
+
+  const kpis = {
+    total: agendamentos.length,
+    pendentesAprovacao: agendamentos.filter((x) => x.status === 'PENDENTE_APROVACAO').length,
+    aprovados: agendamentos.filter((x) => x.status === 'APROVADO').length,
+    emDescarga: agendamentos.filter((x) => x.status === 'EM_DESCARGA').length,
+    finalizados: agendamentos.filter((x) => x.status === 'FINALIZADO').length,
+    noShow: agendamentos.filter((x) => x.status === 'NO_SHOW').length,
+    comDocumentos: agendamentos.filter((x) => (x.documentos?.length || 0) > 0).length,
+  };
+
+  res.json({ kpis, agendamentos });
+}

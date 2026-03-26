@@ -32,6 +32,7 @@ model Usuario {
   perfil Perfil @relation(fields: [perfilId], references: [id])
   agendamentosCriados   Agendamento[] @relation("AgendamentoCriadoPor")
   agendamentosAprovados Agendamento[] @relation("AgendamentoAprovadoPor")
+  documentosValidados   Documento[]
   @@map("usuarios")
 }
 
@@ -171,7 +172,40 @@ model Agendamento {
   transportadora Transportadora? @relation(fields: [transportadoraId], references: [id])
   motorista      Motorista?      @relation(fields: [motoristaId], references: [id])
   veiculo        Veiculo?        @relation(fields: [veiculoId], references: [id])
+  documentos     Documento[]
   criadoPor      Usuario?        @relation("AgendamentoCriadoPor", fields: [criadoPorUsuarioId], references: [id])
   aprovadoPor    Usuario?        @relation("AgendamentoAprovadoPor", fields: [aprovadoPorUsuarioId], references: [id])
   @@map("agendamentos")
+}
+
+
+model TipoMercadoria {
+  id                       BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  nome                     String   @unique @db.VarChar(100)
+  descricao                String?  @db.VarChar(255)
+  exigeConferenciaEspecial Boolean  @default(false) @map("exige_conferencia_especial")
+  ativo                    Boolean  @default(true)
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+  @@map("tipos_mercadoria")
+}
+
+model Documento {
+  id                   BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
+  agendamentoId        BigInt      @map("agendamento_id") @db.UnsignedBigInt
+  tipoDocumento        String      @map("tipo_documento") @db.VarChar(60)
+  nomeArquivo          String      @map("nome_arquivo") @db.VarChar(180)
+  urlArquivo           String      @map("url_arquivo") @db.VarChar(255)
+  mimeType             String?     @map("mime_type") @db.VarChar(100)
+  tamanhoBytes         BigInt?     @map("tamanho_bytes") @db.UnsignedBigInt
+  statusValidacao      String      @default("PENDENTE") @map("status_validacao")
+  validadoPorUsuarioId BigInt?     @map("validado_por_usuario_id") @db.UnsignedBigInt
+  validadoEm           DateTime?   @map("validado_em")
+  observacoesValidacao String?     @map("observacoes_validacao") @db.VarChar(255)
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+  agendamento          Agendamento @relation(fields: [agendamentoId], references: [id])
+  validadoPor          Usuario?    @relation(fields: [validadoPorUsuarioId], references: [id])
+
+  @@map("documentos")
 }
