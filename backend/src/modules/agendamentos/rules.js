@@ -2,7 +2,7 @@ import { prisma } from "../../config/prisma.js";
 
 export async function calcularAprovacaoAutomatica(payload) {
   const janela = payload.janelaId
-    ? await prisma.janelaAgendamento.findUnique({ where: { id: payload.janelaId } })
+    ? await prisma.janelaAgendamento.findUnique({ where: { id: Number(payload.janelaId) } })
     : null;
 
   if (!janela) return { aprovadoAutomaticamente: false, motivo: "Janela não informada." };
@@ -10,7 +10,7 @@ export async function calcularAprovacaoAutomatica(payload) {
   if (janela.capacidadeOcupada >= janela.capacidadeMaxima) return { aprovadoAutomaticamente: false, motivo: "Janela lotada." };
 
   const regra = await prisma.regraAgendamento.findFirst({
-    where: { unidadeId: payload.unidadeId, ativo: true },
+    where: { unidadeId: Number(payload.unidadeId), ativo: true },
     orderBy: { id: "desc" }
   });
 
@@ -24,17 +24,18 @@ export async function calcularAprovacaoAutomatica(payload) {
 export async function ocuparJanela(janelaId) {
   if (!janelaId) return;
   await prisma.janelaAgendamento.update({
-    where: { id: janelaId },
+    where: { id: Number(janelaId) },
     data: { capacidadeOcupada: { increment: 1 } }
   });
 }
 
 export async function liberarJanela(janelaId) {
   if (!janelaId) return;
-  const janela = await prisma.janelaAgendamento.findUnique({ where: { id: janelaId } });
+  const janela = await prisma.janelaAgendamento.findUnique({ where: { id: Number(janelaId) } });
   if (!janela || janela.capacidadeOcupada <= 0) return;
+
   await prisma.janelaAgendamento.update({
-    where: { id: janelaId },
+    where: { id: Number(janelaId) },
     data: { capacidadeOcupada: { decrement: 1 } }
   });
 }

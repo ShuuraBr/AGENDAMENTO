@@ -8,9 +8,15 @@ const router = Router();
 
 router.post("/login", async (req, res) => {
   const { email, senha } = req.body || {};
-  if (!email || !senha) return res.status(400).json({ message: "Email e senha são obrigatórios." });
+  if (!email || !senha) {
+    return res.status(400).json({ message: "Email e senha são obrigatórios." });
+  }
 
-  const user = await prisma.usuario.findUnique({ where: { email }, include: { perfil: true } });
+  const user = await prisma.usuario.findUnique({
+    where: { email },
+    include: { perfil: true }
+  });
+
   if (!user) return res.status(401).json({ message: "Credenciais inválidas." });
 
   const ok = await bcrypt.compare(senha, user.senhaHash);
@@ -22,7 +28,15 @@ router.post("/login", async (req, res) => {
     { expiresIn: "8h" }
   );
 
-  res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil.nome } });
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      nome: user.nome,
+      email: user.email,
+      perfil: user.perfil.nome
+    }
+  });
 });
 
 export default router;

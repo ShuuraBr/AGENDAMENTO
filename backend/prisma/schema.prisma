@@ -30,6 +30,7 @@ model Usuario {
   agCriados     Agendamento[] @relation("AgCriadoPor")
   agAprovados   Agendamento[] @relation("AgAprovadoPor")
   agCancelados  Agendamento[] @relation("AgCanceladoPor")
+  documentosValidados Documento[] @relation("DocValidadoPor")
 
   @@map("usuarios")
 }
@@ -184,17 +185,37 @@ model Agendamento {
   canceladoEm           DateTime? @map("cancelado_em")
   motivoCancelamento    String?   @map("motivo_cancelamento")
 
-  unidade        Unidade           @relation(fields: [unidadeId], references: [id])
-  doca           Doca?             @relation(fields: [docaId], references: [id])
+  unidade        Unidade            @relation(fields: [unidadeId], references: [id])
+  doca           Doca?              @relation(fields: [docaId], references: [id])
   janela         JanelaAgendamento? @relation(fields: [janelaId], references: [id])
-  fornecedor     Fornecedor?       @relation(fields: [fornecedorId], references: [id])
-  transportadora Transportadora?   @relation(fields: [transportadoraId], references: [id])
-  motorista      Motorista?        @relation(fields: [motoristaId], references: [id])
-  veiculo        Veiculo?          @relation(fields: [veiculoId], references: [id])
+  fornecedor     Fornecedor?        @relation(fields: [fornecedorId], references: [id])
+  transportadora Transportadora?    @relation(fields: [transportadoraId], references: [id])
+  motorista      Motorista?         @relation(fields: [motoristaId], references: [id])
+  veiculo        Veiculo?           @relation(fields: [veiculoId], references: [id])
 
-  criadoPor      Usuario?          @relation("AgCriadoPor", fields: [criadoPorUsuarioId], references: [id])
-  aprovadoPor    Usuario?          @relation("AgAprovadoPor", fields: [aprovadoPorUsuarioId], references: [id])
-  canceladoPor   Usuario?          @relation("AgCanceladoPor", fields: [canceladoPorUsuarioId], references: [id])
+  criadoPor      Usuario?           @relation("AgCriadoPor", fields: [criadoPorUsuarioId], references: [id])
+  aprovadoPor    Usuario?           @relation("AgAprovadoPor", fields: [aprovadoPorUsuarioId], references: [id])
+  canceladoPor   Usuario?           @relation("AgCanceladoPor", fields: [canceladoPorUsuarioId], references: [id])
+
+  documentos     Documento[]
 
   @@map("agendamentos")
+}
+
+model Documento {
+  id                   Int       @id @default(autoincrement())
+  agendamentoId        Int       @map("agendamento_id")
+  tipoDocumento        String    @map("tipo_documento")
+  nomeArquivo          String    @map("nome_arquivo")
+  urlArquivo           String    @map("url_arquivo")
+  mimeType             String?   @map("mime_type")
+  tamanhoBytes         Int?      @map("tamanho_bytes")
+  statusValidacao      String    @default("PENDENTE") @map("status_validacao")
+  validadoPorUsuarioId Int?      @map("validado_por_usuario_id")
+  validadoEm           DateTime? @map("validado_em")
+
+  agendamento          Agendamento @relation(fields: [agendamentoId], references: [id])
+  validadoPor          Usuario?    @relation("DocValidadoPor", fields: [validadoPorUsuarioId], references: [id])
+
+  @@map("documentos")
 }

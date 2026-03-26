@@ -9,19 +9,23 @@ router.get("/operacional", async (_req, res) => {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
 
-  const [pendentes, aprovados, finalizados, cancelados, docasAtivas, janelasHoje] = await Promise.all([
+  const [pendentes, aprovados, finalizados, cancelados, docasAtivas, docsPendentes, janelasHoje] = await Promise.all([
     prisma.agendamento.count({ where: { status: "PENDENTE_APROVACAO" } }),
     prisma.agendamento.count({ where: { status: "APROVADO" } }),
     prisma.agendamento.count({ where: { status: "FINALIZADO" } }),
     prisma.agendamento.count({ where: { status: "CANCELADO" } }),
     prisma.doca.count({ where: { ativa: true } }),
+    prisma.documento.count(),
     prisma.janelaAgendamento.findMany({
       where: { dataAgendamento: start },
       orderBy: [{ horaInicio: "asc" }]
     })
   ]);
 
-  res.json({ kpis: { pendentes, aprovados, finalizados, cancelados, docasAtivas }, janelasHoje });
+  res.json({
+    kpis: { pendentes, aprovados, finalizados, cancelados, docasAtivas, documentos: docsPendentes },
+    janelasHoje
+  });
 });
 
 export default router;

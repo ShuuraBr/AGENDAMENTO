@@ -20,14 +20,14 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={{ maxWidth: 360, margin: "80px auto", fontFamily: "Arial" }}>
+    <div style={{ maxWidth: 380, margin: "80px auto", fontFamily: "Arial" }}>
       <h2>Login</h2>
       <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
         <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" />
-        <input value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Senha" type="password" />
+        <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Senha" />
         <button type="submit">Entrar</button>
-        {erro && <small style={{ color: "red" }}>{erro}</small>}
       </form>
+      {erro && <p style={{ color: "red" }}>{erro}</p>}
     </div>
   );
 }

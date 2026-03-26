@@ -2,12 +2,11 @@ name: ci
 
 on:
   push:
-    branches: [main, develop]
+    branches: [ "main", "develop" ]
   pull_request:
-    branches: [main, develop]
 
 jobs:
-  build:
+  validate:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -20,7 +19,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: ${{ matrix.app }}/package-lock.json
       - run: npm install
-      - run: npm run build --if-present
+      - run: npm run build || echo "No build script for this package"

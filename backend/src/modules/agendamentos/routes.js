@@ -1,17 +1,64 @@
 import { Router } from "express";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
 import { prisma } from "../../config/prisma.js";
 import { authRequired, requireProfiles } from "../../middlewares/auth.js";
 import { calcularAprovacaoAutomatica, ocuparJanela, liberarJanela } from "./rules.js";
+import { generateVoucherPdf } from "../../services/voucher.js";
+import { sendEmail } from "../../services/email.js";
+import { sendWhatsApp } from "../../services/whatsapp.js";
 
 const router = Router();
+
+const uploadDir = path.resolve("uploads", "documentos");
+fs.mkdirSync(uploadDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, "-")}`)
+});
+const upload = multer({ storage });
+
 router.use(authRequired);
 
+async function getAgendamentoCompleto(id) {
+  return prisma.agendamento.findUnique({
+    where: { id: Number(id) },
+    include: {
+      unidade: true,
+      doca: true,
+      janela: true,
+      fornecedor: true,
+      transportadora: true,
+      motorista: true,
+      veiculo: true,
+      documentos: true
+    }
+  });
+}
+
 router.get("/", async (_req, res) => {
-  const data = await prisma.agendamento.findMany({
-    include: { unidade: true, doca: true, janela: true, fornecedor: true, transportadora: true, motorista: true, veiculo: true },
+  const items = await prisma.agendamento.findMany({
+    include: {
+      unidade: true,
+      doca: true,
+      janela: true,
+      fornecedor: true,
+      transportadora: true,
+      motorista: true,
+      veiculo: true,
+      documentos: true
+    },
     orderBy: [{ dataAgendada: "desc" }, { horaAgendada: "desc" }]
   });
-  res.json(data);
+  res.json(items);
+});
+
+router.get("/:id", async (req, res) => {
+  const item = await getAgendamentoCompleto(req.params.id);
+  if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
+  res.json(item);
 });
 
 router.post("/", async (req, res) => {
@@ -43,7 +90,10 @@ router.post("/", async (req, res) => {
     }
   });
 
-  if (avaliacao.aprovadoAutomaticamente && payload.janelaId) await ocuparJanela(Number(payload.janelaId));
+  if (avaliacao.aprovadoAutomaticamente && payload.janelaId) {
+    await ocuparJanela(payload.janelaId);
+  }
+
   res.status(201).json({ ...item, avaliacao });
 });
 
@@ -57,16 +107,18 @@ router.post("/:id/aprovar", requireProfiles("ADMIN", "GESTOR_LOGISTICO", "OPERAD
     where: { id },
     data: { status: "APROVADO", aprovadoPorUsuarioId: Number(req.user.sub), aprovadoEm: new Date() }
   });
+
   if (ag.janelaId) await ocuparJanela(ag.janelaId);
   res.json(updated);
 });
 
 router.post("/:id/reprovar", requireProfiles("ADMIN", "GESTOR_LOGISTICO", "OPERADOR_RECEBIMENTO"), async (req, res) => {
-  const id = Number(req.params.id);
-  const { motivo } = req.body || {};
   const updated = await prisma.agendamento.update({
-    where: { id },
-    data: { status: "REPROVADO", observacoesInternas: motivo || "Reprovado pelo operador." }
+    where: { id: Number(req.params.id) },
+    data: {
+      status: "REPROVADO",
+      observacoesInternas: req.body?.motivo || "Reprovado pelo operador."
+    }
   });
   res.json(updated);
 });
@@ -79,7 +131,11 @@ router.post("/:id/reagendar", requireProfiles("ADMIN", "GESTOR_LOGISTICO", "OPER
 
   await liberarJanela(current.janelaId);
   const novaJanelaId = janelaId ? Number(janelaId) : current.janelaId;
-  const avaliacao = await calcularAprovacaoAutomatica({ unidadeId: current.unidadeId, janelaId: novaJanelaId });
+
+  const avaliacao = await calcularAprovacaoAutomatica({
+    unidadeId: current.unidadeId,
+    janelaId: novaJanelaId
+  });
 
   const updated = await prisma.agendamento.update({
     where: { id },
@@ -99,21 +155,87 @@ router.post("/:id/reagendar", requireProfiles("ADMIN", "GESTOR_LOGISTICO", "OPER
 
 router.post("/:id/cancelar", requireProfiles("ADMIN", "GESTOR_LOGISTICO", "OPERADOR_RECEBIMENTO"), async (req, res) => {
   const id = Number(req.params.id);
-  const { motivo } = req.body || {};
   const current = await prisma.agendamento.findUnique({ where: { id } });
   if (!current) return res.status(404).json({ message: "Agendamento não encontrado." });
 
   await liberarJanela(current.janelaId);
+
   const updated = await prisma.agendamento.update({
     where: { id },
     data: {
       status: "CANCELADO",
       canceladoPorUsuarioId: Number(req.user.sub),
       canceladoEm: new Date(),
-      motivoCancelamento: motivo || "Cancelado manualmente."
+      motivoCancelamento: req.body?.motivo || "Cancelado manualmente."
     }
   });
+
   res.json(updated);
+});
+
+router.post("/:id/documentos", upload.single("arquivo"), async (req, res) => {
+  const agendamentoId = Number(req.params.id);
+  const ag = await prisma.agendamento.findUnique({ where: { id: agendamentoId } });
+  if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
+  if (!req.file) return res.status(400).json({ message: "Arquivo não enviado." });
+
+  const doc = await prisma.documento.create({
+    data: {
+      agendamentoId,
+      tipoDocumento: req.body?.tipoDocumento || "ANEXO",
+      nomeArquivo: req.file.originalname,
+      urlArquivo: req.file.path.replace(/\\/g, "/"),
+      mimeType: req.file.mimetype,
+      tamanhoBytes: req.file.size
+    }
+  });
+
+  res.status(201).json(doc);
+});
+
+router.get("/:id/voucher", async (req, res) => {
+  const ag = await getAgendamentoCompleto(req.params.id);
+  if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
+
+  const filePath = await generateVoucherPdf(ag);
+  res.download(filePath);
+});
+
+router.post("/:id/enviar-confirmacao", async (req, res) => {
+  const ag = await getAgendamentoCompleto(req.params.id);
+  if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
+
+  const destinosEmail = [
+    ag.fornecedor?.email,
+    ag.transportadora?.email,
+    ag.motorista?.email
+  ].filter(Boolean);
+
+  const text = `Protocolo ${ag.protocolo} confirmado para ${new Date(ag.dataAgendada).toLocaleDateString("pt-BR")} às ${ag.horaAgendada}.`;
+  const results = [];
+
+  for (const to of destinosEmail) {
+    const result = await sendEmail({
+      to,
+      subject: `Confirmação de agendamento ${ag.protocolo}`,
+      text,
+      html: `<p>${text}</p>`
+    });
+    results.push({ canal: "EMAIL", to, ...result });
+  }
+
+  const whatsappTargets = [
+    ag.fornecedor?.whatsapp,
+    ag.transportadora?.whatsapp,
+    ag.motorista?.whatsapp
+  ].filter(Boolean);
+
+  for (const to of whatsappTargets) {
+    const result = await sendWhatsApp({ to, message: text });
+    results.push({ canal: "WHATSAPP", to, ...result });
+  }
+
+  res.json({ protocolo: ag.protocolo, results });
 });
 
 export default router;
