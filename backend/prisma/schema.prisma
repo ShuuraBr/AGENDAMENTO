@@ -8,204 +8,193 @@ datasource db {
 }
 
 model Perfil {
-  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  nome      String   @unique @db.VarChar(50)
-  descricao String?  @db.VarChar(255)
-  ativo     Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id        Int       @id @default(autoincrement())
+  nome      String    @unique
+  descricao String?
+  ativo     Boolean   @default(true)
   usuarios  Usuario[]
+
   @@map("perfis")
 }
 
 model Usuario {
-  id            BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  nome          String    @db.VarChar(150)
-  email         String    @unique @db.VarChar(150)
-  telefone      String?   @db.VarChar(20)
-  senhaHash     String    @map("senha_hash") @db.VarChar(255)
-  perfilId      BigInt    @map("perfil_id") @db.UnsignedBigInt
-  status        String    @default("ATIVO")
-  ultimoLoginEm DateTime? @map("ultimo_login_em")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-  perfil Perfil @relation(fields: [perfilId], references: [id])
-  agendamentosCriados   Agendamento[] @relation("AgendamentoCriadoPor")
-  agendamentosAprovados Agendamento[] @relation("AgendamentoAprovadoPor")
-  documentosValidados   Documento[]
+  id        Int      @id @default(autoincrement())
+  nome      String
+  email     String   @unique
+  telefone  String?
+  senhaHash String   @map("senha_hash")
+  perfilId  Int      @map("perfil_id")
+  status    String   @default("ATIVO")
+  perfil    Perfil   @relation(fields: [perfilId], references: [id])
+
+  agCriados     Agendamento[] @relation("AgCriadoPor")
+  agAprovados   Agendamento[] @relation("AgAprovadoPor")
+  agCancelados  Agendamento[] @relation("AgCanceladoPor")
+
   @@map("usuarios")
 }
 
 model Unidade {
-  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  codigo    String   @unique @db.VarChar(30)
-  nome      String   @db.VarChar(120)
-  cidade    String?  @db.VarChar(120)
-  uf        String?  @db.Char(2)
-  ativa     Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  docas        Doca[]
+  id      Int      @id @default(autoincrement())
+  codigo  String   @unique
+  nome    String
+  ativa   Boolean  @default(true)
+  docas   Doca[]
+  janelas JanelaAgendamento[]
+  regras  RegraAgendamento[]
   agendamentos Agendamento[]
+
   @@map("unidades")
 }
 
 model Doca {
-  id                            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  unidadeId                     BigInt   @map("unidade_id") @db.UnsignedBigInt
-  codigo                        String   @db.VarChar(30)
-  descricao                     String?  @db.VarChar(255)
+  id                            Int      @id @default(autoincrement())
+  unidadeId                     Int      @map("unidade_id")
+  codigo                        String
+  descricao                     String?
+  tipoAtendimento               String?  @map("tipo_atendimento")
   capacidadeVeiculosSimultaneos Int      @default(1) @map("capacidade_veiculos_simultaneos")
   tempoPadraoDescargaMin        Int      @default(60) @map("tempo_padrao_descarga_min")
   ativa                         Boolean  @default(true)
-  createdAt                     DateTime @default(now()) @map("created_at")
-  updatedAt                     DateTime @updatedAt @map("updated_at")
-  unidade      Unidade       @relation(fields: [unidadeId], references: [id])
-  agendamentos Agendamento[]
-  @@unique([unidadeId, codigo], map: "uk_docas_unidade_codigo")
+  unidade                       Unidade  @relation(fields: [unidadeId], references: [id])
+  janelas                       JanelaAgendamento[]
+  agendamentos                  Agendamento[]
+
+  @@unique([unidadeId, codigo], name: "unidadeId_codigo")
   @@map("docas")
 }
 
+model JanelaAgendamento {
+  id                Int      @id @default(autoincrement())
+  unidadeId         Int      @map("unidade_id")
+  docaId            Int?     @map("doca_id")
+  dataAgendamento   DateTime @db.Date @map("data_agendamento")
+  horaInicio        String   @map("hora_inicio")
+  horaFim           String   @map("hora_fim")
+  capacidadeMaxima  Int      @default(1) @map("capacidade_maxima")
+  capacidadeOcupada Int      @default(0) @map("capacidade_ocupada")
+  status            String   @default("DISPONIVEL")
+  observacoes       String?
+  unidade           Unidade  @relation(fields: [unidadeId], references: [id])
+  doca              Doca?    @relation(fields: [docaId], references: [id])
+  agendamentos      Agendamento[]
+
+  @@map("janelas_agendamento")
+}
+
+model RegraAgendamento {
+  id                         Int      @id @default(autoincrement())
+  unidadeId                  Int      @map("unidade_id")
+  tipoVeiculo                String?  @map("tipo_veiculo")
+  toleranciaAtrasoMin        Int      @default(15) @map("tolerancia_atraso_min")
+  antecedenciaMinHoras       Int      @default(2) @map("antecedencia_min_horas")
+  permiteAprovacaoAutomatica Boolean  @default(false) @map("permite_aprovacao_automatica")
+  tempoDescargaPrevistoMin   Int      @default(60) @map("tempo_descarga_previsto_min")
+  ativo                      Boolean  @default(true)
+  unidade                    Unidade  @relation(fields: [unidadeId], references: [id])
+
+  @@map("regras_agendamento")
+}
+
 model Fornecedor {
-  id                 BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  razaoSocial        String   @map("razao_social") @db.VarChar(180)
-  nomeFantasia       String?  @map("nome_fantasia") @db.VarChar(180)
-  cnpj               String?  @unique @db.VarChar(18)
-  email              String?  @db.VarChar(150)
-  telefone           String?  @db.VarChar(20)
-  whatsapp           String?  @db.VarChar(20)
-  contatoResponsavel String?  @map("contato_responsavel") @db.VarChar(120)
+  id                 Int      @id @default(autoincrement())
+  razaoSocial        String   @map("razao_social")
+  nomeFantasia       String?  @map("nome_fantasia")
+  cnpj               String?  @unique
+  email              String?
+  telefone           String?
+  whatsapp           String?
+  contatoResponsavel String?  @map("contato_responsavel")
   status             String   @default("ATIVO")
-  observacoes        String?  @db.Text
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
-  agendamentos Agendamento[]
+  agendamentos       Agendamento[]
+
   @@map("fornecedores")
 }
 
 model Transportadora {
-  id                 BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  razaoSocial        String   @map("razao_social") @db.VarChar(180)
-  nomeFantasia       String?  @map("nome_fantasia") @db.VarChar(180)
-  cnpj               String?  @unique @db.VarChar(18)
-  email              String?  @db.VarChar(150)
-  telefone           String?  @db.VarChar(20)
-  whatsapp           String?  @db.VarChar(20)
-  contatoResponsavel String?  @map("contato_responsavel") @db.VarChar(120)
+  id                 Int      @id @default(autoincrement())
+  razaoSocial        String   @map("razao_social")
+  nomeFantasia       String?  @map("nome_fantasia")
+  cnpj               String?  @unique
+  email              String?
+  telefone           String?
+  whatsapp           String?
+  contatoResponsavel String?  @map("contato_responsavel")
   status             String   @default("ATIVO")
-  observacoes        String?  @db.Text
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
-  motoristas   Motorista[]
-  veiculos     Veiculo[]
-  agendamentos Agendamento[]
+  motoristas         Motorista[]
+  veiculos           Veiculo[]
+  agendamentos       Agendamento[]
+
   @@map("transportadoras")
 }
 
 model Motorista {
-  id               BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  transportadoraId BigInt?  @map("transportadora_id") @db.UnsignedBigInt
-  nome             String   @db.VarChar(150)
-  cpf              String?  @db.VarChar(14)
-  telefone         String?  @db.VarChar(20)
-  whatsapp         String?  @db.VarChar(20)
-  email            String?  @db.VarChar(150)
+  id               Int      @id @default(autoincrement())
+  transportadoraId Int?     @map("transportadora_id")
+  nome             String
+  cpf              String?
+  telefone         String?
+  whatsapp         String?
+  email            String?
   status           String   @default("ATIVO")
-  observacoes      String?  @db.Text
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-  transportadora Transportadora? @relation(fields: [transportadoraId], references: [id])
-  agendamentos    Agendamento[]
+  transportadora   Transportadora? @relation(fields: [transportadoraId], references: [id])
+  agendamentos     Agendamento[]
+
   @@map("motoristas")
 }
 
 model Veiculo {
-  id                 BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  transportadoraId   BigInt?   @map("transportadora_id") @db.UnsignedBigInt
-  placaCavalo        String?   @map("placa_cavalo") @db.VarChar(10)
-  placaCarreta       String?   @map("placa_carreta") @db.VarChar(10)
-  tipoVeiculo        String    @map("tipo_veiculo") @db.VarChar(60)
-  capacidadePesoKg   Decimal?  @map("capacidade_peso_kg") @db.Decimal(12, 3)
-  capacidadeVolumeM3 Decimal?  @map("capacidade_volume_m3") @db.Decimal(12, 3)
-  observacoes        String?   @db.Text
-  ativo              Boolean   @default(true)
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
-  transportadora Transportadora? @relation(fields: [transportadoraId], references: [id])
-  agendamentos    Agendamento[]
+  id                 Int      @id @default(autoincrement())
+  transportadoraId   Int?     @map("transportadora_id")
+  placaCavalo        String?  @map("placa_cavalo")
+  placaCarreta       String?  @map("placa_carreta")
+  tipoVeiculo        String   @map("tipo_veiculo")
+  capacidadePesoKg   Decimal? @map("capacidade_peso_kg") @db.Decimal(12, 3)
+  capacidadeVolumeM3 Decimal? @map("capacidade_volume_m3") @db.Decimal(12, 3)
+  ativo              Boolean  @default(true)
+  transportadora     Transportadora? @relation(fields: [transportadoraId], references: [id])
+  agendamentos       Agendamento[]
+
   @@map("veiculos")
 }
 
 model Agendamento {
-  id                   BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
-  protocolo            String    @unique @db.VarChar(40)
-  unidadeId            BigInt    @map("unidade_id") @db.UnsignedBigInt
-  docaId               BigInt?   @map("doca_id") @db.UnsignedBigInt
-  fornecedorId         BigInt?   @map("fornecedor_id") @db.UnsignedBigInt
-  transportadoraId     BigInt?   @map("transportadora_id") @db.UnsignedBigInt
-  motoristaId          BigInt?   @map("motorista_id") @db.UnsignedBigInt
-  veiculoId            BigInt?   @map("veiculo_id") @db.UnsignedBigInt
-  origemSolicitacao    String    @default("TRANSPORTADORA") @map("origem_solicitacao")
-  status               String    @default("SOLICITADO")
-  dataAgendada         DateTime  @map("data_agendada") @db.Date
-  horaAgendada         DateTime  @map("hora_agendada") @db.Time(0)
-  previsaoChegada      DateTime? @map("previsao_chegada")
-  chegadaRealEm        DateTime? @map("chegada_real_em")
-  inicioDescargaEm     DateTime? @map("inicio_descarga_em")
-  fimDescargaEm        DateTime? @map("fim_descarga_em")
-  quantidadeNotas      Int       @default(0) @map("quantidade_notas")
-  quantidadeVolumes    Int       @default(0) @map("quantidade_volumes")
-  pesoTotalKg          Decimal?  @map("peso_total_kg") @db.Decimal(12, 3)
-  valorTotalNf         Decimal?  @map("valor_total_nf") @db.Decimal(14, 2)
-  observacoes          String?   @db.Text
-  noShow               Boolean   @default(false) @map("no_show")
-  atrasoMinutos        Int       @default(0) @map("atraso_minutos")
-  conformidadeStatus   String    @default("PENDENTE") @map("conformidade_status")
-  criadoPorUsuarioId   BigInt?   @map("criado_por_usuario_id") @db.UnsignedBigInt
-  aprovadoPorUsuarioId BigInt?   @map("aprovado_por_usuario_id") @db.UnsignedBigInt
-  aprovadoEm           DateTime? @map("aprovado_em")
-  createdAt            DateTime  @default(now()) @map("created_at")
-  updatedAt            DateTime  @updatedAt @map("updated_at")
-  unidade        Unidade         @relation(fields: [unidadeId], references: [id])
-  doca           Doca?           @relation(fields: [docaId], references: [id])
-  fornecedor     Fornecedor?     @relation(fields: [fornecedorId], references: [id])
-  transportadora Transportadora? @relation(fields: [transportadoraId], references: [id])
-  motorista      Motorista?      @relation(fields: [motoristaId], references: [id])
-  veiculo        Veiculo?        @relation(fields: [veiculoId], references: [id])
-  documentos     Documento[]
-  criadoPor      Usuario?        @relation("AgendamentoCriadoPor", fields: [criadoPorUsuarioId], references: [id])
-  aprovadoPor    Usuario?        @relation("AgendamentoAprovadoPor", fields: [aprovadoPorUsuarioId], references: [id])
+  id                    Int       @id @default(autoincrement())
+  protocolo             String    @unique
+  unidadeId             Int       @map("unidade_id")
+  docaId                Int?      @map("doca_id")
+  janelaId              Int?      @map("janela_id")
+  fornecedorId          Int?      @map("fornecedor_id")
+  transportadoraId      Int?      @map("transportadora_id")
+  motoristaId           Int?      @map("motorista_id")
+  veiculoId             Int?      @map("veiculo_id")
+  origemSolicitacao     String    @default("INTERNO") @map("origem_solicitacao")
+  status                String    @default("SOLICITADO")
+  dataAgendada          DateTime  @db.Date @map("data_agendada")
+  horaAgendada          String    @map("hora_agendada")
+  quantidadeNotas       Int       @default(0) @map("quantidade_notas")
+  quantidadeVolumes     Int       @default(0) @map("quantidade_volumes")
+  pesoTotalKg           Decimal?  @map("peso_total_kg") @db.Decimal(12, 3)
+  observacoes           String?
+  observacoesInternas   String?   @map("observacoes_internas")
+  criadoPorUsuarioId    Int?      @map("criado_por_usuario_id")
+  aprovadoPorUsuarioId  Int?      @map("aprovado_por_usuario_id")
+  aprovadoEm            DateTime? @map("aprovado_em")
+  canceladoPorUsuarioId Int?      @map("cancelado_por_usuario_id")
+  canceladoEm           DateTime? @map("cancelado_em")
+  motivoCancelamento    String?   @map("motivo_cancelamento")
+
+  unidade        Unidade           @relation(fields: [unidadeId], references: [id])
+  doca           Doca?             @relation(fields: [docaId], references: [id])
+  janela         JanelaAgendamento? @relation(fields: [janelaId], references: [id])
+  fornecedor     Fornecedor?       @relation(fields: [fornecedorId], references: [id])
+  transportadora Transportadora?   @relation(fields: [transportadoraId], references: [id])
+  motorista      Motorista?        @relation(fields: [motoristaId], references: [id])
+  veiculo        Veiculo?          @relation(fields: [veiculoId], references: [id])
+
+  criadoPor      Usuario?          @relation("AgCriadoPor", fields: [criadoPorUsuarioId], references: [id])
+  aprovadoPor    Usuario?          @relation("AgAprovadoPor", fields: [aprovadoPorUsuarioId], references: [id])
+  canceladoPor   Usuario?          @relation("AgCanceladoPor", fields: [canceladoPorUsuarioId], references: [id])
+
   @@map("agendamentos")
-}
-
-
-model TipoMercadoria {
-  id                       BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
-  nome                     String   @unique @db.VarChar(100)
-  descricao                String?  @db.VarChar(255)
-  exigeConferenciaEspecial Boolean  @default(false) @map("exige_conferencia_especial")
-  ativo                    Boolean  @default(true)
-  createdAt                DateTime @default(now()) @map("created_at")
-  updatedAt                DateTime @updatedAt @map("updated_at")
-  @@map("tipos_mercadoria")
-}
-
-model Documento {
-  id                   BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
-  agendamentoId        BigInt      @map("agendamento_id") @db.UnsignedBigInt
-  tipoDocumento        String      @map("tipo_documento") @db.VarChar(60)
-  nomeArquivo          String      @map("nome_arquivo") @db.VarChar(180)
-  urlArquivo           String      @map("url_arquivo") @db.VarChar(255)
-  mimeType             String?     @map("mime_type") @db.VarChar(100)
-  tamanhoBytes         BigInt?     @map("tamanho_bytes") @db.UnsignedBigInt
-  statusValidacao      String      @default("PENDENTE") @map("status_validacao")
-  validadoPorUsuarioId BigInt?     @map("validado_por_usuario_id") @db.UnsignedBigInt
-  validadoEm           DateTime?   @map("validado_em")
-  observacoesValidacao String?     @map("observacoes_validacao") @db.VarChar(255)
-  createdAt            DateTime    @default(now()) @map("created_at")
-  updatedAt            DateTime    @updatedAt @map("updated_at")
-  agendamento          Agendamento @relation(fields: [agendamentoId], references: [id])
-  validadoPor          Usuario?    @relation(fields: [validadoPorUsuarioId], references: [id])
-
-  @@map("documentos")
 }

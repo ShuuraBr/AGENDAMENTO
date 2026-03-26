@@ -1,7 +1,49 @@
-import { useEffect, useState } from 'react'; import Layout from '../components/Layout.jsx'; import api from '../services/api.js';
-const endpoints={fornecedores:{label:'Fornecedor',empty:{razaoSocial:'',nomeFantasia:'',cnpj:'',email:'',telefone:''}},transportadoras:{label:'Transportadora',empty:{razaoSocial:'',nomeFantasia:'',cnpj:'',email:'',telefone:''}},unidades:{label:'Unidade',empty:{codigo:'',nome:'',cidade:'',uf:''}},docas:{label:'Doca',empty:{unidadeId:'',codigo:'',descricao:''}}};
-export default function CadastrosPage(){const [tab,setTab]=useState('fornecedores'); const [items,setItems]=useState([]); const [unidades,setUnidades]=useState([]); const [form,setForm]=useState(endpoints.fornecedores.empty);
-useEffect(()=>{setForm(endpoints[tab].empty); load();},[tab]);
-async function load(){const {data}=await api.get(`/${tab}`); setItems(data); if(tab==='docas'){const units=await api.get('/unidades'); setUnidades(units.data);}}
-async function submit(e){e.preventDefault(); await api.post(`/${tab}`,form); setForm(endpoints[tab].empty); load();}
-return <Layout><div className='page-title'><div><h2>Cadastros</h2><div className='muted'>Base mestre do MVP</div></div></div><div className='actions' style={{marginBottom:16}}>{Object.keys(endpoints).map((key)=><button key={key} className={tab===key?'':'secondary'} onClick={()=>setTab(key)}>{endpoints[key].label}</button>)}</div><div className='card'><h3>Novo {endpoints[tab].label}</h3><form onSubmit={submit} className='grid'><div className='form-grid'>{Object.keys(form).map((field)=><label key={field}>{field}{tab==='docas'&&field==='unidadeId'?<select value={form[field]} onChange={(e)=>setForm({...form,[field]:e.target.value})} required><option value=''>Selecione</option>{unidades.map((x)=><option key={x.id.toString()} value={x.id.toString()}>{x.nome}</option>)}</select>:<input value={form[field]} onChange={(e)=>setForm({...form,[field]:e.target.value})} required={['razaoSocial','codigo','nome'].includes(field)} />}</label>)}</div><div className='actions'><button type='submit'>Salvar</button></div></form></div><div className='card' style={{marginTop:16}}><h3>Registros</h3><table className='table'><thead><tr>{items[0]?Object.keys(items[0]).filter((k)=>!k.toLowerCase().includes('at')).slice(0,6).map((key)=><th key={key}>{key}</th>):null}</tr></thead><tbody>{items.map((row)=><tr key={row.id.toString()}>{Object.keys(row).filter((k)=>!k.toLowerCase().includes('at')).slice(0,6).map((key)=><td key={key}>{typeof row[key]==='object'?'-':String(row[key]??'-')}</td>)}</tr>)}</tbody></table></div></Layout>; }
+import { useEffect, useState } from "react";
+import { api } from "../services/api";
+
+const endpoints = [
+  ["unidades", "Unidades"], ["docas", "Docas"], ["janelas", "Janelas"],
+  ["fornecedores", "Fornecedores"], ["transportadoras", "Transportadoras"],
+  ["motoristas", "Motoristas"], ["veiculos", "Veículos"]
+];
+
+export default function CadastrosPage() {
+  const [selected, setSelected] = useState("unidades");
+  const [items, setItems] = useState([]);
+  const [jsonText, setJsonText] = useState("{}");
+  const [msg, setMsg] = useState("");
+
+  async function load(endpoint = selected) {
+    const { data } = await api.get(`/${endpoint}`);
+    setItems(data);
+  }
+  useEffect(() => { load(); }, [selected]);
+
+  async function createItem() {
+    setMsg("");
+    try {
+      await api.post(`/${selected}`, JSON.parse(jsonText));
+      setMsg("Registro criado.");
+      load();
+    } catch (e) {
+      setMsg(e.response?.data?.message || "Erro ao criar registro.");
+    }
+  }
+
+  return (
+    <div>
+      <h2>Cadastros base</h2>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+        {endpoints.map(([value, label]) => <button key={value} onClick={() => setSelected(value)}>{label}</button>)}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 16 }}>
+        <div><pre style={{ background: "#f5f5f5", padding: 12, minHeight: 300, overflow: "auto" }}>{JSON.stringify(items, null, 2)}</pre></div>
+        <div>
+          <textarea rows="18" style={{ width: "100%" }} value={jsonText} onChange={(e) => setJsonText(e.target.value)} />
+          <button onClick={createItem}>Salvar</button>
+          {msg && <p>{msg}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}

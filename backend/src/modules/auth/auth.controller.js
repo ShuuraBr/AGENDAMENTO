@@ -1,3 +1,31 @@
-import { prisma } from '../../config/prisma.js'; import { comparePassword } from '../../utils/password.js'; import { signToken } from '../../utils/jwt.js'; import { loginSchema } from './auth.schemas.js';
-export async function login(req,res){const data=loginSchema.parse(req.body);const user=await prisma.usuario.findUnique({where:{email:data.email},include:{perfil:true}});if(!user)return res.status(401).json({message:'Credenciais inválidas.'});const valid=await comparePassword(data.senha,user.senhaHash);if(!valid)return res.status(401).json({message:'Credenciais inválidas.'});const token=signToken({id:String(user.id),nome:user.nome,email:user.email,perfil:user.perfil?.nome||null});await prisma.usuario.update({where:{id:user.id},data:{ultimoLoginEm:new Date()}});return res.json({token,user:{id:String(user.id),nome:user.nome,email:user.email,perfil:user.perfil?.nome||null}});}
-export async function me(req,res){return res.json({user:req.user});}
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { prisma } from '../../config/prisma.js';
+import { env } from '../../config/env.js';
+
+export async function login(req, res) {
+  const { email, password } = req.body;
+  const user = await prisma.usuario.findUnique({ include: { perfil: true }, where: { email } });
+
+  if (!user) return res.status(401).json({ message: 'Credenciais inválidas' });
+
+  const ok = await bcrypt.compare(password, user.senhaHash);
+  if (!ok) return res.status(401).json({ message: 'Credenciais inválidas' });
+
+  const token = jwt.sign(
+    { sub: user.id, email: user.email, perfil: user.perfil.nome, nome: user.nome },
+    env.jwtSecret,
+    { expiresIn: '8h' }
+  );
+
+  res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil.nome } });
+}
+
+export async function me(req, res) {
+  const user = await prisma.usuario.findUnique({
+    where: { id: Number(req.user.sub) },
+    include: { perfil: true },
+  });
+
+  res.json({ id: user.id, nome: user.nome, email: user.email, perfil: user.perfil.nome });
+}

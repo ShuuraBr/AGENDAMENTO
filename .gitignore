@@ -1,10 +1,5 @@
 node_modules
-dist
-build
 .env
-.env.local
-coverage
+dist
+uploads
 *.log
-backend/generated
-backend/prisma/dev.db
-frontend/.vite

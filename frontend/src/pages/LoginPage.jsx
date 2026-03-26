@@ -1,4 +1,33 @@
-import { useState } from 'react'; import { useNavigate } from 'react-router-dom'; import api from '../services/api.js';
-export default function LoginPage(){const navigate=useNavigate();const [form,setForm]=useState({email:'admin@local.com',senha:'123456'});const [error,setError]=useState('');
-async function submit(e){e.preventDefault();setError('');try{const {data}=await api.post('/auth/login',form);localStorage.setItem('token',data.token);localStorage.setItem('user',JSON.stringify(data.user));navigate('/');}catch(err){setError(err?.response?.data?.message||'Falha no login.');}}
-return <div className='login-wrap'><div className='card login-card'><h2>Entrar no sistema</h2><p className='muted'>MVP com autenticação JWT.</p><form onSubmit={submit} className='grid'><label>E-mail<input value={form.email} onChange={(e)=>setForm({...form,email:e.target.value})} /></label><label>Senha<input type='password' value={form.senha} onChange={(e)=>setForm({...form,senha:e.target.value})} /></label>{error?<div style={{color:'#b42318'}}>{error}</div>:null}<button type='submit'>Entrar</button></form></div></div>; }
+import { useState } from "react";
+import { api } from "../services/api";
+
+export default function LoginPage() {
+  const [email, setEmail] = useState("admin@local.test");
+  const [senha, setSenha] = useState("123456");
+  const [erro, setErro] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    setErro("");
+    try {
+      const { data } = await api.post("/auth/login", { email, senha });
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      location.href = "/";
+    } catch (err) {
+      setErro(err.response?.data?.message || "Falha no login.");
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 360, margin: "80px auto", fontFamily: "Arial" }}>
+      <h2>Login</h2>
+      <form onSubmit={submit} style={{ display: "grid", gap: 12 }}>
+        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" />
+        <input value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Senha" type="password" />
+        <button type="submit">Entrar</button>
+        {erro && <small style={{ color: "red" }}>{erro}</small>}
+      </form>
+    </div>
+  );
+}

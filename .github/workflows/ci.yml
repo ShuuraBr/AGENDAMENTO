@@ -1,25 +1,26 @@
 name: ci
+
 on:
   push:
     branches: [main, develop]
   pull_request:
+    branches: [main, develop]
+
 jobs:
-  verify:
+  build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [backend, frontend]
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install backend
-        run: |
-          cd backend
-          npm install
-      - name: Install frontend
-        run: |
-          cd frontend
-          npm install
-      - name: Build frontend
-        run: |
-          cd frontend
-          npm run build
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+      - run: npm install
+      - run: npm run build --if-present
