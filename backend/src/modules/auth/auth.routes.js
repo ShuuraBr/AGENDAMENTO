@@ -1,16 +1,1 @@
-import { Router } from 'express';
-
-export const authRouter = Router();
-
-authRouter.post('/login', (req, res) => {
-  const { email } = req.body;
-
-  return res.json({
-    message: 'Login placeholder',
-    user: {
-      email: email || 'admin@empresa.com',
-      role: 'ADMIN'
-    },
-    token: 'dev-token'
-  });
-});
+import { Router } from 'express'; import { login, me } from './auth.controller.js'; import { authRequired } from '../../middlewares/auth.js'; const router=Router(); router.post('/login',login); router.get('/me',authRequired,me); export default router;

@@ -1,0 +1,2 @@
+import { verifyToken } from '../utils/jwt.js';
+export function authRequired(req,res,next){const authHeader=req.headers.authorization||'';const[,token]=authHeader.split(' ');if(!token)return res.status(401).json({message:'Token não informado.'});try{req.user=verifyToken(token);next();}catch{return res.status(401).json({message:'Token inválido ou expirado.'});}}

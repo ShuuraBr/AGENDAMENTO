@@ -1,0 +1,1 @@
+export function errorHandler(err,req,res,next){console.error(err);if(err?.name==='ZodError'){return res.status(400).json({message:'Dados inválidos.',errors:err.issues.map((i)=>({path:i.path.join('.'),message:i.message}))});}return res.status(500).json({message:err.message||'Erro interno do servidor.'});}

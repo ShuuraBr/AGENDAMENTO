@@ -1,12 +1,3 @@
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-export const env = {
-  port: Number(process.env.PORT || 3000),
-  nodeEnv: process.env.NODE_ENV || 'development',
-  appUrl: process.env.APP_URL || 'http://localhost:3000',
-  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
-  jwtSecret: process.env.JWT_SECRET || 'troque-este-segredo',
-  databaseUrl: process.env.DATABASE_URL || ''
-};
+import dotenv from 'dotenv'; dotenv.config();
+for (const key of ['DATABASE_URL','JWT_SECRET']) if (!process.env[key]) throw new Error(`Variável obrigatória não definida: ${key}`);
+export const env = { port:Number(process.env.PORT||3000), nodeEnv:process.env.NODE_ENV||'development', databaseUrl:process.env.DATABASE_URL, jwtSecret:process.env.JWT_SECRET, corsOrigin:process.env.CORS_ORIGIN||'*' };

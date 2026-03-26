@@ -1,10 +1,23 @@
 import { Router } from 'express';
-import { authRouter } from '../modules/auth/auth.routes.js';
-import { agendamentosRouter } from '../modules/agendamentos/agendamentos.routes.js';
-import { dashboardsRouter } from '../modules/dashboards/dashboards.routes.js';
-
-export const router = Router();
-
-router.use('/auth', authRouter);
-router.use('/agendamentos', agendamentosRouter);
-router.use('/dashboard', dashboardsRouter);
+import authRoutes from '../modules/auth/auth.routes.js';
+import fornecedorRoutes from '../modules/fornecedores/fornecedores.routes.js';
+import transportadoraRoutes from '../modules/transportadoras/transportadoras.routes.js';
+import motoristaRoutes from '../modules/motoristas/motoristas.routes.js';
+import veiculoRoutes from '../modules/veiculos/veiculos.routes.js';
+import unidadeRoutes from '../modules/unidades/unidades.routes.js';
+import docaRoutes from '../modules/docas/docas.routes.js';
+import agendamentoRoutes from '../modules/agendamentos/agendamentos.routes.js';
+import dashboardRoutes from '../modules/dashboard/dashboard.routes.js';
+import { authRequired } from '../middlewares/auth.js';
+const router=Router();
+router.get('/health',(req,res)=>res.json({ok:true,message:'API MVP Agendamento de Descarga online'}));
+router.use('/auth',authRoutes);
+router.use('/fornecedores',authRequired,fornecedorRoutes);
+router.use('/transportadoras',authRequired,transportadoraRoutes);
+router.use('/motoristas',authRequired,motoristaRoutes);
+router.use('/veiculos',authRequired,veiculoRoutes);
+router.use('/unidades',authRequired,unidadeRoutes);
+router.use('/docas',authRequired,docaRoutes);
+router.use('/agendamentos',authRequired,agendamentoRoutes);
+router.use('/dashboard',authRequired,dashboardRoutes);
+export default router;

@@ -1,18 +1,1 @@
-import { Router } from 'express';
-
-export const agendamentosRouter = Router();
-
-agendamentosRouter.get('/', (_req, res) => {
-  res.json({
-    items: [],
-    total: 0,
-    message: 'Lista inicial de agendamentos'
-  });
-});
-
-agendamentosRouter.post('/', (req, res) => {
-  return res.status(201).json({
-    message: 'Agendamento criado com sucesso (stub)',
-    data: req.body
-  });
-});
+import { Router } from 'express'; import { list,getById,create,approve,cancel,checkin,startUnload,finishUnload } from './agendamentos.controller.js'; const router=Router(); router.get('/',list); router.get('/:id',getById); router.post('/',create); router.post('/:id/aprovar',approve); router.post('/:id/cancelar',cancel); router.post('/:id/checkin',checkin); router.post('/:id/iniciar-descarga',startUnload); router.post('/:id/finalizar-descarga',finishUnload); export default router;

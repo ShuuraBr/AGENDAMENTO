@@ -1,0 +1,1 @@
+import { NavLink } from 'react-router-dom'; export default function Layout({children}){return <div className='layout'><aside className='sidebar'><h1>Agendamento de Descarga</h1><nav><NavLink to='/'>Dashboard</NavLink><NavLink to='/agendamentos'>Agendamentos</NavLink><NavLink to='/cadastros'>Cadastros</NavLink></nav></aside><main className='content'>{children}</main></div>;}

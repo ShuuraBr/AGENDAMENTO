@@ -1,0 +1,1 @@
+export function generateProtocol(){const n=new Date();const s=n.toISOString().replace(/[-:.TZ]/g,'').slice(0,14);const r=Math.random().toString(36).slice(2,8).toUpperCase();return `AGD-${s}-${r}`;}
