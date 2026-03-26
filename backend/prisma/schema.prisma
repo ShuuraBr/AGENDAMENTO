@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  GESTOR
+  OPERADOR
+  PORTARIA
+}
+
+enum AgendamentoStatus {
+  PENDENTE
+  APROVADO
+  REPROVADO
+  CANCELADO
+  AGUARDANDO_CHEGADA
+  CHEGOU
+  EM_DESCARGA
+  FINALIZADO
+  NO_SHOW
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole @default(OPERADOR)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Fornecedor {
+  id          String         @id @default(cuid())
+  razaoSocial String
+  cnpj        String         @unique
+  email       String?
+  telefone    String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  agendamentos Agendamento[]
+}
+
+model Transportadora {
+  id          String         @id @default(cuid())
+  razaoSocial String
+  cnpj        String         @unique
+  email       String?
+  telefone    String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  motoristas  Motorista[]
+  veiculos    Veiculo[]
+  agendamentos Agendamento[]
+}
+
+model Motorista {
+  id               String         @id @default(cuid())
+  nome             String
+  cpf              String?        @unique
+  telefone         String?
+  transportadoraId String
+  transportadora   Transportadora @relation(fields: [transportadoraId], references: [id])
+  agendamentos     Agendamento[]
+}
+
+model Veiculo {
+  id               String         @id @default(cuid())
+  placaCavalo      String
+  placaCarreta     String?
+  tipoVeiculo      String
+  transportadoraId String
+  transportadora   Transportadora @relation(fields: [transportadoraId], references: [id])
+  agendamentos     Agendamento[]
+}
+
+model Doca {
+  id           String         @id @default(cuid())
+  codigo       String         @unique
+  descricao    String?
+  ativa        Boolean        @default(true)
+  agendamentos Agendamento[]
+}
+
+model Agendamento {
+  id               String             @id @default(cuid())
+  protocolo        String             @unique
+  fornecedorId     String
+  transportadoraId String
+  motoristaId      String?
+  veiculoId        String?
+  docaId           String?
+  dataAgendada     DateTime
+  status           AgendamentoStatus  @default(PENDENTE)
+  quantidadeNotas  Int                @default(0)
+  quantidadeVolumes Int               @default(0)
+  pesoTotal        Float?
+  tipoMercadoria   String?
+  observacoes      String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  fornecedor       Fornecedor         @relation(fields: [fornecedorId], references: [id])
+  transportadora   Transportadora     @relation(fields: [transportadoraId], references: [id])
+  motorista        Motorista?         @relation(fields: [motoristaId], references: [id])
+  veiculo          Veiculo?           @relation(fields: [veiculoId], references: [id])
+  doca             Doca?              @relation(fields: [docaId], references: [id])
+}
