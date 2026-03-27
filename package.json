@@ -1,11 +1,10 @@
 {
-  "name": "agendamento-monorepo-wrapper",
+  "name": "agendamento-descarga-workspace",
   "private": true,
   "scripts": {
     "start": "npm --prefix backend start",
-    "dev": "npm --prefix backend run dev",
+    "setup": "npm --prefix backend run setup",
     "prisma:generate": "npm --prefix backend run prisma:generate",
-    "prisma:push": "npm --prefix backend run prisma:push",
     "prisma:seed": "npm --prefix backend run prisma:seed"
   }
 }

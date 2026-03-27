@@ -39,3 +39,6 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 #login.view.active{min-height:calc(100vh - 180px);display:flex;align-items:center;justify-content:center}.login-card{width:100%;margin:0 auto}.btn-secondary{background:#475569}.nf-row{padding:14px;border:1px solid #dbe2ea;border-radius:12px;background:#f8fafc}.nf-full{grid-column:1/-1}
 
 .info-box{padding:12px 14px;border:1px dashed #94a3b8;border-radius:12px;background:#f8fafc;color:#334155;font-size:14px}
+.nav-menu{position:relative;z-index:20}.nav-btn,.cad-tab{position:relative;z-index:21;pointer-events:auto}.nav-btn.active,.cad-tab.active{background:#1d4ed8;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)}
+.cadastro-layout{display:grid;grid-template-columns:1.1fr 1fr;gap:16px}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.form-group{display:flex;flex-direction:column;gap:6px}.form-group-full{grid-column:1/-1}.form-group label{font-size:13px;font-weight:700;color:#334155}.btn-edit{background:#0f766e}.table button{padding:8px 10px;border-radius:8px}
+@media (max-width:900px){.cadastro-layout,.form-grid{grid-template-columns:1fr}}

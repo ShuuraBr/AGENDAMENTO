@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agendamento de Descarga V3.1</title>
-  <link rel="stylesheet" href="/assets/styles5.css" />
+  <link rel="stylesheet" href="/assets/styles6.css" />
   <link rel="icon" href="assets/Favicon.png" type="image">
 </head>
 <body>
@@ -18,19 +18,19 @@
     </div>
 
     <nav id="publicNav" class="nav-menu">
-      <button data-view="public-home">Início</button>
-      <button data-view="fornecedor">Fornecedor/Transportadora</button>
-      <button data-view="motorista">Motorista</button>
-            <button data-view="login">Área do Colaborador</button>
+      <button type="button" class="nav-btn active" data-view="public-home">Início</button>
+      <button type="button" class="nav-btn" data-view="fornecedor">Fornecedor/Transportadora</button>
+      <button type="button" class="nav-btn" data-view="motorista">Motorista</button>
+      <button type="button" class="nav-btn" data-view="login">Área do Colaborador</button>
     </nav>
 
     <nav id="privateNav" class="nav-menu hidden">
-      <button data-view="dashboard">Dashboard</button>
-      <button data-view="docas">Painel de Docas</button>
-      <button data-view="cadastros">Cadastros</button>
-      <button data-view="agendamentos">Agendamentos</button>
-      <button data-view="checkin">Check-in QR</button>
-      <button id="btnLogout">Sair</button>
+      <button type="button" class="nav-btn" data-view="dashboard">Dashboard</button>
+      <button type="button" class="nav-btn" data-view="docas">Painel de Docas</button>
+      <button type="button" class="nav-btn" data-view="cadastros">Cadastros</button>
+      <button type="button" class="nav-btn" data-view="agendamentos">Agendamentos</button>
+      <button type="button" class="nav-btn" data-view="checkin">Check-in QR</button>
+      <button type="button" id="btnLogout">Sair</button>
     </nav>
   </header>
 
@@ -72,7 +72,6 @@
               <div class="info-box"><strong>Doca:</strong> definida pelo operador do recebimento conforme disponibilidade operacional.</div>
               <label>Data<select name="dataAgendada" id="publicDataSelect"></select></label>
               <label>Horário disponível<select name="janelaId" id="publicJanelaSelect"></select></label>
-              <label>Hora<input name="horaAgendada" id="publicHoraInput" value="09:00" readonly /></label>
               <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" /></label>
               <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="8" /></label>
               <label>Observações<textarea name="observacoes"></textarea></label>
@@ -171,26 +170,36 @@
       <div class="card">
         <div class="row between">
           <h2>Cadastros internos</h2>
-          <div class="tabs">
-            <button class="cad-tab" data-tipo="fornecedores">Fornecedores</button>
-            <button class="cad-tab" data-tipo="transportadoras">Transportadoras</button>
-            <button class="cad-tab" data-tipo="motoristas">Motoristas</button>
-            <button class="cad-tab" data-tipo="veiculos">Veículos</button>
-            <button class="cad-tab" data-tipo="docas">Docas</button>
-            <button class="cad-tab" data-tipo="janelas">Janelas</button>
-            <button class="cad-tab" data-tipo="regras">Regras</button>
-            <button class="cad-tab" data-tipo="usuarios">Usuários</button>
+          <div class="tabs" id="cadastroTabs">
+            <button type="button" class="cad-tab active" data-tipo="fornecedores">Fornecedores</button>
+            <button type="button" class="cad-tab" data-tipo="transportadoras">Transportadoras</button>
+            <button type="button" class="cad-tab" data-tipo="motoristas">Motoristas</button>
+            <button type="button" class="cad-tab" data-tipo="veiculos">Veículos</button>
+            <button type="button" class="cad-tab" data-tipo="docas">Docas</button>
+            <button type="button" class="cad-tab" data-tipo="janelas">Janelas</button>
+            <button type="button" class="cad-tab" data-tipo="regras">Regras</button>
+            <button type="button" class="cad-tab" data-tipo="usuarios">Usuários</button>
           </div>
         </div>
-        <div class="grid2 mt16">
-          <div id="cadastroList"></div>
-          <div>
-            <textarea id="cadastroJson" rows="16">{"nome":"Novo Registro"}</textarea>
+        <div class="cadastro-layout mt16">
+          <div class="card inner">
+            <div class="row between">
+              <h3 id="cadastroTitulo">Cadastro de fornecedores</h3>
+              <div class="row gap8 wrap">
+                <button type="button" id="btnNovoCadastro" class="btn-secondary">Novo</button>
+                <button type="button" id="loadCadastro">Atualizar</button>
+              </div>
+            </div>
+            <form id="cadastroForm" class="form-grid mt16"></form>
             <div class="row gap8 mt12">
-              <button id="saveCadastro">Salvar</button>
-              <button id="loadCadastro">Atualizar</button>
+              <button type="button" id="saveCadastro">Salvar</button>
+              <button type="button" id="btnLimparCadastro" class="btn-secondary">Limpar</button>
             </div>
             <p id="cadastroMsg" class="msg"></p>
+          </div>
+          <div class="card inner">
+            <h3>Registros cadastrados</h3>
+            <div id="cadastroList" class="mt12"></div>
           </div>
         </div>
       </div>

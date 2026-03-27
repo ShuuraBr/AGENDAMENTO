@@ -6,9 +6,10 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push",
-    "prisma:seed": "node prisma/seed.js"
+    "prisma:generate": "node ./node_modules/prisma/build/index.js generate",
+    "prisma:push": "node ./node_modules/prisma/build/index.js db push",
+    "prisma:seed": "node prisma/seed.js",
+    "setup": "npm install && npm run prisma:generate"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

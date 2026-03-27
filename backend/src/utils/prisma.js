@@ -1,9 +1,11 @@
-import pkg from "@prisma/client";
+import prismaPkg from "@prisma/client";
 
-const { PrismaClient } = pkg;
+const { PrismaClient } = prismaPkg;
 
-export const prisma = globalThis.__agendamentoPrisma || new PrismaClient();
+const globalForPrisma = globalThis;
 
-if (!globalThis.__agendamentoPrisma) {
-  globalThis.__agendamentoPrisma = prisma;
+export const prisma = globalForPrisma.__agendamentoPrisma || new PrismaClient();
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.__agendamentoPrisma = prisma;
 }
