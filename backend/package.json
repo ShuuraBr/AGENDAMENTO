@@ -6,10 +6,10 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "prisma:generate": "node ./node_modules/prisma/build/index.js generate",
-    "prisma:push": "node ./node_modules/prisma/build/index.js db push",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
     "prisma:seed": "node prisma/seed.js",
-    "setup": "npm install && npm run prisma:generate"
+    "setup": "npm install && prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -18,7 +18,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^1.4.5-lts.2",
+    "multer": "1.4.5-lts.2",
     "nodemailer": "^6.9.15",
     "qrcode": "^1.5.4"
   },

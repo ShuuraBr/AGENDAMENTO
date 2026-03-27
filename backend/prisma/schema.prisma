@@ -16,6 +16,8 @@ model Usuario {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   logs      LogAuditoria[]
+
+  @@map("Usuario")
 }
 
 model Fornecedor {
@@ -26,6 +28,8 @@ model Fornecedor {
   telefone  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@map("Fornecedor")
 }
 
 model Transportadora {
@@ -36,6 +40,8 @@ model Transportadora {
   telefone  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@map("Transportadora")
 }
 
 model Motorista {
@@ -46,6 +52,8 @@ model Motorista {
   transportadora String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@map("Motorista")
 }
 
 model Veiculo {
@@ -55,24 +63,30 @@ model Veiculo {
   transportadora String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@map("Veiculo")
 }
 
 model Doca {
-  id           Int          @id @default(autoincrement())
-  codigo       String       @unique
+  id           Int           @id @default(autoincrement())
+  codigo       String        @unique
   descricao    String?
   agendamentos Agendamento[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@map("Doca")
 }
 
 model Janela {
-  id           Int          @id @default(autoincrement())
-  codigo       String       @unique
+  id           Int           @id @default(autoincrement())
+  codigo       String        @unique
   descricao    String?
   agendamentos Agendamento[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@map("Janela")
 }
 
 model Regra {
@@ -82,41 +96,49 @@ model Regra {
   tempoDescargaPrevistoMin Int      @default(60)
   createdAt                DateTime @default(now())
   updatedAt                DateTime @updatedAt
+
+  @@map("Regra")
 }
 
 model Agendamento {
-  id                   Int         @id @default(autoincrement())
-  protocolo            String      @unique
-  publicTokenMotorista String      @unique
-  publicTokenFornecedor String     @unique
-  checkinToken         String      @unique
-  fornecedor           String
-  transportadora       String
-  motorista            String
-  telefoneMotorista    String?
-  emailMotorista       String?
-  emailTransportadora  String?
-  placa                String
-  docaId               Int
-  janelaId             Int
-  dataAgendada         String
-  horaAgendada         String
-  quantidadeNotas      Int         @default(0)
-  quantidadeVolumes    Int         @default(0)
-  status               String      @default("PENDENTE_APROVACAO")
-  observacoes          String?
-  motivoReprovacao     String?
-  motivoCancelamento   String?
-  inicioDescargaEm     DateTime?
-  fimDescargaEm        DateTime?
-  checkinEm            DateTime?
-  lgpdConsentAt        DateTime?
-  createdAt            DateTime    @default(now())
-  updatedAt            DateTime    @updatedAt
-  notasFiscais         NotaFiscal[]
-  documentos           Documento[]
-  doca                 Doca        @relation(fields: [docaId], references: [id])
-  janela               Janela      @relation(fields: [janelaId], references: [id])
+  id                    Int          @id @default(autoincrement())
+  protocolo             String       @unique
+  publicTokenMotorista  String       @unique
+  publicTokenFornecedor String       @unique
+  checkinToken          String       @unique
+  fornecedor            String
+  transportadora        String
+  motorista             String
+  telefoneMotorista     String?
+  emailMotorista        String?
+  emailTransportadora   String?
+  placa                 String
+  docaId                Int
+  janelaId              Int
+  dataAgendada          String
+  horaAgendada          String
+  quantidadeNotas       Int          @default(0)
+  quantidadeVolumes     Int          @default(0)
+  status                String       @default("PENDENTE_APROVACAO")
+  observacoes           String?
+  motivoReprovacao      String?
+  motivoCancelamento    String?
+  inicioDescargaEm      DateTime?
+  fimDescargaEm         DateTime?
+  checkinEm             DateTime?
+  lgpdConsentAt         DateTime?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  notasFiscais          NotaFiscal[]
+  documentos            Documento[]
+  doca                  Doca         @relation(fields: [docaId], references: [id])
+  janela                Janela       @relation(fields: [janelaId], references: [id])
+
+  @@index([docaId])
+  @@index([janelaId])
+  @@index([dataAgendada])
+  @@index([status])
+  @@map("Agendamento")
 }
 
 model NotaFiscal {
@@ -131,6 +153,9 @@ model NotaFiscal {
   observacao    String?
   createdAt     DateTime    @default(now())
   agendamento   Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
+
+  @@index([agendamentoId])
+  @@map("NotaFiscal")
 }
 
 model Documento {
@@ -141,17 +166,24 @@ model Documento {
   urlArquivo    String
   createdAt     DateTime    @default(now())
   agendamento   Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
+
+  @@index([agendamentoId])
+  @@map("Documento")
 }
 
 model LogAuditoria {
-  id         Int       @id @default(autoincrement())
+  id         Int      @id @default(autoincrement())
   usuarioId  Int?
   perfil     String?
   acao       String
   entidade   String
   entidadeId Int?
-  detalhes   String?   @db.LongText
+  detalhes   String?  @db.LongText
   ip         String?
-  createdAt  DateTime  @default(now())
-  usuario    Usuario?  @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+  usuario    Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([usuarioId])
+  @@index([entidade, entidadeId])
+  @@map("LogAuditoria")
 }
