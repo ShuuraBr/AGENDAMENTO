@@ -3,7 +3,7 @@
 .brand{display:flex;align-items:center;gap:16px;justify-content:space-between;width:100%}
 .topbar h1{margin:0;font-size:28px}
 .topbar nav{display:flex;gap:8px;flex-wrap:wrap}
-.logo{height:72px;max-width:320px;object-fit:contain}
+.logo{height: 60px; width: auto; object-fit: contain; display: block;}
 button{border:0;background:#2563eb;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
 button:hover{opacity:.94}
 .container{padding:24px}
