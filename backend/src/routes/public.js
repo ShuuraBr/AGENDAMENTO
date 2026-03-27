@@ -112,7 +112,11 @@ router.post("/solicitacao", async (req, res) => {
           emailMotorista: p.emailMotorista || "",
           emailTransportadora: p.emailTransportadora || "",
           placa: p.placa,
+<<<<<<< HEAD
           docaId: Number(docaPendente.id),
+=======
+          docaId: Number(p.docaId),
+>>>>>>> 557e63be127f44cb90c0d9f5d6a12940bef1e45d
           janelaId: Number(p.janelaId),
           dataAgendada: p.dataAgendada,
           horaAgendada: p.horaAgendada,
