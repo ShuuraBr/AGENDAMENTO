@@ -3,6 +3,8 @@
     token: localStorage.getItem("token") || "",
     cadastroTipo: "fornecedores",
     nfRows: 1,
+    nfDrafts: [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }],
+    disponibilidadePublica: [],
     stream: null,
     detectorTimer: null
   };
@@ -58,34 +60,92 @@
     return `<table class="table"><thead><tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>${items.map(row => `<tr>${cols.map(c => `<td>${row[c] ?? ""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   }
 
-  function renderNfRows() {
-    const wrap = byId("nfList");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    for (let i = 0; i < state.nfRows; i++) {
-      const div = document.createElement("div");
-      div.className = "grid2 mt12";
-      div.innerHTML = `
-        <label>Número NF<input data-nf="${i}" data-field="numeroNf" /></label>
-        <label>Série<input data-nf="${i}" data-field="serie" /></label>
-        <label>Chave de acesso<input data-nf="${i}" data-field="chaveAcesso" /></label>
-        <label>Volumes<input data-nf="${i}" data-field="volumes" type="number" value="0" /></label>
-        <label>Peso<input data-nf="${i}" data-field="peso" type="number" value="0" /></label>
-        <label>Valor NF<input data-nf="${i}" data-field="valorNf" type="number" value="0" /></label>
-      `;
-      wrap.appendChild(div);
+  function ensureNfDraftSize() {
+    while (state.nfDrafts.length < state.nfRows) {
+      state.nfDrafts.push({ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" });
+    }
+    if (state.nfDrafts.length > state.nfRows) {
+      state.nfDrafts = state.nfDrafts.slice(0, state.nfRows);
     }
   }
 
-  function collectNotas() {
-    const map = {};
+  function syncNfDraftsFromDom() {
     document.querySelectorAll("[data-nf]").forEach(el => {
-      const idx = el.dataset.nf;
+      const idx = Number(el.dataset.nf);
       const field = el.dataset.field;
-      map[idx] ??= {};
-      map[idx][field] = el.value;
+      state.nfDrafts[idx] ??= { numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" };
+      state.nfDrafts[idx][field] = el.value;
     });
-    return Object.values(map).filter(x => x.numeroNf || x.chaveAcesso);
+  }
+
+  function renderNfRows() {
+    const wrap = byId("nfList");
+    if (!wrap) return;
+    ensureNfDraftSize();
+    wrap.innerHTML = "";
+    for (let i = 0; i < state.nfRows; i++) {
+      const row = state.nfDrafts[i] || {};
+      const div = document.createElement("div");
+      div.className = "grid2 mt12 nf-row";
+      div.innerHTML = `
+        <label>Número NF<input data-nf="${i}" data-field="numeroNf" value="${row.numeroNf || ""}" /></label>
+        <label>Série<input data-nf="${i}" data-field="serie" value="${row.serie || ""}" /></label>
+        <label>Chave de acesso<input data-nf="${i}" data-field="chaveAcesso" value="${row.chaveAcesso || ""}" /></label>
+        <label>Volumes<input data-nf="${i}" data-field="volumes" type="number" min="0" value="${row.volumes ?? "0"}" /></label>
+        <label>Peso<input data-nf="${i}" data-field="peso" type="number" min="0" step="0.001" value="${row.peso ?? "0"}" /></label>
+        <label>Valor NF<input data-nf="${i}" data-field="valorNf" type="number" min="0" step="0.01" value="${row.valorNf ?? "0"}" /></label>
+        <label class="nf-full">Observação<textarea data-nf="${i}" data-field="observacao">${row.observacao || ""}</textarea></label>
+      `;
+      wrap.appendChild(div);
+    }
+    wrap.querySelectorAll("[data-nf]").forEach(el => {
+      el.addEventListener("input", syncNfDraftsFromDom);
+      el.addEventListener("change", syncNfDraftsFromDom);
+    });
+  }
+
+  function collectNotas() {
+    syncNfDraftsFromDom();
+    return state.nfDrafts
+      .map(nota => ({
+        numeroNf: String(nota.numeroNf || "").trim(),
+        serie: String(nota.serie || "").trim(),
+        chaveAcesso: String(nota.chaveAcesso || "").trim(),
+        volumes: Number(nota.volumes || 0),
+        peso: Number(nota.peso || 0),
+        valorNf: Number(nota.valorNf || 0),
+        observacao: String(nota.observacao || "").trim()
+      }))
+      .filter(x => x.numeroNf || x.chaveAcesso);
+  }
+
+
+  function renderPublicDates() {
+    const dateSelect = byId("publicDataSelect");
+    const janelaSelect = byId("publicJanelaSelect");
+    const horaInput = byId("publicHoraInput");
+    if (!dateSelect || !janelaSelect || !horaInput) return;
+    const datas = state.disponibilidadePublica.filter((item) => item.disponivel);
+    dateSelect.innerHTML = datas.map((item) => `<option value="${item.data}">${item.data}</option>`).join("");
+    if (!dateSelect.value && datas[0]) dateSelect.value = datas[0].data;
+    renderPublicSlots(dateSelect.value);
+  }
+
+  function renderPublicSlots(data) {
+    const janelaSelect = byId("publicJanelaSelect");
+    const horaInput = byId("publicHoraInput");
+    if (!janelaSelect || !horaInput) return;
+    const dia = state.disponibilidadePublica.find((item) => item.data === data) || { horarios: [] };
+    const horarios = (dia.horarios || []).filter((slot) => slot.disponivel);
+    janelaSelect.innerHTML = horarios.map((slot) => `<option value="${slot.janelaId}" data-hora="${slot.hora}">${slot.hora}${slot.descricao ? ` - ${slot.descricao}` : ""} (${slot.capacidade - slot.ocupados} vagas)</option>`).join("");
+    const selected = horarios.find((slot) => String(slot.janelaId) === String(janelaSelect.value)) || horarios[0];
+    if (selected) { janelaSelect.value = String(selected.janelaId); horaInput.value = selected.hora; } else { horaInput.value = ""; }
+  }
+
+  async function loadPublicDisponibilidade() {
+    const data = await api(`/api/public/disponibilidade?dias=21`);
+    state.disponibilidadePublica = Array.isArray(data.agenda) ? data.agenda : [];
+    renderPublicDates();
   }
 
   function currentFilters() {
@@ -108,8 +168,8 @@
       ]);
       const docaOptions = docas.map(d => `<option value="${d.id}">${d.codigo}</option>`).join("");
       const janelaOptions = janelas.map(j => `<option value="${j.id}">${j.codigo}</option>`).join("");
-      ["publicDocaSelect","internalDocaSelect"].forEach(id => { const el = byId(id); if (el) el.innerHTML = docaOptions; });
-      ["publicJanelaSelect","internalJanelaSelect"].forEach(id => { const el = byId(id); if (el) el.innerHTML = janelaOptions; });
+      ["internalDocaSelect"].forEach(id => { const el = byId(id); if (el) el.innerHTML = docaOptions; });
+      ["internalJanelaSelect"].forEach(id => { const el = byId(id); if (el) el.innerHTML = janelaOptions; });
     } catch {}
   }
 
@@ -174,7 +234,10 @@
     byId("agendamentosList").innerHTML = tableFromObjects(items.map(i => ({
       id: i.id, protocolo: i.protocolo, status: i.status, fornecedor: i.fornecedor, transportadora: i.transportadora,
       motorista: i.motorista, placa: i.placa, doca: i.doca?.codigo || "", janela: i.janela?.codigo || "", data: i.dataAgendada,
-      hora: i.horaAgendada, semaforo: i.semaforo || ""
+      hora: i.horaAgendada, semaforo: i.semaforo || "",
+      voucher_motorista: i.notificacoes?.voucherMotorista ? "SIM" : "NÃO",
+      voucher_transportadora_fornecedor: i.notificacoes?.voucherTransportadoraFornecedor ? "SIM" : "NÃO",
+      confirmacao_transportadora_fornecedor: i.notificacoes?.confirmacaoTransportadoraFornecedor ? "SIM" : "NÃO"
     })));
   }
 
@@ -200,10 +263,12 @@
 
   async function validateCheckin(token) {
     try {
-      const data = await api(`/api/public/checkin/${token}`, { method: "POST", body: JSON.stringify({}) });
+      const id = byId("agendamentoId")?.value || new URLSearchParams(location.search).get("id");
+      if (!id) throw new Error("Informe o ID do agendamento para validar o QR no recebimento.");
+      const data = await api(`/api/agendamentos/${id}/checkin`, { method: "POST", body: JSON.stringify({ token }) });
       byId("checkinMsg").textContent = data.message;
       byId("checkinResult").textContent = JSON.stringify(data.agendamento, null, 2);
-      if (state.token) await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas()]);
+      await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas()]);
     } catch (err) {
       byId("checkinMsg").textContent = err.message;
     }
@@ -313,7 +378,10 @@
       try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
         const data = await api("/api/agendamentos", { method: "POST", body: JSON.stringify(payload) });
-        byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo}`;
+        byId("agendamentoId").value = data.id || "";
+        byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo} | ID: ${data.id}`;
+        e.target.reset();
+        document.querySelectorAll('#agendamentoForm input[type="date"]').forEach(el => { el.value = new Date().toISOString().slice(0,10); });
         await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas()]);
       } catch (err) {
         byId("agendamentoMsg").textContent = err.message;
@@ -324,7 +392,7 @@
       try { await loadAgendamentos(); } catch (err) { byId("operacaoMsg").textContent = err.message; }
     });
 
-    byId("btnAprovar")?.addEventListener("click", async () => handleOp(() => postStatus("aprovar"), "Agendamento aprovado."));
+    byId("btnAprovar")?.addEventListener("click", async () => handleOp(() => postStatus("aprovar", { docaId: byId("internalDocaSelect")?.value, janelaId: byId("internalJanelaSelect")?.value }), "Agendamento aprovado."));
     byId("btnReprovar")?.addEventListener("click", async () => handleOp(() => postStatus("reprovar", { motivo: "Reprovado via painel" }), "Agendamento reprovado."));
     byId("btnReagendar")?.addEventListener("click", async () => handleOp(() => postStatus("reagendar", {
       dataAgendada: new Date().toISOString().slice(0,10),
@@ -370,7 +438,17 @@
     });
 
     byId("addNf")?.addEventListener("click", () => {
+      syncNfDraftsFromDom();
       state.nfRows += 1;
+      ensureNfDraftSize();
+      renderNfRows();
+    });
+
+    byId("removeNf")?.addEventListener("click", () => {
+      syncNfDraftsFromDom();
+      if (state.nfRows <= 1) return;
+      state.nfRows -= 1;
+      ensureNfDraftSize();
       renderNfRows();
     });
 
@@ -380,8 +458,14 @@
         const payload = Object.fromEntries(new FormData(e.target).entries());
         payload.lgpdConsent = !!e.target.querySelector('[name="lgpdConsent"]').checked;
         payload.notas = collectNotas();
+        payload.quantidadeNotas = payload.notas.length;
         const data = await api("/api/public/solicitacao", { method: "POST", body: JSON.stringify(payload) });
-        byId("fornecedorMsg").textContent = `Solicitação enviada. Protocolo: ${data.protocolo}. Link motorista: ${data.linkMotorista}`;
+        byId("fornecedorMsg").textContent = `Solicitação enviada. Protocolo: ${data.protocolo}. O voucher e as confirmações serão disparados pelo operador.`;
+        e.target.reset();
+        state.nfRows = 1;
+        state.nfDrafts = [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }];
+        renderNfRows();
+        await loadPublicDisponibilidade();
       } catch (err) {
         byId("fornecedorMsg").textContent = err.message;
       }
@@ -408,22 +492,24 @@
     });
     byId("stopCamera")?.addEventListener("click", stopCamera);
 
-    document.querySelectorAll('input[type="date"]').forEach(el => {
-      if (!el.value) el.value = new Date().toISOString().slice(0,10);
-    });
+    byId("publicDataSelect")?.addEventListener("change", (e) => renderPublicSlots(e.target.value));
+    byId("publicJanelaSelect")?.addEventListener("change", (e) => { const option = e.target.selectedOptions?.[0]; if (option) byId("publicHoraInput").value = option.dataset.hora || ""; });
 
     if (state.token && !isTokenExpired(state.token)) {
       await fillSelects();
     }
+    await loadPublicDisponibilidade();
 
     const params = new URLSearchParams(location.search);
     const view = params.get("view");
     const token = params.get("token");
     if (view === "checkin") {
-      showView("checkin");
+      showView(state.token && !isTokenExpired(state.token) ? "checkin" : "login");
       if (token) {
         byId("checkinForm").querySelector('input[name="token"]').value = token;
-        validateCheckin(token);
+      }
+      if (!state.token || isTokenExpired(state.token)) {
+        byId("loginMsg").textContent = "O check-in do QR Code deve ser validado pelo operador do recebimento.";
       }
     } else if (view === "motorista" && token) {
       showView("motorista");

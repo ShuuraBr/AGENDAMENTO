@@ -33,6 +33,29 @@ async function mustExist(id) {
   return prisma.agendamento.findUnique({ where: { id: Number(id) } });
 }
 
+async function notificationSummary(agendamentoId) {
+  const logs = await prisma.logAuditoria.findMany({
+    where: { entidade: "AGENDAMENTO", entidadeId: Number(agendamentoId) },
+    orderBy: { createdAt: "desc" }
+  });
+
+  const findLog = (acao, predicate = () => true) => logs.find((log) => {
+    if (log.acao !== acao) return false;
+    try {
+      const detalhes = log.detalhes ? JSON.parse(log.detalhes) : {};
+      return predicate(detalhes || {});
+    } catch {
+      return false;
+    }
+  });
+
+  return {
+    voucherMotorista: !!findLog("ENVIAR_INFORMACOES", (d) => Array.isArray(d.targets) && d.targets.includes("motorista")),
+    voucherTransportadoraFornecedor: !!findLog("ENVIAR_INFORMACOES", (d) => Array.isArray(d.targets) && d.targets.includes("transportadora/fornecedor")),
+    confirmacaoTransportadoraFornecedor: !!findLog("ENVIAR_CONFIRMACAO", (d) => Array.isArray(d.targets) && d.targets.includes("transportadora/fornecedor"))
+  };
+}
+
 router.get("/", async (req, res) => {
   const q = req.query || {};
   const where = {
@@ -48,13 +71,18 @@ router.get("/", async (req, res) => {
     include: { notasFiscais: true, documentos: true, doca: true, janela: true },
     orderBy: { id: "desc" }
   });
-  res.json(items.map(i => ({ ...i, semaforo: trafficColor(i.status) })));
+  const payload = await Promise.all(items.map(async (i) => ({
+    ...i,
+    semaforo: trafficColor(i.status),
+    notificacoes: await notificationSummary(i.id)
+  })));
+  res.json(payload);
 });
 
 router.get("/:id", async (req, res) => {
   const item = await full(req.params.id);
   if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
-  res.json({ ...item, semaforo: trafficColor(item.status) });
+  res.json({ ...item, semaforo: trafficColor(item.status), notificacoes: await notificationSummary(item.id) });
 });
 
 router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
@@ -125,11 +153,35 @@ async function transition(id, target, data = {}, req) {
 }
 
 router.post("/:id/aprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
-  try { res.json(await transition(req.params.id, "APROVADO", {}, req)); } catch (err) { res.status(400).json({ message: err.message }); }
+  try {
+    const found = await mustExist(req.params.id);
+    if (!found) throw new Error("Agendamento não encontrado.");
+
+    const data = {};
+    if (req.body?.docaId) data.docaId = Number(req.body.docaId);
+    if (req.body?.janelaId) data.janelaId = Number(req.body.janelaId);
+    if (req.body?.dataAgendada) data.dataAgendada = String(req.body.dataAgendada);
+    if (req.body?.horaAgendada) data.horaAgendada = String(req.body.horaAgendada);
+
+    const merged = { ...found, ...data };
+    validateAgendamentoPayload(merged, false);
+    await assertJanelaDocaDisponivel({
+      docaId: merged.docaId,
+      janelaId: merged.janelaId,
+      dataAgendada: merged.dataAgendada,
+      ignoreAgendamentoId: found.id
+    });
+
+    res.json(await transition(req.params.id, "APROVADO", data, req));
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
 });
+
 router.post("/:id/reprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
   try { res.json(await transition(req.params.id, "REPROVADO", { motivoReprovacao: req.body?.motivo || "Reprovado" }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
 });
+
 router.post("/:id/reagendar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
@@ -173,6 +225,7 @@ router.post("/:id/reagendar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), as
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
+
 router.post("/:id/cancelar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
@@ -183,12 +236,15 @@ router.post("/:id/cancelar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), asy
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
+
 router.post("/:id/iniciar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
   try { res.json(await transition(req.params.id, "EM_DESCARGA", { inicioDescargaEm: new Date() }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
 });
+
 router.post("/:id/finalizar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
   try { res.json(await transition(req.params.id, "FINALIZADO", { fimDescargaEm: new Date() }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
 });
+
 router.post("/:id/no-show", requireProfiles("ADMIN", "OPERADOR", "GESTOR", "PORTARIA"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
@@ -198,6 +254,18 @@ router.post("/:id/no-show", requireProfiles("ADMIN", "OPERADOR", "GESTOR", "PORT
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "NO_SHOW", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: null, ip: req.ip });
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
+});
+
+router.post("/:id/checkin", requireProfiles("ADMIN", "OPERADOR", "GESTOR", "PORTARIA"), async (req, res) => {
+  try {
+    const found = await mustExist(req.params.id);
+    if (!found) throw new Error("Agendamento não encontrado.");
+    if (!["APROVADO", "CHEGOU"].includes(found.status)) throw new Error("Check-in só é permitido para agendamento aprovado.");
+    const item = await transition(req.params.id, "CHEGOU", { checkinEm: new Date() }, req);
+    res.json({ ok: true, message: "Check-in validado pelo operador do recebimento.", agendamento: item });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
 });
 
 router.post("/:id/documentos", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), upload.single("arquivo"), async (req, res) => {
@@ -250,30 +318,54 @@ router.post("/:id/enviar-informacoes", requireProfiles("ADMIN", "OPERADOR", "GES
     const linkFornecedor = `${base}/?view=fornecedor&token=${encodeURIComponent(item.publicTokenFornecedor)}`;
     const voucher = `${base}/api/agendamentos/${item.id}/voucher`;
 
-    const targets = [item.emailMotorista, item.emailTransportadora].filter(Boolean);
-    if (!targets.length) return res.status(400).json({ message: "Não há e-mails cadastrados no agendamento." });
+    const destinatarios = [];
+    if (item.emailMotorista) destinatarios.push({ tipo: "motorista", email: item.emailMotorista });
+    if (item.emailTransportadora) destinatarios.push({ tipo: "transportadora/fornecedor", email: item.emailTransportadora });
+    if (!destinatarios.length) return res.status(400).json({ message: "Não há e-mails cadastrados no agendamento." });
 
     const out = [];
-    for (const to of targets) {
+    for (const destino of destinatarios) {
       const sent = await sendMail({
-        to,
-        subject: `Agendamento ${item.protocolo}`,
-        text: `Protocolo: ${item.protocolo}\nMotorista: ${linkMotorista}\nFornecedor: ${linkFornecedor}\nVoucher: ${voucher}`,
-        html: `<p><strong>Protocolo:</strong> ${item.protocolo}</p><p><a href="${linkMotorista}">Link do motorista</a></p><p><a href="${linkFornecedor}">Link do fornecedor/transportadora</a></p><p><a href="${voucher}">Voucher</a></p>`
+        to: destino.email,
+        subject: `Voucher e dados do agendamento ${item.protocolo}`,
+        text: `Protocolo: ${item.protocolo}\nMotorista: ${linkMotorista}\nTransportadora/Fornecedor: ${linkFornecedor}\nVoucher: ${voucher}`,
+        html: `<p><strong>Protocolo:</strong> ${item.protocolo}</p><p><a href="${linkMotorista}">Link do motorista</a></p><p><a href="${linkFornecedor}">Link da transportadora/fornecedor</a></p><p><a href="${voucher}">Voucher</a></p>`
       });
-      out.push({ to, ...sent });
+      out.push({ destino: destino.tipo, to: destino.email, ...sent });
     }
 
-    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "ENVIAR_INFORMACOES", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: { targets }, ip: req.ip });
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "ENVIAR_INFORMACOES", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: { targets: destinatarios.map((d) => d.tipo) }, ip: req.ip });
     res.json({ ok: true, results: out, linkMotorista, linkFornecedor, voucher });
   } catch (err) { res.status(400).json({ message: err.message }); }
+});
+
+router.post("/:id/enviar-confirmacao", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+  try {
+    const ag = await prisma.agendamento.findUnique({ where: { id: Number(req.params.id) }, include: { doca: true, janela: true } });
+    if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
+    if (!ag.emailTransportadora) return res.status(400).json({ message: "Não há e-mail da transportadora/fornecedor cadastrado." });
+
+    const textoDoca = ag.doca?.codigo === "A DEFINIR" ? "definida pelo operador no recebimento" : (ag.doca?.codigo || "a definir");
+    const textMsg = `Agendamento confirmado. Protocolo ${ag.protocolo}. Data ${ag.dataAgendada} às ${ag.horaAgendada}. Doca ${textoDoca}.`;
+    const sent = await sendMail({
+      to: ag.emailTransportadora,
+      subject: `Confirmação do agendamento ${ag.protocolo}`,
+      text: textMsg,
+      html: `<p>Agendamento confirmado.</p><p><strong>Protocolo:</strong> ${ag.protocolo}</p><p><strong>Data:</strong> ${ag.dataAgendada}</p><p><strong>Hora:</strong> ${ag.horaAgendada}</p><p><strong>Doca:</strong> ${textoDoca}</p>`
+    });
+
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "ENVIAR_CONFIRMACAO", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: { targets: ["transportadora/fornecedor"] }, ip: req.ip });
+    res.json({ ok: true, sent, to: ag.emailTransportadora });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
 });
 
 router.get("/:id/qrcode.svg", async (req, res) => {
   const item = await mustExist(req.params.id);
   if (!item) return res.status(404).send("Agendamento não encontrado.");
   const base = process.env.FRONTEND_URL || "http://localhost:3000";
-  const url = `${base}/?view=checkin&token=${encodeURIComponent(item.checkinToken)}`;
+  const url = `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`;
   const svg = await qrSvg(url);
   res.setHeader("Content-Type", "image/svg+xml");
   res.send(svg);
@@ -288,7 +380,7 @@ router.get("/:id/voucher", async (req, res) => {
 
   res.send(`<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8" /><title>Voucher ${item.protocolo}</title>
   <style>body{font-family:Arial;padding:24px;background:#f8fafc}.card{border:1px solid #ddd;border-radius:12px;padding:24px;max-width:980px;margin:auto;background:#fff}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.table{width:100%;border-collapse:collapse;margin-top:16px}.table th,.table td{border:1px solid #ddd;padding:8px;text-align:left}.head{display:flex;justify-content:space-between;align-items:flex-start}</style></head>
-  <body><div class="card"><div class="head"><div><h1>Voucher de Agendamento</h1><p>Apresente este voucher no recebimento.</p></div><img src="${base}/assets/logo-objetiva.png" alt="Logo" style="height:84px" /></div>
+  <body><div class="card"><div class="head"><div><h1>Voucher de Agendamento</h1><p>Apresente este voucher ao operador do recebimento.</p></div><img src="${base}/assets/logo-objetiva.png" alt="Logo" style="height:84px" /></div>
   <div class="grid">
   <div><strong>Protocolo:</strong> ${item.protocolo}</div>
   <div><strong>Status:</strong> ${item.status}</div>

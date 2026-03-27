@@ -24,7 +24,7 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
     ["placa", "Placa"],
     ["dataAgendada", "Data agendada"],
     ["horaAgendada", "Hora agendada"],
-    ["docaId", "Doca"],
+    ...(!isPublic ? [["docaId", "Doca"]] : []),
     ["janelaId", "Janela"]
   ];
   for (const [field, label] of required) {
