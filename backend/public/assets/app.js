@@ -4,10 +4,7 @@
     cadastroTipo: "fornecedores",
     nfRows: 1,
     nfDrafts: [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }],
-<<<<<<< HEAD
     disponibilidadePublica: [],
-=======
->>>>>>> 557e63be127f44cb90c0d9f5d6a12940bef1e45d
     stream: null,
     detectorTimer: null
   };
@@ -120,9 +117,7 @@
         observacao: String(nota.observacao || "").trim()
       }))
       .filter(x => x.numeroNf || x.chaveAcesso);
-<<<<<<< HEAD
   }
-
 
   function renderPublicDates() {
     const dateSelect = byId("publicDataSelect");
@@ -150,8 +145,6 @@
     const data = await api(`/api/public/disponibilidade?dias=21`);
     state.disponibilidadePublica = Array.isArray(data.agenda) ? data.agenda : [];
     renderPublicDates();
-=======
->>>>>>> 557e63be127f44cb90c0d9f5d6a12940bef1e45d
   }
 
   function currentFilters() {
@@ -466,20 +459,12 @@
         payload.notas = collectNotas();
         payload.quantidadeNotas = payload.notas.length;
         const data = await api("/api/public/solicitacao", { method: "POST", body: JSON.stringify(payload) });
-<<<<<<< HEAD
         byId("fornecedorMsg").textContent = `Solicitação enviada. Protocolo: ${data.protocolo}. O voucher e as confirmações serão disparados pelo operador.`;
-=======
-        byId("fornecedorMsg").textContent = `Solicitação enviada. Protocolo: ${data.protocolo}. Link motorista: ${data.linkMotorista}`;
->>>>>>> 557e63be127f44cb90c0d9f5d6a12940bef1e45d
         e.target.reset();
         state.nfRows = 1;
         state.nfDrafts = [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }];
         renderNfRows();
-<<<<<<< HEAD
         await loadPublicDisponibilidade();
-=======
-        document.querySelectorAll('#fornecedorForm input[type="date"]').forEach(el => { el.value = new Date().toISOString().slice(0,10); });
->>>>>>> 557e63be127f44cb90c0d9f5d6a12940bef1e45d
       } catch (err) {
         byId("fornecedorMsg").textContent = err.message;
       }
