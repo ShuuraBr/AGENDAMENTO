@@ -1,0 +1,10 @@
+Ajustes incluídos nesta versão:
+- login com try/catch para evitar timeout 504
+- fallback SQL em /api/auth/login e /api/public/disponibilidade para tolerar diferença de maiúsculas/minúsculas nos nomes das tabelas
+- rota /api/health/db para validar conexão com o banco
+- logs mais claros para falhas do Prisma/SQL
+
+Teste após deploy:
+- GET /api/health
+- GET /api/health/db
+- GET /api/public/disponibilidade?dias=21

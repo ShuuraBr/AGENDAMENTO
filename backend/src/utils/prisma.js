@@ -66,3 +66,5 @@ if (process.env.NODE_ENV !== "production" && globalThis.__agendamentoPrisma) {
 export const prisma = createModelProxy();
 export const getPrismaInitializationError = () => prismaInitError;
 export const isPrismaReady = () => Boolean(getPrismaClient());
+
+export const getPrismaClient = () => getPrismaClient();

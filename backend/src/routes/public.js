@@ -3,6 +3,7 @@ import { prisma } from "../utils/prisma.js";
 import { generateProtocol, generatePublicToken } from "../utils/security.js";
 import { validateAgendamentoPayload, validateNf } from "../utils/validators.js";
 import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js";
+import { fetchJanelasDocas, fetchAgendamentosByDatasStatuses } from "../utils/db-fallback.js";
 
 const router = express.Router();
 
@@ -49,11 +50,46 @@ async function getOrCreateDocaPadrao() {
   });
 }
 
+async function loadJanelasDocas() {
+  try {
+    const [janelas, docas] = await Promise.all([
+      prisma.janela.findMany({ orderBy: { codigo: "asc" } }),
+      prisma.doca.findMany({ orderBy: { codigo: "asc" } })
+    ]);
+    return { janelas, docas };
+  } catch (ormError) {
+    console.error("Prisma ORM falhou em disponibilidade. Tentando fallback SQL:", ormError?.message || ormError);
+    return fetchJanelasDocas();
+  }
+}
+
+async function loadAgendamentos(datas) {
+  try {
+    return await prisma.agendamento.findMany({
+      where: {
+        dataAgendada: { in: datas },
+        status: { in: ACTIVE_STATUSES }
+      },
+      select: {
+        dataAgendada: true,
+        janelaId: true,
+        protocolo: true,
+        status: true,
+        motorista: true,
+        placa: true,
+        fornecedor: true,
+        transportadora: true,
+        horaAgendada: true
+      }
+    });
+  } catch (ormError) {
+    console.error("Prisma ORM falhou ao carregar agendamentos. Tentando fallback SQL:", ormError?.message || ormError);
+    return fetchAgendamentosByDatasStatuses(datas, ACTIVE_STATUSES);
+  }
+}
+
 async function buildAgenda({ dias = 21 } = {}) {
-  const [janelas, docas] = await Promise.all([
-    prisma.janela.findMany({ orderBy: { codigo: "asc" } }),
-    prisma.doca.findMany({ orderBy: { codigo: "asc" } })
-  ]);
+  const { janelas, docas } = await loadJanelasDocas();
 
   if (!janelas.length) {
     return {
@@ -77,23 +113,7 @@ async function buildAgenda({ dias = 21 } = {}) {
     return formatDate(date);
   });
 
-  const agendamentos = await prisma.agendamento.findMany({
-    where: {
-      dataAgendada: { in: datas },
-      status: { in: ACTIVE_STATUSES }
-    },
-    select: {
-      dataAgendada: true,
-      janelaId: true,
-      protocolo: true,
-      status: true,
-      motorista: true,
-      placa: true,
-      fornecedor: true,
-      transportadora: true,
-      horaAgendada: true
-    }
-  });
+  const agendamentos = await loadAgendamentos(datas);
 
   const occupancy = new Map();
   for (const item of agendamentos) {
@@ -145,7 +165,8 @@ router.get("/disponibilidade", async (req, res) => {
     const payload = await buildAgenda({ dias });
     res.json(payload);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("Erro em /public/disponibilidade:", err);
+    res.status(500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
   }
 });
 
@@ -271,7 +292,8 @@ router.get("/motorista/:token", async (req, res) => {
       semaforo: trafficColor(item.status)
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("Erro em /public/disponibilidade:", err);
+    res.status(500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
   }
 });
 
@@ -293,7 +315,8 @@ router.get("/fornecedor/:token", async (req, res) => {
 
     res.json(item);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("Erro em /public/disponibilidade:", err);
+    res.status(500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
   }
 });
 
@@ -358,7 +381,8 @@ router.post("/checkin/:token", async (req, res) => {
       agendamento: updated
     });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("Erro em /public/disponibilidade:", err);
+    res.status(500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
   }
 });
 
