@@ -1,7 +1,17 @@
+import "dotenv/config";
 import app from "./app.js";
 
 const PORT = Number(process.env.PORT || 3000);
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
+const server = app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
+});
+
+process.on("unhandledRejection", (error) => {
+  console.error("Unhandled rejection:", error);
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception:", error);
+  server.close(() => process.exit(1));
 });

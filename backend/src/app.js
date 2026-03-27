@@ -1,11 +1,8 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import routes from "./routes/index.js";
-
-dotenv.config();
 
 const app = express();
 const publicDir = path.resolve("public");
@@ -46,7 +43,11 @@ app.use(express.static(publicDir));
 
 app.get("*", (req, res, next) => {
   if (req.path.startsWith("/api")) return next();
-  res.sendFile(path.join(publicDir, "index.html"));
+  const indexPath = path.join(publicDir, "index.html");
+  if (!fs.existsSync(indexPath)) {
+    return res.status(404).json({ ok: false, message: "Frontend não encontrado em /public/index.html" });
+  }
+  return res.sendFile(indexPath);
 });
 
 export default app;

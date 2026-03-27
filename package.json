@@ -2,6 +2,7 @@
   "name": "agendamento-descarga-workspace",
   "private": true,
   "scripts": {
+    "build": "npm run build --prefix backend/public && npm run build --prefix backend",
     "start": "npm --prefix backend start",
     "setup": "npm --prefix backend run setup",
     "prisma:generate": "npm --prefix backend run prisma:generate",
