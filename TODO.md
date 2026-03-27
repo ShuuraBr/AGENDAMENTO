@@ -1,8 +1,11 @@
-# Fix Prisma EPERM Error - Progress Tracker
+# Task: Fix Prisma 503
 
-## Steps from approved plan:
-- [x] Step 1: Update backend/package.json scripts to standard Prisma CLI
-- [x] Step 2: Clean backend/node_modules/.prisma (rmdir /s /q node_modules\\.prisma)
-- [x] Step 3: Run npx prisma generate in backend/
-- [x] Step 4: Test npm start without errors
-- [x] Step 5: Mark complete & cleanup TODO
+## Progress:
+- [x] Step 1: Fixed janelas/routes.js (prisma.janelaAgendamento -> prisma.janela)
+
+## Remaining:
+- [ ] Step 2: Add JSON fallback to public.js
+- [ ] Step 3: cd backend && npx prisma generate
+- [ ] Step 4: cd backend && npx prisma db push
+- [ ] Step 5: pm2 restart ecosystem.config.js
+- [ ] Step 6: Test http://localhost:3000 (no 503)
