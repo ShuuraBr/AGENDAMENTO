@@ -1,6 +1,12 @@
-# Deploy
+# Deploy Hostinger
 
-## Variáveis mínimas
+## Configuração
+- Framework preset: Express
+- Root directory: backend
+- Entry file: src/server.js
+- Node version: 20.x ou 22.x
+
+## Variáveis
 PORT=3000
 FRONTEND_URL=https://agendamento.objetivaatacadista.com.br
 JWT_SECRET=troque_essa_chave_forte
@@ -9,9 +15,9 @@ DATABASE_URL=mysql://usuario:senha@host:3306/banco
 SMTP_HOST=smtp.hostinger.com
 SMTP_PORT=465
 SMTP_SECURE=true
-SMTP_USER=seu_email
+SMTP_USER=no-reply@seudominio.com
 SMTP_PASS=sua_senha
-MAIL_FROM=Agendamento <no-reply@seudominio.com>
+MAIL_FROM="Agendamento de Descarga <no-reply@seudominio.com>"
 
 ## Comandos
 cd backend

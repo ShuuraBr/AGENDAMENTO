@@ -11,3 +11,12 @@ export function authRequired(req, res, next) {
     return res.status(401).json({ message: "Sessão inválida." });
   }
 }
+
+export function requireProfiles(...profiles) {
+  return (req, res, next) => {
+    if (!req.user || !profiles.includes(req.user.perfil)) {
+      return res.status(403).json({ message: "Perfil sem permissão para esta ação." });
+    }
+    next();
+  };
+}

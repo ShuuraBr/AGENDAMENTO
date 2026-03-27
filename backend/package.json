@@ -1,6 +1,6 @@
 {
-  "name": "agendamento-descarga-v2-seguro",
-  "version": "2.0.0",
+  "name": "agendamento-descarga-v2-ux-validacoes",
+  "version": "2.1.0",
   "private": true,
   "type": "module",
   "scripts": {

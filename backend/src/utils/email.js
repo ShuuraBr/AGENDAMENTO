@@ -15,7 +15,10 @@ export async function sendMail({ to, subject, text, html }) {
   if (!tx) return { sent: false, reason: "SMTP não configurado" };
   const info = await tx.sendMail({
     from: process.env.MAIL_FROM || process.env.SMTP_USER,
-    to, subject, text, html
+    to,
+    subject,
+    text,
+    html
   });
   return { sent: true, messageId: info.messageId };
 }

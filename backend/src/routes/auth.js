@@ -6,7 +6,6 @@ import { sendMail } from "../utils/email.js";
 
 const router = Router();
 
-// etapa 1: usuário e senha
 router.post("/login-init", async (req, res) => {
   const { email, senha } = req.body || {};
   if (!email || !senha) return res.status(400).json({ message: "Email e senha são obrigatórios." });
@@ -21,29 +20,23 @@ router.post("/login-init", async (req, res) => {
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
   await prisma.twoFactorCode.create({
-    data: {
-      usuarioId: user.id,
-      code: otp,
-      expiresAt
-    }
+    data: { usuarioId: user.id, code: otp, expiresAt }
   });
 
-  const result = await sendMail({
+  const sent = await sendMail({
     to: user.email,
     subject: "Seu código de acesso",
-    text: `Seu código de verificação é ${otp}. Expira em 10 minutos.`,
-    html: `<p>Seu código de verificação é <strong>${otp}</strong>. Expira em 10 minutos.</p>`
+    text: `Seu código é ${otp}. Expira em 10 minutos.`,
+    html: `<p>Seu código é <strong>${otp}</strong>. Expira em 10 minutos.</p>`
   });
 
   res.json({
     ok: true,
-    message: result.sent ? "Código enviado por e-mail." : "SMTP não configurado. Código gerado em desenvolvimento.",
-    developmentCode: result.sent ? undefined : otp,
-    email: user.email
+    message: sent.sent ? "Código enviado por e-mail." : "SMTP não configurado. Código gerado em desenvolvimento.",
+    developmentCode: sent.sent ? undefined : otp
   });
 });
 
-// etapa 2: OTP
 router.post("/login-verify", async (req, res) => {
   const { email, code } = req.body || {};
   if (!email || !code) return res.status(400).json({ message: "Email e código são obrigatórios." });

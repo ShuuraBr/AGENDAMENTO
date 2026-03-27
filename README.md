@@ -1,15 +1,15 @@
-# Agendamento de Descarga V2 Segura
+# Agendamento de Descarga V2.1
 
-Base estrutural segura com:
+Pacote com:
 - Prisma + MySQL
-- separação entre área pública e área interna
-- portal do motorista
-- portal da transportadora/fornecedor
-- módulo interno do colaborador protegido por login + 2FA por e-mail
-- módulo de notas fiscais por agendamento
-- QR Code para check-in
-- tela com acesso à câmera para validar QR
-- aceite LGPD nos formulários públicos
+- área pública separada para fornecedor/transportadora e motorista
+- área interna protegida com login + 2FA
+- validações de negócio mais rígidas
+- filtros de agendamento
+- envio de informações por e-mail
+- voucher com QR Code de check-in
+- leitura de QR via câmera
+- UX refinada com logo institucional
 
 ## Hostinger
 - Root directory: backend

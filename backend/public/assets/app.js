@@ -3,12 +3,21 @@ const state = {
   cadastroTipo: "fornecedores",
   nfRows: 1,
   stream: null,
-  detectorTimer: null
+  detectorTimer: null,
+  role: null
 };
 
 function showView(id) {
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.getElementById(id)?.classList.add("active");
+}
+
+function parseJwt(token) {
+  try {
+    return JSON.parse(atob(token.split(".")[1]));
+  } catch {
+    return null;
+  }
 }
 
 function updateNav() {
@@ -23,6 +32,7 @@ document.querySelectorAll("[data-view]").forEach(btn => {
 document.getElementById("btnLogout")?.addEventListener("click", () => {
   localStorage.removeItem("token");
   state.token = "";
+  state.role = null;
   updateNav();
   showView("public-home");
 });
@@ -73,8 +83,21 @@ function collectNotas() {
   return Object.values(map).filter(x => x.numeroNf || x.chaveAcesso);
 }
 
+function currentFilters() {
+  return {
+    status: document.getElementById("fStatus").value,
+    fornecedor: document.getElementById("fFornecedor").value,
+    transportadora: document.getElementById("fTransportadora").value,
+    motorista: document.getElementById("fMotorista").value,
+    placa: document.getElementById("fPlaca").value,
+    dataAgendada: document.getElementById("fData").value
+  };
+}
+
 async function loadDashboard() {
-  const data = await api("/api/dashboard/operacional");
+  const params = new URLSearchParams();
+  Object.entries(currentFilters()).forEach(([k,v]) => { if (v) params.set(k, v); });
+  const data = await api(`/api/dashboard/operacional?${params.toString()}`);
   const kpis = document.getElementById("kpis");
   kpis.innerHTML = "";
   Object.entries(data.kpis).forEach(([k,v]) => {
@@ -85,7 +108,8 @@ async function loadDashboard() {
   });
   document.getElementById("dashboardTable").innerHTML = tableFromObjects(data.agendamentos.map(a => ({
     id: a.id, protocolo: a.protocolo, status: a.status, fornecedor: a.fornecedor,
-    transportadora: a.transportadora, motorista: a.motorista, data: a.dataAgendada, hora: a.horaAgendada
+    transportadora: a.transportadora, motorista: a.motorista, placa: a.placa, data: a.dataAgendada,
+    hora: a.horaAgendada, notas: a.notasFiscais?.length || 0, docs: a.documentos?.length || 0
   })));
 }
 
@@ -95,13 +119,23 @@ async function loadCadastro() {
 }
 
 async function loadAgendamentos() {
-  const items = await api("/api/agendamentos");
+  const params = new URLSearchParams();
+  Object.entries(currentFilters()).forEach(([k,v]) => { if (v) params.set(k, v); });
+  const items = await api(`/api/agendamentos?${params.toString()}`);
   document.getElementById("agendamentosList").innerHTML = tableFromObjects(items.map(i => ({
     id: i.id, protocolo: i.protocolo, status: i.status, fornecedor: i.fornecedor, transportadora: i.transportadora,
     motorista: i.motorista, placa: i.placa, doca: i.doca, janela: i.janela, data: i.dataAgendada,
     hora: i.horaAgendada, notas: i.notasFiscais?.length || 0, docs: i.documentos?.length || 0
   })));
 }
+
+document.getElementById("applyFilters").onclick = async () => {
+  try { await loadDashboard(); await loadAgendamentos(); } catch (err) { alert(err.message); }
+};
+document.getElementById("clearFilters").onclick = async () => {
+  ["fStatus","fFornecedor","fTransportadora","fMotorista","fPlaca","fData"].forEach(id => document.getElementById(id).value = "");
+  try { await loadDashboard(); await loadAgendamentos(); } catch (err) { alert(err.message); }
+};
 
 document.getElementById("loginInitForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -121,10 +155,11 @@ document.getElementById("loginVerifyForm").addEventListener("submit", async (e) 
     const data = await api("/api/auth/login-verify", { method: "POST", body: JSON.stringify(payload) });
     state.token = data.token;
     localStorage.setItem("token", data.token);
+    state.role = parseJwt(data.token)?.perfil || data.user?.perfil || null;
     updateNav();
     showView("dashboard");
     await loadDashboard();
-    document.getElementById("loginVerifyMsg").textContent = `Logado como ${data.user.nome}`;
+    document.getElementById("loginVerifyMsg").textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
   } catch (err) {
     document.getElementById("loginVerifyMsg").textContent = err.message;
   }
@@ -180,8 +215,16 @@ function currentId() {
 async function postStatus(path, body = {}) {
   return api(`/api/agendamentos/${currentId()}/${path}`, { method: "POST", body: JSON.stringify(body) });
 }
-
-["Aprovar","Reprovar","Reagendar","Cancelar","Iniciar","Finalizar","NoShow"].forEach(() => {});
+async function handleOp(fn, success) {
+  try {
+    await fn();
+    document.getElementById("operacaoMsg").textContent = success;
+    await loadAgendamentos();
+    await loadDashboard();
+  } catch (err) {
+    document.getElementById("operacaoMsg").textContent = err.message;
+  }
+}
 document.getElementById("btnAprovar").onclick = async () => handleOp(() => postStatus("aprovar"), "Agendamento aprovado.");
 document.getElementById("btnReprovar").onclick = async () => handleOp(() => postStatus("reprovar", { motivo: "Reprovado via painel" }), "Agendamento reprovado.");
 document.getElementById("btnReagendar").onclick = async () => handleOp(() => postStatus("reagendar", {
@@ -191,23 +234,9 @@ document.getElementById("btnCancelar").onclick = async () => handleOp(() => post
 document.getElementById("btnIniciar").onclick = async () => handleOp(() => postStatus("iniciar"), "Descarga iniciada.");
 document.getElementById("btnFinalizar").onclick = async () => handleOp(() => postStatus("finalizar"), "Agendamento finalizado.");
 document.getElementById("btnNoShow").onclick = async () => handleOp(() => postStatus("no-show"), "Agendamento marcado como no-show.");
-
-async function handleOp(fn, success) {
-  try {
-    await fn();
-    document.getElementById("operacaoMsg").textContent = success;
-    await loadAgendamentos();
-  } catch (err) {
-    document.getElementById("operacaoMsg").textContent = err.message;
-  }
-}
-
-document.getElementById("btnVoucher").onclick = () => {
-  try { window.open(`/api/agendamentos/${currentId()}/voucher`, "_blank"); } catch (err) { alert(err.message); }
-};
-document.getElementById("btnQr").onclick = () => {
-  try { window.open(`/api/agendamentos/${currentId()}/qrcode.svg`, "_blank"); } catch (err) { alert(err.message); }
-};
+document.getElementById("btnVoucher").onclick = () => { try { window.open(`/api/agendamentos/${currentId()}/voucher`, "_blank"); } catch (err) { alert(err.message); } };
+document.getElementById("btnQr").onclick = () => { try { window.open(`/api/agendamentos/${currentId()}/qrcode.svg`, "_blank"); } catch (err) { alert(err.message); } };
+document.getElementById("btnEnviarInfos").onclick = async () => handleOp(() => api(`/api/agendamentos/${currentId()}/enviar-informacoes`, { method: "POST", body: JSON.stringify({}) }), "Informações enviadas.");
 
 document.getElementById("btnUploadDoc").onclick = async () => {
   try {
@@ -285,6 +314,7 @@ async function validateCheckin(token) {
 document.querySelectorAll('input[type="date"]').forEach(el => el.value = new Date().toISOString().slice(0,10));
 
 renderNfRows();
+state.role = state.token ? parseJwt(state.token)?.perfil || null : null;
 updateNav();
 
 async function scanLoop() {
@@ -303,9 +333,8 @@ async function scanLoop() {
         stopCamera();
       }
     } catch {}
-  }, 1000);
+  }, 900);
 }
-
 async function startCamera() {
   const video = document.getElementById("qrVideo");
   state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
@@ -316,15 +345,13 @@ async function startCamera() {
 function stopCamera() {
   if (state.detectorTimer) clearInterval(state.detectorTimer);
   state.detectorTimer = null;
-  if (state.stream) {
-    state.stream.getTracks().forEach(t => t.stop());
-    state.stream = null;
-  }
+  if (state.stream) state.stream.getTracks().forEach(t => t.stop());
+  state.stream = null;
   const video = document.getElementById("qrVideo");
   if (video) video.srcObject = null;
 }
 document.getElementById("startCamera").addEventListener("click", async () => {
-  try { await startCamera(); } catch (err) { document.getElementById("checkinMsg").textContent = "Falha ao acessar câmera."; }
+  try { await startCamera(); } catch { document.getElementById("checkinMsg").textContent = "Falha ao acessar câmera."; }
 });
 document.getElementById("stopCamera").addEventListener("click", stopCamera);
 

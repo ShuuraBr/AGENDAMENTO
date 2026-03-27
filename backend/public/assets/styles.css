@@ -1,7 +1,9 @@
 *{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef2f7;color:#1e293b}
 .topbar{background:#0f172a;color:#fff;padding:18px 24px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:16px;justify-content:space-between;width:100%}
 .topbar h1{margin:0;font-size:28px}
 .topbar nav{display:flex;gap:8px;flex-wrap:wrap}
+.logo{height:72px;max-width:320px;object-fit:contain}
 button{border:0;background:#2563eb;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
 button:hover{opacity:.94}
 .container{padding:24px}
@@ -10,6 +12,7 @@ button:hover{opacity:.94}
 .inner{background:#f8fafc;border:1px solid #dbe2ea}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:16px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.filters{display:grid;grid-template-columns:repeat(6,minmax(0,1fr)) auto auto;gap:10px}
 .kpi{padding:16px;border:1px solid #dbe2ea;border-radius:12px;background:#f8fafc}
 .kpi strong{display:block;font-size:12px;text-transform:uppercase;color:#64748b;margin-bottom:6px}.kpi span{font-size:28px;font-weight:700}
 form{display:grid;gap:10px}
@@ -20,8 +23,8 @@ textarea{min-height:90px;resize:vertical}
 .table th,.table td{border:1px solid #e5e7eb;padding:8px;text-align:left;font-size:13px;vertical-align:top}
 .row{display:flex;align-items:center}.between{justify-content:space-between}.wrap{flex-wrap:wrap}.gap8{gap:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}
 .msg{margin-top:10px;font-size:14px}.hint{color:#64748b;font-size:13px}.tabs{display:flex;gap:8px;flex-wrap:wrap}
-pre{white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:12px;border-radius:10px}
+pre{white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:12px;border-radius:10px;overflow:auto}
 small{color:#cbd5e1}.hidden{display:none}.narrow{max-width:520px}.video{width:100%;min-height:260px;background:#111;border-radius:12px}
-.check{grid-template-columns:auto 1fr;gap:8px;align-items:start}
-ul{margin:8px 0 0 18px}
-@media (max-width:900px){.grid2{grid-template-columns:1fr}}
+.check{grid-template-columns:auto 1fr;gap:8px;align-items:start}ul{margin:8px 0 0 18px}
+@media (max-width:1100px){.filters{grid-template-columns:1fr 1fr}.logo{height:56px}}
+@media (max-width:900px){.grid2{grid-template-columns:1fr}.brand{flex-direction:column;align-items:flex-start}}

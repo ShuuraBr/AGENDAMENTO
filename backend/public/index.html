@@ -3,14 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agendamento de Descarga V2</title>
+  <title>Agendamento de Descarga V2.1</title>
   <link rel="stylesheet" href="/assets/styles.css" />
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <h1>Agendamento de Descarga</h1>
-      <small>V2 segura • público + interno + 2FA + QR</small>
+    <div class="brand">
+      <div>
+        <h1>Agendamento de Descarga</h1>
+        <small>V2.1 • validações endurecidas • 2FA • QR • filtros • envio</small>
+      </div>
+      <img src="/assets/logo-objetiva.png" alt="Logo Objetiva" class="logo" />
     </div>
     <nav id="publicNav">
       <button data-view="public-home">Início</button>
@@ -31,10 +34,10 @@
     <section id="public-home" class="view active">
       <div class="card">
         <h2>Portais disponíveis</h2>
-        <p>Esta aplicação possui acesso separado para motorista, transportadora/fornecedor e colaborador interno.</p>
+        <p>Acesso segregado para público e colaborador, com proteção para dados sensíveis e fluxo de recebimento operacional.</p>
         <ul>
-          <li>Transportadora/fornecedor: solicita o agendamento e informa as NFs</li>
-          <li>Motorista: consulta dados da viagem e instruções</li>
+          <li>Transportadora/fornecedor: informa a entrega e as notas fiscais</li>
+          <li>Motorista: consulta os dados e recebe instruções</li>
           <li>Colaborador: acessa a área interna com login e 2FA</li>
         </ul>
       </div>
@@ -69,11 +72,13 @@
               <label>Transportadora<input name="transportadora" value="Transportadora Externa" /></label>
               <label>Motorista<input name="motorista" value="Motorista Externo" /></label>
               <label>Telefone do motorista<input name="telefoneMotorista" value="61999998888" /></label>
+              <label>E-mail do motorista<input name="emailMotorista" value="motorista@teste.com" /></label>
+              <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@teste.com" /></label>
               <label>Placa<input name="placa" value="DEF4G56" /></label>
-              <label>Doca<input name="doca" value="DOCA-01" /></label>
-              <label>Janela<input name="janela" value="09:00-10:00" /></label>
             </div>
             <div>
+              <label>Doca<input name="doca" value="DOCA-01" /></label>
+              <label>Janela<input name="janela" value="09:00-10:00" /></label>
               <label>Data<input name="dataAgendada" type="date" /></label>
               <label>Hora<input name="horaAgendada" value="09:00" /></label>
               <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" /></label>
@@ -110,7 +115,7 @@
     <section id="checkin" class="view">
       <div class="card">
         <h2>Check-in por QR Code</h2>
-        <p class="hint">Permita acesso à câmera. Se o navegador suportar BarcodeDetector, a leitura será automática. Caso contrário, use o token manual.</p>
+        <p class="hint">Permita o acesso à câmera. Em navegadores compatíveis, a leitura ocorre automaticamente.</p>
         <div class="grid2">
           <div>
             <video id="qrVideo" autoplay muted playsinline class="video"></video>
@@ -139,6 +144,21 @@
         </div>
         <div id="kpis" class="grid"></div>
       </div>
+
+      <div class="card mt16">
+        <h3>Filtros</h3>
+        <div class="filters">
+          <input id="fStatus" placeholder="Status" />
+          <input id="fFornecedor" placeholder="Fornecedor" />
+          <input id="fTransportadora" placeholder="Transportadora" />
+          <input id="fMotorista" placeholder="Motorista" />
+          <input id="fPlaca" placeholder="Placa" />
+          <input id="fData" type="date" />
+          <button id="applyFilters">Aplicar filtros</button>
+          <button id="clearFilters">Limpar</button>
+        </div>
+      </div>
+
       <div class="card mt16">
         <h3>Agendamentos</h3>
         <div id="dashboardTable"></div>
@@ -157,6 +177,7 @@
             <button class="cad-tab" data-tipo="docas">Docas</button>
             <button class="cad-tab" data-tipo="janelas">Janelas</button>
             <button class="cad-tab" data-tipo="regras">Regras</button>
+            <button class="cad-tab" data-tipo="usuarios">Usuários</button>
           </div>
         </div>
         <div class="grid2 mt16">
@@ -182,6 +203,8 @@
             <label>Transportadora<input name="transportadora" value="Transportadora Exemplo" /></label>
             <label>Motorista<input name="motorista" value="Motorista Exemplo" /></label>
             <label>Telefone do motorista<input name="telefoneMotorista" value="61999999999" /></label>
+            <label>E-mail do motorista<input name="emailMotorista" value="motorista@test.com" /></label>
+            <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@test.com" /></label>
             <label>Placa<input name="placa" value="ABC1D23" /></label>
             <label>Doca<input name="doca" value="DOCA-01" /></label>
             <label>Janela<input name="janela" value="08:00-09:00" /></label>
@@ -211,6 +234,7 @@
             <button id="btnNoShow">No-show</button>
             <button id="btnVoucher">Voucher</button>
             <button id="btnQr">QR Code</button>
+            <button id="btnEnviarInfos">Enviar informações</button>
           </div>
 
           <div class="card inner mt16">

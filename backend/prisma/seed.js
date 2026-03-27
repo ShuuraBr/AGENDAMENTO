@@ -3,19 +3,20 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-async function main() {
+async function ensureUser(email, nome, perfil) {
   const senhaHash = await bcrypt.hash("123456", 10);
-
   await prisma.usuario.upsert({
-    where: { email: "admin@local.test" },
-    update: {},
-    create: {
-      nome: "Administrador",
-      email: "admin@local.test",
-      senhaHash,
-      perfil: "ADMIN"
-    }
+    where: { email },
+    update: { perfil },
+    create: { nome, email, senhaHash, perfil }
   });
+}
+
+async function main() {
+  await ensureUser("admin@local.test", "Administrador", "ADMIN");
+  await ensureUser("operador@local.test", "Operador", "OPERADOR");
+  await ensureUser("portaria@local.test", "Portaria", "PORTARIA");
+  await ensureUser("gestor@local.test", "Gestor", "GESTOR");
 
   await prisma.fornecedor.upsert({
     where: { cnpj: "11.111.111/0001-11" },
@@ -32,11 +33,9 @@ async function main() {
   await prisma.motorista.create({
     data: { nome: "Motorista Exemplo", cpf: "12345678900", telefone: "61999999999", transportadora: "Transportadora Exemplo" }
   }).catch(() => {});
-
   await prisma.veiculo.create({
     data: { placa: "ABC1D23", tipo: "Truck", transportadora: "Transportadora Exemplo" }
   }).catch(() => {});
-
   await prisma.doca.create({ data: { codigo: "DOCA-01", descricao: "Doca principal" } }).catch(() => {});
   await prisma.janela.create({ data: { codigo: "08:00-09:00", descricao: "Janela manhã 1" } }).catch(() => {});
   await prisma.regra.create({ data: { nome: "Padrão", toleranciaAtrasoMin: 15, tempoDescargaPrevistoMin: 60 } }).catch(() => {});
@@ -51,6 +50,8 @@ async function main() {
       transportadora: "Transportadora Exemplo",
       motorista: "Motorista Exemplo",
       telefoneMotorista: "61999999999",
+      emailMotorista: "motorista@test.com",
+      emailTransportadora: "transportadora@test.com",
       placa: "ABC1D23",
       doca: "DOCA-01",
       janela: "08:00-09:00",
@@ -78,7 +79,11 @@ async function main() {
     }).catch(() => {});
   }
 
-  console.log("Seed concluído. Usuário: admin@local.test | Senha: 123456");
+  console.log("Seed concluído.");
+  console.log("ADMIN: admin@local.test / 123456");
+  console.log("OPERADOR: operador@local.test / 123456");
+  console.log("PORTARIA: portaria@local.test / 123456");
+  console.log("GESTOR: gestor@local.test / 123456");
 }
 
 main().finally(async () => prisma.$disconnect());
