@@ -3,6 +3,7 @@
     token: localStorage.getItem("token") || "",
     cadastroTipo: "fornecedores",
     nfRows: 1,
+    nfDrafts: [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }],
     stream: null,
     detectorTimer: null
   };
@@ -58,34 +59,63 @@
     return `<table class="table"><thead><tr>${cols.map(c => `<th>${c}</th>`).join("")}</tr></thead><tbody>${items.map(row => `<tr>${cols.map(c => `<td>${row[c] ?? ""}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
   }
 
-  function renderNfRows() {
-    const wrap = byId("nfList");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    for (let i = 0; i < state.nfRows; i++) {
-      const div = document.createElement("div");
-      div.className = "grid2 mt12";
-      div.innerHTML = `
-        <label>Número NF<input data-nf="${i}" data-field="numeroNf" /></label>
-        <label>Série<input data-nf="${i}" data-field="serie" /></label>
-        <label>Chave de acesso<input data-nf="${i}" data-field="chaveAcesso" /></label>
-        <label>Volumes<input data-nf="${i}" data-field="volumes" type="number" value="0" /></label>
-        <label>Peso<input data-nf="${i}" data-field="peso" type="number" value="0" /></label>
-        <label>Valor NF<input data-nf="${i}" data-field="valorNf" type="number" value="0" /></label>
-      `;
-      wrap.appendChild(div);
+  function ensureNfDraftSize() {
+    while (state.nfDrafts.length < state.nfRows) {
+      state.nfDrafts.push({ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" });
+    }
+    if (state.nfDrafts.length > state.nfRows) {
+      state.nfDrafts = state.nfDrafts.slice(0, state.nfRows);
     }
   }
 
-  function collectNotas() {
-    const map = {};
+  function syncNfDraftsFromDom() {
     document.querySelectorAll("[data-nf]").forEach(el => {
-      const idx = el.dataset.nf;
+      const idx = Number(el.dataset.nf);
       const field = el.dataset.field;
-      map[idx] ??= {};
-      map[idx][field] = el.value;
+      state.nfDrafts[idx] ??= { numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" };
+      state.nfDrafts[idx][field] = el.value;
     });
-    return Object.values(map).filter(x => x.numeroNf || x.chaveAcesso);
+  }
+
+  function renderNfRows() {
+    const wrap = byId("nfList");
+    if (!wrap) return;
+    ensureNfDraftSize();
+    wrap.innerHTML = "";
+    for (let i = 0; i < state.nfRows; i++) {
+      const row = state.nfDrafts[i] || {};
+      const div = document.createElement("div");
+      div.className = "grid2 mt12 nf-row";
+      div.innerHTML = `
+        <label>Número NF<input data-nf="${i}" data-field="numeroNf" value="${row.numeroNf || ""}" /></label>
+        <label>Série<input data-nf="${i}" data-field="serie" value="${row.serie || ""}" /></label>
+        <label>Chave de acesso<input data-nf="${i}" data-field="chaveAcesso" value="${row.chaveAcesso || ""}" /></label>
+        <label>Volumes<input data-nf="${i}" data-field="volumes" type="number" min="0" value="${row.volumes ?? "0"}" /></label>
+        <label>Peso<input data-nf="${i}" data-field="peso" type="number" min="0" step="0.001" value="${row.peso ?? "0"}" /></label>
+        <label>Valor NF<input data-nf="${i}" data-field="valorNf" type="number" min="0" step="0.01" value="${row.valorNf ?? "0"}" /></label>
+        <label class="nf-full">Observação<textarea data-nf="${i}" data-field="observacao">${row.observacao || ""}</textarea></label>
+      `;
+      wrap.appendChild(div);
+    }
+    wrap.querySelectorAll("[data-nf]").forEach(el => {
+      el.addEventListener("input", syncNfDraftsFromDom);
+      el.addEventListener("change", syncNfDraftsFromDom);
+    });
+  }
+
+  function collectNotas() {
+    syncNfDraftsFromDom();
+    return state.nfDrafts
+      .map(nota => ({
+        numeroNf: String(nota.numeroNf || "").trim(),
+        serie: String(nota.serie || "").trim(),
+        chaveAcesso: String(nota.chaveAcesso || "").trim(),
+        volumes: Number(nota.volumes || 0),
+        peso: Number(nota.peso || 0),
+        valorNf: Number(nota.valorNf || 0),
+        observacao: String(nota.observacao || "").trim()
+      }))
+      .filter(x => x.numeroNf || x.chaveAcesso);
   }
 
   function currentFilters() {
@@ -313,7 +343,10 @@
       try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
         const data = await api("/api/agendamentos", { method: "POST", body: JSON.stringify(payload) });
-        byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo}`;
+        byId("agendamentoId").value = data.id || "";
+        byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo} | ID: ${data.id}`;
+        e.target.reset();
+        document.querySelectorAll('#agendamentoForm input[type="date"]').forEach(el => { el.value = new Date().toISOString().slice(0,10); });
         await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas()]);
       } catch (err) {
         byId("agendamentoMsg").textContent = err.message;
@@ -370,7 +403,17 @@
     });
 
     byId("addNf")?.addEventListener("click", () => {
+      syncNfDraftsFromDom();
       state.nfRows += 1;
+      ensureNfDraftSize();
+      renderNfRows();
+    });
+
+    byId("removeNf")?.addEventListener("click", () => {
+      syncNfDraftsFromDom();
+      if (state.nfRows <= 1) return;
+      state.nfRows -= 1;
+      ensureNfDraftSize();
       renderNfRows();
     });
 
@@ -380,8 +423,14 @@
         const payload = Object.fromEntries(new FormData(e.target).entries());
         payload.lgpdConsent = !!e.target.querySelector('[name="lgpdConsent"]').checked;
         payload.notas = collectNotas();
+        payload.quantidadeNotas = payload.notas.length;
         const data = await api("/api/public/solicitacao", { method: "POST", body: JSON.stringify(payload) });
         byId("fornecedorMsg").textContent = `Solicitação enviada. Protocolo: ${data.protocolo}. Link motorista: ${data.linkMotorista}`;
+        e.target.reset();
+        state.nfRows = 1;
+        state.nfDrafts = [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }];
+        renderNfRows();
+        document.querySelectorAll('#fornecedorForm input[type="date"]').forEach(el => { el.value = new Date().toISOString().slice(0,10); });
       } catch (err) {
         byId("fornecedorMsg").textContent = err.message;
       }

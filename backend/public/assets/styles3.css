@@ -35,3 +35,5 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 .badge.verde{background:#dcfce7;color:#166534}.badge.amarelo{background:#fef9c3;color:#854d0e}.badge.vermelho{background:#fee2e2;color:#991b1b}
 @media (max-width:1100px){.filters{grid-template-columns:1fr 1fr}.logo{height:36px}}
 @media (max-width:900px){.grid2{grid-template-columns:1fr}.brand{flex-direction:column;align-items:flex-start}}
+
+#login.view.active{min-height:calc(100vh - 180px);display:flex;align-items:center;justify-content:center}.login-card{width:100%;margin:0 auto}.btn-secondary{background:#475569}.nf-row{padding:14px;border:1px solid #dbe2ea;border-radius:12px;background:#f8fafc}.nf-full{grid-column:1/-1}

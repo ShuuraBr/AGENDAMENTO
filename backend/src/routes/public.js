@@ -16,48 +16,65 @@ router.post("/solicitacao", async (req, res) => {
       dataAgendada: p.dataAgendada
     });
 
-    const ag = await prisma.agendamento.create({
-      data: {
-        protocolo: generateProtocol(),
-        publicTokenMotorista: generatePublicToken("MOT"),
-        publicTokenFornecedor: generatePublicToken("FOR"),
-        checkinToken: generatePublicToken("CHK"),
-        fornecedor: p.fornecedor,
-        transportadora: p.transportadora,
-        motorista: p.motorista,
-        telefoneMotorista: p.telefoneMotorista || "",
-        emailMotorista: p.emailMotorista || "",
-        emailTransportadora: p.emailTransportadora || "",
-        placa: p.placa,
-        docaId: Number(p.docaId),
-        janelaId: Number(p.janelaId),
-        dataAgendada: p.dataAgendada,
-        horaAgendada: p.horaAgendada,
-        quantidadeNotas: Number(p.quantidadeNotas || 0),
-        quantidadeVolumes: Number(p.quantidadeVolumes || 0),
-        status: "PENDENTE_APROVACAO",
-        observacoes: p.observacoes || "",
-        lgpdConsentAt: new Date()
-      }
-    });
+    const notas = Array.isArray(p.notas)
+      ? p.notas
+          .map((nota) => ({
+            numeroNf: String(nota?.numeroNf || "").trim(),
+            serie: String(nota?.serie || "").trim(),
+            chaveAcesso: String(nota?.chaveAcesso || "").trim(),
+            volumes: Number(nota?.volumes || 0),
+            peso: Number(nota?.peso || 0),
+            valorNf: Number(nota?.valorNf || 0),
+            observacao: String(nota?.observacao || "").trim()
+          }))
+          .filter((nota) => nota.numeroNf || nota.chaveAcesso)
+      : [];
 
-    if (Array.isArray(p.notas)) {
-      for (const nota of p.notas) {
-        validateNf(nota);
-        await prisma.notaFiscal.create({
-          data: {
-            agendamentoId: ag.id,
-            numeroNf: nota.numeroNf || "",
-            serie: nota.serie || "",
-            chaveAcesso: nota.chaveAcesso || "",
-            volumes: Number(nota.volumes || 0),
-            peso: Number(nota.peso || 0),
-            valorNf: Number(nota.valorNf || 0),
-            observacao: nota.observacao || ""
-          }
+    for (const nota of notas) validateNf(nota);
+
+    const ag = await prisma.$transaction(async (tx) => {
+      const created = await tx.agendamento.create({
+        data: {
+          protocolo: generateProtocol(),
+          publicTokenMotorista: generatePublicToken("MOT"),
+          publicTokenFornecedor: generatePublicToken("FOR"),
+          checkinToken: generatePublicToken("CHK"),
+          fornecedor: p.fornecedor,
+          transportadora: p.transportadora,
+          motorista: p.motorista,
+          telefoneMotorista: p.telefoneMotorista || "",
+          emailMotorista: p.emailMotorista || "",
+          emailTransportadora: p.emailTransportadora || "",
+          placa: p.placa,
+          docaId: Number(p.docaId),
+          janelaId: Number(p.janelaId),
+          dataAgendada: p.dataAgendada,
+          horaAgendada: p.horaAgendada,
+          quantidadeNotas: notas.length,
+          quantidadeVolumes: Number(p.quantidadeVolumes || 0),
+          status: "PENDENTE_APROVACAO",
+          observacoes: p.observacoes || "",
+          lgpdConsentAt: new Date()
+        }
+      });
+
+      if (notas.length) {
+        await tx.notaFiscal.createMany({
+          data: notas.map((nota) => ({
+            agendamentoId: created.id,
+            numeroNf: nota.numeroNf,
+            serie: nota.serie,
+            chaveAcesso: nota.chaveAcesso,
+            volumes: nota.volumes,
+            peso: nota.peso,
+            valorNf: nota.valorNf,
+            observacao: nota.observacao
+          }))
         });
       }
-    }
+
+      return created;
+    });
 
     res.status(201).json({
       protocolo: ag.protocolo,
