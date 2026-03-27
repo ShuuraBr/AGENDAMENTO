@@ -18,9 +18,31 @@ export function writeCollection(name, data) {
 }
 
 export function nextId(items) {
-  return items.length ? Math.max(...items.map((x) => Number(x.id) || 0)) + 1 : 1;
+  return items.length ? Math.max(...items.map(x => Number(x.id) || 0)) + 1 : 1;
 }
 
 export function nowIso() {
   return new Date().toISOString();
+}
+
+export function ensureDefaults() {
+  const defaults = {
+    usuarios: [],
+    fornecedores: [],
+    transportadoras: [],
+    motoristas: [],
+    veiculos: [],
+    docas: [],
+    janelas: [],
+    regras: [],
+    agendamentos: [],
+    documentos: []
+  };
+
+  for (const [name, value] of Object.entries(defaults)) {
+    const full = filePath(name);
+    if (!fs.existsSync(full)) {
+      writeCollection(name, value);
+    }
+  }
 }

@@ -2,10 +2,13 @@
   {
     "id": 1,
     "protocolo": "AGD-EXEMPLO-1",
+    "checkinToken": "CHK-EXEMPLO-1",
     "fornecedor": "Fornecedor Exemplo LTDA",
     "transportadora": "Transportadora Exemplo",
     "motorista": "Motorista Exemplo",
     "placa": "ABC1D23",
+    "doca": "DOCA-01",
+    "janela": "08:00-09:00",
     "dataAgendada": "2026-03-27",
     "horaAgendada": "08:00",
     "quantidadeNotas": 2,

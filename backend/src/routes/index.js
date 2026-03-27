@@ -1,6 +1,7 @@
 import { Router } from "express";
 import authRoutes from "./auth.js";
 import dashboardRoutes from "./dashboard.js";
+import cadastroRoutes from "./cadastros.js";
 import agendamentoRoutes from "./agendamentos.js";
 import publicRoutes from "./public.js";
 
@@ -12,6 +13,7 @@ router.get("/health", (_req, res) => {
 
 router.use("/auth", authRoutes);
 router.use("/dashboard", dashboardRoutes);
+router.use("/cadastros", cadastroRoutes);
 router.use("/agendamentos", agendamentoRoutes);
 router.use("/public", publicRoutes);
 

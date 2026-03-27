@@ -7,15 +7,17 @@ router.use(authRequired);
 
 router.get("/operacional", (_req, res) => {
   const agendamentos = readCollection("agendamentos");
-  const docs = readCollection("documentos");
+  const documentos = readCollection("documentos");
 
   const kpis = {
     total: agendamentos.length,
-    pendentes: agendamentos.filter(a => a.status === "PENDENTE_APROVACAO").length,
-    aprovados: agendamentos.filter(a => a.status === "APROVADO").length,
-    cancelados: agendamentos.filter(a => a.status === "CANCELADO").length,
-    finalizados: agendamentos.filter(a => a.status === "FINALIZADO").length,
-    documentos: docs.length
+    pendentes: agendamentos.filter(x => x.status === "PENDENTE_APROVACAO").length,
+    aprovados: agendamentos.filter(x => x.status === "APROVADO").length,
+    emDescarga: agendamentos.filter(x => x.status === "EM_DESCARGA").length,
+    finalizados: agendamentos.filter(x => x.status === "FINALIZADO").length,
+    cancelados: agendamentos.filter(x => x.status === "CANCELADO").length,
+    noShow: agendamentos.filter(x => x.status === "NO_SHOW").length,
+    documentos: documentos.length
   };
 
   res.json({ kpis, agendamentos });

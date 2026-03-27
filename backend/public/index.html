@@ -8,12 +8,17 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Agendamento de Descarga</h1>
+    <div>
+      <h1>Agendamento de Descarga</h1>
+      <small>Versão operacional completa base</small>
+    </div>
     <nav>
       <button data-view="login">Login</button>
       <button data-view="dashboard">Dashboard</button>
+      <button data-view="cadastros">Cadastros</button>
       <button data-view="agendamentos">Agendamentos</button>
       <button data-view="publico">Público</button>
+      <button data-view="checkin">Check-in QR</button>
     </nav>
   </header>
 
@@ -32,9 +37,48 @@
 
     <section id="dashboard" class="view">
       <div class="card">
-        <h2>Painel Operacional</h2>
-        <button id="loadDashboard">Atualizar dashboard</button>
+        <div class="row between">
+          <h2>Painel Operacional</h2>
+          <button id="loadDashboard">Atualizar</button>
+        </div>
         <div id="kpis" class="grid"></div>
+      </div>
+      <div class="card mt16">
+        <h3>Resumo de Agendamentos</h3>
+        <div id="dashboardTable"></div>
+      </div>
+    </section>
+
+    <section id="cadastros" class="view">
+      <div class="card">
+        <div class="row between">
+          <h2>Cadastros</h2>
+          <div class="tabs">
+            <button class="cad-tab" data-tipo="fornecedores">Fornecedores</button>
+            <button class="cad-tab" data-tipo="transportadoras">Transportadoras</button>
+            <button class="cad-tab" data-tipo="motoristas">Motoristas</button>
+            <button class="cad-tab" data-tipo="veiculos">Veículos</button>
+            <button class="cad-tab" data-tipo="docas">Docas</button>
+            <button class="cad-tab" data-tipo="janelas">Janelas</button>
+            <button class="cad-tab" data-tipo="regras">Regras</button>
+          </div>
+        </div>
+        <div class="grid2 mt16">
+          <div>
+            <h3>Lista</h3>
+            <div id="cadastroList"></div>
+          </div>
+          <div>
+            <h3>Novo / edição rápida</h3>
+            <p class="hint">Preencha em JSON simples.</p>
+            <textarea id="cadastroJson" rows="16">{"nome":"Novo Registro"}</textarea>
+            <div class="row gap8 mt12">
+              <button id="saveCadastro">Salvar</button>
+              <button id="loadCadastro">Atualizar lista</button>
+            </div>
+            <p id="cadastroMsg" class="msg"></p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -47,19 +91,41 @@
             <label>Transportadora<input name="transportadora" value="Transportadora Exemplo" /></label>
             <label>Motorista<input name="motorista" value="Motorista Exemplo" /></label>
             <label>Placa<input name="placa" value="ABC1D23" /></label>
+            <label>Doca<input name="doca" value="DOCA-01" /></label>
+            <label>Janela<input name="janela" value="08:00-09:00" /></label>
             <label>Data<input name="dataAgendada" type="date" /></label>
             <label>Hora<input name="horaAgendada" value="08:00" /></label>
             <label>Notas<input name="quantidadeNotas" type="number" value="1" /></label>
             <label>Volumes<input name="quantidadeVolumes" type="number" value="10" /></label>
             <label>Observações<textarea name="observacoes"></textarea></label>
-            <button type="submit">Salvar</button>
+            <button type="submit">Salvar agendamento</button>
           </form>
           <p id="agendamentoMsg" class="msg"></p>
         </div>
+
         <div class="card">
-          <h2>Lista</h2>
-          <button id="loadAgendamentos">Atualizar lista</button>
-          <div id="agendamentosList"></div>
+          <h2>Gestão operacional</h2>
+          <div class="row gap8">
+            <button id="loadAgendamentos">Atualizar lista</button>
+            <input id="agendamentoId" placeholder="ID do agendamento" />
+          </div>
+          <div class="row gap8 mt12 wrap">
+            <button id="btnAprovar">Aprovar</button>
+            <button id="btnReprovar">Reprovar</button>
+            <button id="btnReagendar">Reagendar</button>
+            <button id="btnCancelar">Cancelar</button>
+            <button id="btnIniciar">Iniciar descarga</button>
+            <button id="btnFinalizar">Finalizar</button>
+            <button id="btnNoShow">No-show</button>
+            <button id="btnVoucher">Voucher</button>
+            <button id="btnQr">QR Code</button>
+          </div>
+          <div class="mt16">
+            <label>Arquivo documento<input id="docFile" type="file" /></label>
+            <button id="btnUploadDoc">Enviar documento</button>
+          </div>
+          <p id="operacaoMsg" class="msg"></p>
+          <div id="agendamentosList" class="mt16"></div>
         </div>
       </div>
     </section>
@@ -67,26 +133,45 @@
     <section id="publico" class="view">
       <div class="grid2">
         <div class="card">
-          <h2>Solicitação Pública</h2>
+          <h2>Solicitação pública</h2>
           <form id="publicForm">
             <label>Fornecedor<input name="fornecedor" value="Fornecedor Externo" /></label>
             <label>Transportadora<input name="transportadora" value="Transportadora Externa" /></label>
             <label>Motorista<input name="motorista" value="Motorista Externo" /></label>
             <label>Placa<input name="placa" value="DEF4G56" /></label>
+            <label>Doca<input name="doca" value="DOCA-01" /></label>
+            <label>Janela<input name="janela" value="09:00-10:00" /></label>
             <label>Data<input name="dataAgendada" type="date" /></label>
             <label>Hora<input name="horaAgendada" value="09:00" /></label>
-            <button type="submit">Enviar</button>
+            <label>Notas<input name="quantidadeNotas" type="number" value="1" /></label>
+            <label>Volumes<input name="quantidadeVolumes" type="number" value="8" /></label>
+            <label>Observações<textarea name="observacoes"></textarea></label>
+            <button type="submit">Enviar solicitação</button>
           </form>
           <p id="publicMsg" class="msg"></p>
         </div>
+
         <div class="card">
-          <h2>Consulta por Protocolo</h2>
+          <h2>Consulta motorista por protocolo</h2>
           <form id="consultaForm">
             <label>Protocolo<input name="protocolo" placeholder="AGD-..." /></label>
             <button type="submit">Consultar</button>
           </form>
           <pre id="consultaResult"></pre>
         </div>
+      </div>
+    </section>
+
+    <section id="checkin" class="view">
+      <div class="card">
+        <h2>Validação de QR / Check-in</h2>
+        <p class="hint">Esse fluxo valida o token do QR Code do voucher. Você pode abrir o link do QR ou colar o token manualmente.</p>
+        <form id="checkinForm">
+          <label>Token do check-in<input name="token" placeholder="CHK-..." /></label>
+          <button type="submit">Validar check-in</button>
+        </form>
+        <p id="checkinMsg" class="msg"></p>
+        <pre id="checkinResult"></pre>
       </div>
     </section>
   </main>
