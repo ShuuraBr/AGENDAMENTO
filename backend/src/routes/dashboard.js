@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { authRequired } from "../middlewares/auth.js";
 import { prisma } from "../utils/prisma.js";
+import { docaPainel } from "../utils/operations.js";
 
 const router = Router();
 router.use(authRequired);
@@ -16,16 +17,16 @@ router.get("/operacional", async (req, res) => {
     ...(q.dataAgendada ? { dataAgendada: String(q.dataAgendada) } : {})
   };
 
-  const [agendamentos, docs] = await Promise.all([
+  const [agendamentos, docs, all, painelDocas] = await Promise.all([
     prisma.agendamento.findMany({
       where,
-      include: { notasFiscais: true, documentos: true },
+      include: { notasFiscais: true, documentos: true, doca: true, janela: true },
       orderBy: { id: "desc" }
     }),
-    prisma.documento.count()
+    prisma.documento.count(),
+    prisma.agendamento.findMany(),
+    docaPainel(q.dataAgendada || null)
   ]);
-
-  const all = await prisma.agendamento.findMany();
 
   const kpis = {
     total: all.length,
@@ -39,7 +40,11 @@ router.get("/operacional", async (req, res) => {
     documentos: docs
   };
 
-  res.json({ kpis, agendamentos });
+  res.json({ kpis, agendamentos, painelDocas });
+});
+
+router.get("/docas", async (req, res) => {
+  res.json(await docaPainel(req.query?.dataAgendada || null));
 });
 
 export default router;

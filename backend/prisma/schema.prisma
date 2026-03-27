@@ -15,17 +15,7 @@ model Usuario {
   perfil    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  twoFactorCodes TwoFactorCode[]
-}
-
-model TwoFactorCode {
-  id        Int      @id @default(autoincrement())
-  usuarioId Int
-  code      String
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdAt DateTime @default(now())
-  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  logs      LogAuditoria[]
 }
 
 model Fornecedor {
@@ -60,7 +50,7 @@ model Motorista {
 
 model Veiculo {
   id             Int      @id @default(autoincrement())
-  placa          String
+  placa          String   @unique
   tipo           String?
   transportadora String?
   createdAt      DateTime @default(now())
@@ -68,19 +58,21 @@ model Veiculo {
 }
 
 model Doca {
-  id        Int      @id @default(autoincrement())
-  codigo    String
-  descricao String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           Int          @id @default(autoincrement())
+  codigo       String       @unique
+  descricao    String?
+  agendamentos Agendamento[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 }
 
 model Janela {
-  id        Int      @id @default(autoincrement())
-  codigo    String
-  descricao String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           Int          @id @default(autoincrement())
+  codigo       String       @unique
+  descricao    String?
+  agendamentos Agendamento[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 }
 
 model Regra {
@@ -105,8 +97,8 @@ model Agendamento {
   emailMotorista       String?
   emailTransportadora  String?
   placa                String
-  doca                 String?
-  janela               String?
+  docaId               Int
+  janelaId             Int
   dataAgendada         String
   horaAgendada         String
   quantidadeNotas      Int         @default(0)
@@ -123,6 +115,8 @@ model Agendamento {
   updatedAt            DateTime    @updatedAt
   notasFiscais         NotaFiscal[]
   documentos           Documento[]
+  doca                 Doca        @relation(fields: [docaId], references: [id])
+  janela               Janela      @relation(fields: [janelaId], references: [id])
 }
 
 model NotaFiscal {
@@ -147,4 +141,17 @@ model Documento {
   urlArquivo    String
   createdAt     DateTime    @default(now())
   agendamento   Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
+}
+
+model LogAuditoria {
+  id         Int       @id @default(autoincrement())
+  usuarioId  Int?
+  perfil     String?
+  acao       String
+  entidade   String
+  entidadeId Int?
+  detalhes   String?   @db.LongText
+  ip         String?
+  createdAt  DateTime  @default(now())
+  usuario    Usuario?  @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 }

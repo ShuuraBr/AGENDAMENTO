@@ -2,6 +2,8 @@ import { Router } from "express";
 import { authRequired, requireProfiles } from "../middlewares/auth.js";
 import { prisma } from "../utils/prisma.js";
 import { validateProfile } from "../utils/validators.js";
+import bcrypt from "bcryptjs";
+import { auditLog } from "../utils/audit.js";
 
 const router = Router();
 router.use(authRequired);
@@ -29,8 +31,26 @@ router.post("/:tipo", requireProfiles("ADMIN", "GESTOR"), async (req, res) => {
   try {
     const m = model(req.params.tipo);
     if (!m) return res.status(400).json({ message: "Tipo inválido." });
-    if (req.params.tipo === "usuarios") validateProfile(req.body?.perfil);
-    res.status(201).json(await prisma[m].create({ data: req.body }));
+
+    const data = { ...req.body };
+    if (req.params.tipo === "usuarios") {
+      validateProfile(data?.perfil);
+      if (!data.email || !data.nome || !data.senha) throw new Error("Usuário exige nome, e-mail, senha e perfil.");
+      data.senhaHash = await bcrypt.hash(String(data.senha), 10);
+      delete data.senha;
+    }
+
+    const item = await prisma[m].create({ data });
+    await auditLog({
+      usuarioId: req.user.sub,
+      perfil: req.user.perfil,
+      acao: "CREATE",
+      entidade: req.params.tipo.toUpperCase(),
+      entidadeId: item.id,
+      detalhes: data,
+      ip: req.ip
+    });
+    res.status(201).json(item);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -40,8 +60,25 @@ router.put("/:tipo/:id", requireProfiles("ADMIN", "GESTOR"), async (req, res) =>
   try {
     const m = model(req.params.tipo);
     if (!m) return res.status(400).json({ message: "Tipo inválido." });
-    if (req.params.tipo === "usuarios" && req.body?.perfil) validateProfile(req.body.perfil);
-    res.json(await prisma[m].update({ where: { id: Number(req.params.id) }, data: req.body }));
+
+    const data = { ...req.body };
+    if (req.params.tipo === "usuarios" && data?.perfil) validateProfile(data.perfil);
+    if (req.params.tipo === "usuarios" && data?.senha) {
+      data.senhaHash = await bcrypt.hash(String(data.senha), 10);
+      delete data.senha;
+    }
+
+    const item = await prisma[m].update({ where: { id: Number(req.params.id) }, data });
+    await auditLog({
+      usuarioId: req.user.sub,
+      perfil: req.user.perfil,
+      acao: "UPDATE",
+      entidade: req.params.tipo.toUpperCase(),
+      entidadeId: item.id,
+      detalhes: data,
+      ip: req.ip
+    });
+    res.json(item);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }

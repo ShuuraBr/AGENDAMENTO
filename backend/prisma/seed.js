@@ -12,6 +12,22 @@ async function ensureUser(email, nome, perfil) {
   });
 }
 
+async function ensureDoca(codigo, descricao) {
+  return prisma.doca.upsert({
+    where: { codigo },
+    update: {},
+    create: { codigo, descricao }
+  });
+}
+
+async function ensureJanela(codigo, descricao) {
+  return prisma.janela.upsert({
+    where: { codigo },
+    update: {},
+    create: { codigo, descricao }
+  });
+}
+
 async function main() {
   await ensureUser("admin@local.test", "Administrador", "ADMIN");
   await ensureUser("operador@local.test", "Operador", "OPERADOR");
@@ -36,8 +52,11 @@ async function main() {
   await prisma.veiculo.create({
     data: { placa: "ABC1D23", tipo: "Truck", transportadora: "Transportadora Exemplo" }
   }).catch(() => {});
-  await prisma.doca.create({ data: { codigo: "DOCA-01", descricao: "Doca principal" } }).catch(() => {});
-  await prisma.janela.create({ data: { codigo: "08:00-09:00", descricao: "Janela manhã 1" } }).catch(() => {});
+
+  const doca1 = await ensureDoca("DOCA-01", "Doca principal");
+  const doca2 = await ensureDoca("DOCA-02", "Doca secundária");
+  const janela1 = await ensureJanela("08:00-09:00", "Janela manhã 1");
+  const janela2 = await ensureJanela("09:00-10:00", "Janela manhã 2");
   await prisma.regra.create({ data: { nome: "Padrão", toleranciaAtrasoMin: 15, tempoDescargaPrevistoMin: 60 } }).catch(() => {});
 
   const ag = await prisma.agendamento.create({
@@ -53,8 +72,8 @@ async function main() {
       emailMotorista: "motorista@test.com",
       emailTransportadora: "transportadora@test.com",
       placa: "ABC1D23",
-      doca: "DOCA-01",
-      janela: "08:00-09:00",
+      docaId: doca1.id,
+      janelaId: janela1.id,
       dataAgendada: "2026-03-27",
       horaAgendada: "08:00",
       quantidadeNotas: 2,
@@ -64,6 +83,29 @@ async function main() {
       lgpdConsentAt: new Date()
     }
   }).catch(async () => prisma.agendamento.findUnique({ where: { protocolo: "AGD-EXEMPLO-1" } }));
+
+  await prisma.agendamento.create({
+    data: {
+      protocolo: "AGD-EXEMPLO-2",
+      publicTokenMotorista: "MOT-EXEMPLO-2",
+      publicTokenFornecedor: "FOR-EXEMPLO-2",
+      checkinToken: "CHK-EXEMPLO-2",
+      fornecedor: "Fornecedor Exemplo LTDA",
+      transportadora: "Transportadora Exemplo",
+      motorista: "Motorista Exemplo 2",
+      telefoneMotorista: "61988888888",
+      placa: "ZZZ9X99",
+      docaId: doca2.id,
+      janelaId: janela2.id,
+      dataAgendada: "2026-03-27",
+      horaAgendada: "09:00",
+      quantidadeNotas: 1,
+      quantidadeVolumes: 5,
+      status: "CHEGOU",
+      observacoes: "Na fila da doca",
+      lgpdConsentAt: new Date()
+    }
+  }).catch(() => {});
 
   if (ag) {
     await prisma.notaFiscal.create({

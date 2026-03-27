@@ -8,6 +8,8 @@ import { generateProtocol, generatePublicToken } from "../utils/security.js";
 import { qrSvg } from "../utils/qrcode.js";
 import { sendMail } from "../utils/email.js";
 import { validateAgendamentoPayload, validateNf, validateStatusTransition } from "../utils/validators.js";
+import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js";
+import { auditLog } from "../utils/audit.js";
 
 const router = Router();
 router.use(authRequired);
@@ -23,7 +25,7 @@ const upload = multer({ storage });
 async function full(id) {
   return prisma.agendamento.findUnique({
     where: { id: Number(id) },
-    include: { notasFiscais: true, documentos: true }
+    include: { notasFiscais: true, documentos: true, doca: true, janela: true }
   });
 }
 
@@ -41,23 +43,30 @@ router.get("/", async (req, res) => {
     ...(q.placa ? { placa: { contains: String(q.placa) } } : {}),
     ...(q.dataAgendada ? { dataAgendada: String(q.dataAgendada) } : {})
   };
-  res.json(await prisma.agendamento.findMany({
+  const items = await prisma.agendamento.findMany({
     where,
-    include: { notasFiscais: true, documentos: true },
+    include: { notasFiscais: true, documentos: true, doca: true, janela: true },
     orderBy: { id: "desc" }
-  }));
+  });
+  res.json(items.map(i => ({ ...i, semaforo: trafficColor(i.status) })));
 });
 
 router.get("/:id", async (req, res) => {
   const item = await full(req.params.id);
   if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
-  res.json(item);
+  res.json({ ...item, semaforo: trafficColor(item.status) });
 });
 
 router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
   try {
     const payload = req.body || {};
     validateAgendamentoPayload(payload, false);
+    await assertJanelaDocaDisponivel({
+      docaId: payload.docaId,
+      janelaId: payload.janelaId,
+      dataAgendada: payload.dataAgendada
+    });
+
     const item = await prisma.agendamento.create({
       data: {
         protocolo: generateProtocol(),
@@ -71,8 +80,8 @@ router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res
         emailMotorista: payload.emailMotorista || "",
         emailTransportadora: payload.emailTransportadora || "",
         placa: payload.placa,
-        doca: payload.doca || "",
-        janela: payload.janela || "",
+        docaId: Number(payload.docaId),
+        janelaId: Number(payload.janelaId),
         dataAgendada: payload.dataAgendada,
         horaAgendada: payload.horaAgendada,
         quantidadeNotas: Number(payload.quantidadeNotas || 0),
@@ -81,65 +90,113 @@ router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res
         observacoes: payload.observacoes || ""
       }
     });
+
+    await auditLog({
+      usuarioId: req.user.sub,
+      perfil: req.user.perfil,
+      acao: "CREATE",
+      entidade: "AGENDAMENTO",
+      entidadeId: item.id,
+      detalhes: payload,
+      ip: req.ip
+    });
+
     res.status(201).json(item);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
 });
 
-async function transition(id, target, data = {}) {
+async function transition(id, target, data = {}, req) {
   const found = await mustExist(id);
   if (!found) throw new Error("Agendamento não encontrado.");
   validateStatusTransition(found.status, target);
-  return prisma.agendamento.update({ where: { id: Number(id) }, data: { ...data, status: target } });
+  const updated = await prisma.agendamento.update({ where: { id: Number(id) }, data: { ...data, status: target } });
+  await auditLog({
+    usuarioId: req.user.sub,
+    perfil: req.user.perfil,
+    acao: target,
+    entidade: "AGENDAMENTO",
+    entidadeId: updated.id,
+    detalhes: data,
+    ip: req.ip
+  });
+  return updated;
 }
 
 router.post("/:id/aprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
-  try { res.json(await transition(req.params.id, "APROVADO")); } catch (err) { res.status(400).json({ message: err.message }); }
+  try { res.json(await transition(req.params.id, "APROVADO", {}, req)); } catch (err) { res.status(400).json({ message: err.message }); }
 });
 router.post("/:id/reprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
-  try { res.json(await transition(req.params.id, "REPROVADO", { motivoReprovacao: req.body?.motivo || "Reprovado" })); } catch (err) { res.status(400).json({ message: err.message }); }
+  try { res.json(await transition(req.params.id, "REPROVADO", { motivoReprovacao: req.body?.motivo || "Reprovado" }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
 });
 router.post("/:id/reagendar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
     if (["FINALIZADO", "CANCELADO"].includes(found.status)) throw new Error("Não é possível reagendar esse status.");
-    validateAgendamentoPayload({ ...found, ...req.body }, false);
-    res.json(await prisma.agendamento.update({
+
+    const merged = {
+      ...found,
+      dataAgendada: req.body?.dataAgendada || found.dataAgendada,
+      horaAgendada: req.body?.horaAgendada || found.horaAgendada,
+      docaId: req.body?.docaId || found.docaId,
+      janelaId: req.body?.janelaId || found.janelaId
+    };
+    validateAgendamentoPayload(merged, false);
+    await assertJanelaDocaDisponivel({
+      docaId: merged.docaId,
+      janelaId: merged.janelaId,
+      dataAgendada: merged.dataAgendada,
+      ignoreAgendamentoId: found.id
+    });
+
+    const item = await prisma.agendamento.update({
       where: { id: Number(req.params.id) },
       data: {
-        dataAgendada: req.body?.dataAgendada || found.dataAgendada,
-        horaAgendada: req.body?.horaAgendada || found.horaAgendada,
-        doca: req.body?.doca || found.doca,
-        janela: req.body?.janela || found.janela,
+        dataAgendada: merged.dataAgendada,
+        horaAgendada: merged.horaAgendada,
+        docaId: Number(merged.docaId),
+        janelaId: Number(merged.janelaId),
         status: "PENDENTE_APROVACAO"
       }
-    }));
-  } catch (err) {
-    res.status(400).json({ message: err.message });
-  }
+    });
+    await auditLog({
+      usuarioId: req.user.sub,
+      perfil: req.user.perfil,
+      acao: "REAGENDAR",
+      entidade: "AGENDAMENTO",
+      entidadeId: item.id,
+      detalhes: req.body,
+      ip: req.ip
+    });
+    res.json(item);
+  } catch (err) { res.status(400).json({ message: err.message }); }
 });
 router.post("/:id/cancelar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
     if (["FINALIZADO", "CANCELADO"].includes(found.status)) throw new Error("Não é possível cancelar esse status.");
-    res.json(await prisma.agendamento.update({ where: { id: Number(req.params.id) }, data: { status: "CANCELADO", motivoCancelamento: req.body?.motivo || "Cancelado" } }));
+    const item = await prisma.agendamento.update({ where: { id: Number(req.params.id) }, data: { status: "CANCELADO", motivoCancelamento: req.body?.motivo || "Cancelado" } });
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CANCELAR", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: req.body, ip: req.ip });
+    res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 router.post("/:id/iniciar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
-  try { res.json(await transition(req.params.id, "EM_DESCARGA", { inicioDescargaEm: new Date() })); } catch (err) { res.status(400).json({ message: err.message }); }
+  try { res.json(await transition(req.params.id, "EM_DESCARGA", { inicioDescargaEm: new Date() }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
 });
 router.post("/:id/finalizar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
-  try { res.json(await transition(req.params.id, "FINALIZADO", { fimDescargaEm: new Date() })); } catch (err) { res.status(400).json({ message: err.message }); }
+  try { res.json(await transition(req.params.id, "FINALIZADO", { fimDescargaEm: new Date() }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
 });
 router.post("/:id/no-show", requireProfiles("ADMIN", "OPERADOR", "GESTOR", "PORTARIA"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
     if (!["PENDENTE_APROVACAO", "APROVADO"].includes(found.status)) throw new Error("No-show só pode ser aplicado antes da descarga.");
-    res.json(await prisma.agendamento.update({ where: { id: Number(req.params.id) }, data: { status: "NO_SHOW" } }));
+    const item = await prisma.agendamento.update({ where: { id: Number(req.params.id) }, data: { status: "NO_SHOW" } });
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "NO_SHOW", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: null, ip: req.ip });
+    res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
@@ -148,14 +205,16 @@ router.post("/:id/documentos", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), u
     const ag = await mustExist(req.params.id);
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
     if (!req.file) return res.status(400).json({ message: "Arquivo não enviado." });
-    res.status(201).json(await prisma.documento.create({
+    const item = await prisma.documento.create({
       data: {
         agendamentoId: ag.id,
         tipoDocumento: req.body?.tipoDocumento || "ANEXO",
         nomeArquivo: req.file.originalname,
         urlArquivo: req.file.path.replace(/\\/g, "/")
       }
-    }));
+    });
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "UPLOAD_DOCUMENTO", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: { nomeArquivo: req.file.originalname }, ip: req.ip });
+    res.status(201).json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
@@ -164,7 +223,7 @@ router.post("/:id/notas", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async 
     const ag = await mustExist(req.params.id);
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
     validateNf(req.body || {});
-    res.status(201).json(await prisma.notaFiscal.create({
+    const item = await prisma.notaFiscal.create({
       data: {
         agendamentoId: ag.id,
         numeroNf: req.body?.numeroNf || "",
@@ -175,7 +234,9 @@ router.post("/:id/notas", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async 
         valorNf: Number(req.body?.valorNf || 0),
         observacao: req.body?.observacao || ""
       }
-    }));
+    });
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "ADD_NF", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: req.body, ip: req.ip });
+    res.status(201).json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
@@ -202,6 +263,8 @@ router.post("/:id/enviar-informacoes", requireProfiles("ADMIN", "OPERADOR", "GES
       });
       out.push({ to, ...sent });
     }
+
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "ENVIAR_INFORMACOES", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: { targets }, ip: req.ip });
     res.json({ ok: true, results: out, linkMotorista, linkFornecedor, voucher });
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
@@ -235,8 +298,8 @@ router.get("/:id/voucher", async (req, res) => {
   <div><strong>Placa:</strong> ${item.placa || "-"}</div>
   <div><strong>Data:</strong> ${item.dataAgendada}</div>
   <div><strong>Hora:</strong> ${item.horaAgendada}</div>
-  <div><strong>Doca:</strong> ${item.doca || "-"}</div>
-  <div><strong>Janela:</strong> ${item.janela || "-"}</div>
+  <div><strong>Doca:</strong> ${item.doca?.codigo || "-"}</div>
+  <div><strong>Janela:</strong> ${item.janela?.codigo || "-"}</div>
   </div>
   <h3>Notas fiscais</h3>
   <table class="table"><thead><tr><th>Número</th><th>Série</th><th>Chave</th><th>Volumes</th></tr></thead><tbody>${notas || "<tr><td colspan='4'>Sem notas</td></tr>"}</tbody></table>

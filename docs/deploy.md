@@ -10,6 +10,7 @@
 PORT=3000
 FRONTEND_URL=https://agendamento.objetivaatacadista.com.br
 JWT_SECRET=troque_essa_chave_forte
+JWT_EXPIRES_IN=8h
 DATABASE_URL=mysql://usuario:senha@host:3306/banco
 
 SMTP_HOST=smtp.hostinger.com

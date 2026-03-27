@@ -1,16 +1,16 @@
-# Agendamento de Descarga V2.1
+# Agendamento de Descarga V3 Operacional
 
-Pacote com:
+Versão operacional com:
+- login direto (sem 2FA)
+- RBAC por perfil
+- logs de auditoria
+- controle de janelas
+- bloqueio de conflito de doca
+- fila de caminhões
+- ocupação por doca em tempo real
+- alertas visuais verde/amarelo/vermelho
+- filtros operacionais
+- portal do motorista
+- portal da transportadora/fornecedor
+- QR Code de check-in e leitura por câmera
 - Prisma + MySQL
-- área pública separada para fornecedor/transportadora e motorista
-- área interna protegida com login + 2FA
-- validações de negócio mais rígidas
-- filtros de agendamento
-- envio de informações por e-mail
-- voucher com QR Code de check-in
-- leitura de QR via câmera
-- UX refinada com logo institucional
-
-## Hostinger
-- Root directory: backend
-- Entry file: src/server.js

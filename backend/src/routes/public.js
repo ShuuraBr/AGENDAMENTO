@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../utils/prisma.js";
 import { generateProtocol, generatePublicToken } from "../utils/security.js";
 import { validateAgendamentoPayload, validateNf } from "../utils/validators.js";
+import { assertJanelaDocaDisponivel } from "../utils/operations.js";
 
 const router = Router();
 
@@ -9,6 +10,11 @@ router.post("/solicitacao", async (req, res) => {
   try {
     const p = req.body || {};
     validateAgendamentoPayload(p, true);
+    await assertJanelaDocaDisponivel({
+      docaId: p.docaId,
+      janelaId: p.janelaId,
+      dataAgendada: p.dataAgendada
+    });
 
     const ag = await prisma.agendamento.create({
       data: {
@@ -23,8 +29,8 @@ router.post("/solicitacao", async (req, res) => {
         emailMotorista: p.emailMotorista || "",
         emailTransportadora: p.emailTransportadora || "",
         placa: p.placa,
-        doca: p.doca || "",
-        janela: p.janela || "",
+        docaId: Number(p.docaId),
+        janelaId: Number(p.janelaId),
         dataAgendada: p.dataAgendada,
         horaAgendada: p.horaAgendada,
         quantidadeNotas: Number(p.quantidadeNotas || 0),
@@ -67,7 +73,7 @@ router.post("/solicitacao", async (req, res) => {
 router.get("/motorista/:token", async (req, res) => {
   const item = await prisma.agendamento.findUnique({
     where: { publicTokenMotorista: req.params.token },
-    include: { notasFiscais: true }
+    include: { doca: true, janela: true, notasFiscais: true }
   });
   if (!item) return res.status(404).json({ message: "Token inválido." });
   res.json({
@@ -78,14 +84,16 @@ router.get("/motorista/:token", async (req, res) => {
     dataAgendada: item.dataAgendada,
     horaAgendada: item.horaAgendada,
     status: item.status,
-    transportadora: item.transportadora
+    transportadora: item.transportadora,
+    doca: item.doca?.codigo || null,
+    janela: item.janela?.codigo || null
   });
 });
 
 router.get("/fornecedor/:token", async (req, res) => {
   const item = await prisma.agendamento.findUnique({
     where: { publicTokenFornecedor: req.params.token },
-    include: { notasFiscais: true }
+    include: { notasFiscais: true, doca: true, janela: true }
   });
   if (!item) return res.status(404).json({ message: "Token inválido." });
   res.json(item);

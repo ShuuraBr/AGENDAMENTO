@@ -3,267 +3,40 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agendamento de Descarga V2.1</title>
+  <title>Agendamento de Descarga V3</title>
   <link rel="stylesheet" href="/assets/styles.css" />
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">
-      <div>
-        <h1>Agendamento de Descarga</h1>
-        <small>V2.1 • validações endurecidas • 2FA • QR • filtros • envio</small>
+    <div class="header-main">
+      <div class="brand-block">
+        <div class="brand-text">
+          <h1>Agendamento de Descarga</h1>
+          <small>V3 operacional • sem 2FA • RBAC • fila • docas • auditoria</small>
+        </div>
+        <div class="brand-logo">
+          <img src="/assets/logo-objetiva.png" alt="Logo Objetiva" class="logo" />
+        </div>
       </div>
-      <img src="/assets/logo-objetiva.png" alt="Logo Objetiva" class="logo" />
+
+      <div class="nav-block">
+        <nav id="publicNav" class="nav-menu">
+          <button data-view="public-home">Início</button>
+          <button data-view="fornecedor">Fornecedor/Transportadora</button>
+          <button data-view="motorista">Motorista</button>
+          <button data-view="checkin">Check-in QR</button>
+          <button data-view="login">Área do Colaborador</button>
+        </nav>
+
+        <nav id="privateNav" class="nav-menu hidden">
+          <button data-view="dashboard">Dashboard</button>
+          <button data-view="docas">Painel de Docas</button>
+          <button data-view="cadastros">Cadastros</button>
+          <button data-view="agendamentos">Agendamentos</button>
+          <button id="btnLogout">Sair</button>
+        </nav>
+      </div>
     </div>
-    <nav id="publicNav">
-      <button data-view="public-home">Início</button>
-      <button data-view="fornecedor">Fornecedor/Transportadora</button>
-      <button data-view="motorista">Motorista</button>
-      <button data-view="checkin">Check-in QR</button>
-      <button data-view="login">Área do Colaborador</button>
-    </nav>
-    <nav id="privateNav" class="hidden">
-      <button data-view="dashboard">Dashboard</button>
-      <button data-view="cadastros">Cadastros</button>
-      <button data-view="agendamentos">Agendamentos</button>
-      <button id="btnLogout">Sair</button>
-    </nav>
   </header>
-
-  <main class="container">
-    <section id="public-home" class="view active">
-      <div class="card">
-        <h2>Portais disponíveis</h2>
-        <p>Acesso segregado para público e colaborador, com proteção para dados sensíveis e fluxo de recebimento operacional.</p>
-        <ul>
-          <li>Transportadora/fornecedor: informa a entrega e as notas fiscais</li>
-          <li>Motorista: consulta os dados e recebe instruções</li>
-          <li>Colaborador: acessa a área interna com login e 2FA</li>
-        </ul>
-      </div>
-    </section>
-
-    <section id="login" class="view">
-      <div class="card narrow">
-        <h2>Login do colaborador</h2>
-        <form id="loginInitForm">
-          <label>Email<input name="email" value="admin@local.test" /></label>
-          <label>Senha<input name="senha" type="password" value="123456" /></label>
-          <button type="submit">Enviar código</button>
-        </form>
-        <p id="loginInitMsg" class="msg"></p>
-
-        <form id="loginVerifyForm" class="mt16">
-          <label>E-mail<input name="email" value="admin@local.test" /></label>
-          <label>Código 2FA<input name="code" placeholder="000000" /></label>
-          <button type="submit">Validar e entrar</button>
-        </form>
-        <p id="loginVerifyMsg" class="msg"></p>
-      </div>
-    </section>
-
-    <section id="fornecedor" class="view">
-      <div class="card">
-        <h2>Portal da transportadora / fornecedor</h2>
-        <form id="fornecedorForm">
-          <div class="grid2">
-            <div>
-              <label>Fornecedor<input name="fornecedor" value="Fornecedor Externo" /></label>
-              <label>Transportadora<input name="transportadora" value="Transportadora Externa" /></label>
-              <label>Motorista<input name="motorista" value="Motorista Externo" /></label>
-              <label>Telefone do motorista<input name="telefoneMotorista" value="61999998888" /></label>
-              <label>E-mail do motorista<input name="emailMotorista" value="motorista@teste.com" /></label>
-              <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@teste.com" /></label>
-              <label>Placa<input name="placa" value="DEF4G56" /></label>
-            </div>
-            <div>
-              <label>Doca<input name="doca" value="DOCA-01" /></label>
-              <label>Janela<input name="janela" value="09:00-10:00" /></label>
-              <label>Data<input name="dataAgendada" type="date" /></label>
-              <label>Hora<input name="horaAgendada" value="09:00" /></label>
-              <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" /></label>
-              <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="8" /></label>
-              <label>Observações<textarea name="observacoes"></textarea></label>
-              <label class="check">
-                <input name="lgpdConsent" type="checkbox" />
-                <span>Declaro ciência e consentimento para tratamento dos dados necessários ao agendamento, conforme LGPD.</span>
-              </label>
-            </div>
-          </div>
-          <div class="card inner">
-            <h3>Notas fiscais que chegarão</h3>
-            <div id="nfList"></div>
-            <button type="button" id="addNf">Adicionar NF</button>
-          </div>
-          <button type="submit">Enviar solicitação</button>
-        </form>
-        <p id="fornecedorMsg" class="msg"></p>
-      </div>
-    </section>
-
-    <section id="motorista" class="view">
-      <div class="card">
-        <h2>Portal do motorista</h2>
-        <form id="motoristaConsultaForm">
-          <label>Token do motorista<input name="token" placeholder="MOT-..." /></label>
-          <button type="submit">Consultar</button>
-        </form>
-        <pre id="motoristaResult"></pre>
-      </div>
-    </section>
-
-    <section id="checkin" class="view">
-      <div class="card">
-        <h2>Check-in por QR Code</h2>
-        <p class="hint">Permita o acesso à câmera. Em navegadores compatíveis, a leitura ocorre automaticamente.</p>
-        <div class="grid2">
-          <div>
-            <video id="qrVideo" autoplay muted playsinline class="video"></video>
-            <div class="row gap8 mt12">
-              <button id="startCamera" type="button">Ativar câmera</button>
-              <button id="stopCamera" type="button">Parar câmera</button>
-            </div>
-          </div>
-          <div>
-            <form id="checkinForm">
-              <label>Token do check-in<input name="token" placeholder="CHK-..." /></label>
-              <button type="submit">Validar check-in</button>
-            </form>
-            <p id="checkinMsg" class="msg"></p>
-            <pre id="checkinResult"></pre>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="dashboard" class="view">
-      <div class="card">
-        <div class="row between">
-          <h2>Painel operacional interno</h2>
-          <button id="loadDashboard">Atualizar</button>
-        </div>
-        <div id="kpis" class="grid"></div>
-      </div>
-
-      <div class="card mt16">
-        <h3>Filtros</h3>
-        <div class="filters">
-          <input id="fStatus" placeholder="Status" />
-          <input id="fFornecedor" placeholder="Fornecedor" />
-          <input id="fTransportadora" placeholder="Transportadora" />
-          <input id="fMotorista" placeholder="Motorista" />
-          <input id="fPlaca" placeholder="Placa" />
-          <input id="fData" type="date" />
-          <button id="applyFilters">Aplicar filtros</button>
-          <button id="clearFilters">Limpar</button>
-        </div>
-      </div>
-
-      <div class="card mt16">
-        <h3>Agendamentos</h3>
-        <div id="dashboardTable"></div>
-      </div>
-    </section>
-
-    <section id="cadastros" class="view">
-      <div class="card">
-        <div class="row between">
-          <h2>Cadastros internos</h2>
-          <div class="tabs">
-            <button class="cad-tab" data-tipo="fornecedores">Fornecedores</button>
-            <button class="cad-tab" data-tipo="transportadoras">Transportadoras</button>
-            <button class="cad-tab" data-tipo="motoristas">Motoristas</button>
-            <button class="cad-tab" data-tipo="veiculos">Veículos</button>
-            <button class="cad-tab" data-tipo="docas">Docas</button>
-            <button class="cad-tab" data-tipo="janelas">Janelas</button>
-            <button class="cad-tab" data-tipo="regras">Regras</button>
-            <button class="cad-tab" data-tipo="usuarios">Usuários</button>
-          </div>
-        </div>
-        <div class="grid2 mt16">
-          <div id="cadastroList"></div>
-          <div>
-            <textarea id="cadastroJson" rows="16">{"nome":"Novo Registro"}</textarea>
-            <div class="row gap8 mt12">
-              <button id="saveCadastro">Salvar</button>
-              <button id="loadCadastro">Atualizar</button>
-            </div>
-            <p id="cadastroMsg" class="msg"></p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="agendamentos" class="view">
-      <div class="grid2">
-        <div class="card">
-          <h2>Novo agendamento interno</h2>
-          <form id="agendamentoForm">
-            <label>Fornecedor<input name="fornecedor" value="Fornecedor Exemplo LTDA" /></label>
-            <label>Transportadora<input name="transportadora" value="Transportadora Exemplo" /></label>
-            <label>Motorista<input name="motorista" value="Motorista Exemplo" /></label>
-            <label>Telefone do motorista<input name="telefoneMotorista" value="61999999999" /></label>
-            <label>E-mail do motorista<input name="emailMotorista" value="motorista@test.com" /></label>
-            <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@test.com" /></label>
-            <label>Placa<input name="placa" value="ABC1D23" /></label>
-            <label>Doca<input name="doca" value="DOCA-01" /></label>
-            <label>Janela<input name="janela" value="08:00-09:00" /></label>
-            <label>Data<input name="dataAgendada" type="date" /></label>
-            <label>Hora<input name="horaAgendada" value="08:00" /></label>
-            <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" /></label>
-            <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="10" /></label>
-            <label>Observações<textarea name="observacoes"></textarea></label>
-            <button type="submit">Salvar agendamento</button>
-          </form>
-          <p id="agendamentoMsg" class="msg"></p>
-        </div>
-
-        <div class="card">
-          <h2>Workflow operacional</h2>
-          <div class="row gap8">
-            <button id="loadAgendamentos">Atualizar lista</button>
-            <input id="agendamentoId" placeholder="ID do agendamento" />
-          </div>
-          <div class="row gap8 wrap mt12">
-            <button id="btnAprovar">Aprovar</button>
-            <button id="btnReprovar">Reprovar</button>
-            <button id="btnReagendar">Reagendar</button>
-            <button id="btnCancelar">Cancelar</button>
-            <button id="btnIniciar">Iniciar descarga</button>
-            <button id="btnFinalizar">Finalizar</button>
-            <button id="btnNoShow">No-show</button>
-            <button id="btnVoucher">Voucher</button>
-            <button id="btnQr">QR Code</button>
-            <button id="btnEnviarInfos">Enviar informações</button>
-          </div>
-
-          <div class="card inner mt16">
-            <h3>Anexar documento</h3>
-            <label>Arquivo<input id="docFile" type="file" /></label>
-            <button id="btnUploadDoc">Enviar documento</button>
-          </div>
-
-          <div class="card inner mt16">
-            <h3>Adicionar NF</h3>
-            <form id="notaForm">
-              <label>Número NF<input name="numeroNf" /></label>
-              <label>Série<input name="serie" /></label>
-              <label>Chave de acesso<input name="chaveAcesso" /></label>
-              <label>Volumes<input name="volumes" type="number" value="0" /></label>
-              <label>Peso<input name="peso" type="number" value="0" /></label>
-              <label>Valor NF<input name="valorNf" type="number" value="0" /></label>
-              <label>Observação<textarea name="observacao"></textarea></label>
-              <button type="submit">Salvar NF</button>
-            </form>
-          </div>
-
-          <p id="operacaoMsg" class="msg"></p>
-          <div id="agendamentosList" class="mt16"></div>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <script src="/assets/app.js"></script>
 </body>
 </html>

@@ -13,11 +13,7 @@ function showView(id) {
 }
 
 function parseJwt(token) {
-  try {
-    return JSON.parse(atob(token.split(".")[1]));
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(atob(token.split(".")[1])); } catch { return null; }
 }
 
 function updateNav() {
@@ -26,9 +22,7 @@ function updateNav() {
   document.getElementById("privateNav").classList.toggle("hidden", !logged);
 }
 
-document.querySelectorAll("[data-view]").forEach(btn => {
-  btn.addEventListener("click", () => showView(btn.dataset.view));
-});
+document.querySelectorAll("[data-view]").forEach(btn => btn.addEventListener("click", () => showView(btn.dataset.view)));
 document.getElementById("btnLogout")?.addEventListener("click", () => {
   localStorage.removeItem("token");
   state.token = "";
@@ -94,6 +88,19 @@ function currentFilters() {
   };
 }
 
+async function fillSelects() {
+  try {
+    const [docas, janelas] = await Promise.all([
+      api("/api/cadastros/docas"),
+      api("/api/cadastros/janelas")
+    ]);
+    const docaOptions = docas.map(d => `<option value="${d.id}">${d.codigo}</option>`).join("");
+    const janelaOptions = janelas.map(j => `<option value="${j.id}">${j.codigo}</option>`).join("");
+    ["publicDocaSelect","internalDocaSelect"].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = docaOptions; });
+    ["publicJanelaSelect","internalJanelaSelect"].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = janelaOptions; });
+  } catch {}
+}
+
 async function loadDashboard() {
   const params = new URLSearchParams();
   Object.entries(currentFilters()).forEach(([k,v]) => { if (v) params.set(k, v); });
@@ -108,9 +115,41 @@ async function loadDashboard() {
   });
   document.getElementById("dashboardTable").innerHTML = tableFromObjects(data.agendamentos.map(a => ({
     id: a.id, protocolo: a.protocolo, status: a.status, fornecedor: a.fornecedor,
-    transportadora: a.transportadora, motorista: a.motorista, placa: a.placa, data: a.dataAgendada,
-    hora: a.horaAgendada, notas: a.notasFiscais?.length || 0, docs: a.documentos?.length || 0
+    transportadora: a.transportadora, motorista: a.motorista, placa: a.placa,
+    doca: a.doca?.codigo || "", janela: a.janela?.codigo || "", data: a.dataAgendada,
+    hora: a.horaAgendada, notas: a.notasFiscais?.length || 0, docs: a.documentos?.length || 0,
+    semaforo: a.semaforo || ""
   })));
+}
+
+function semaforoClass(v) {
+  const s = String(v || "").toLowerCase();
+  if (s.includes("verde")) return "verde";
+  if (s.includes("amarelo")) return "amarelo";
+  return "vermelho";
+}
+
+async function loadDocas() {
+  const date = document.getElementById("docaData").value;
+  const data = await api(`/api/dashboard/docas${date ? `?dataAgendada=${encodeURIComponent(date)}` : ""}`);
+  const wrap = document.getElementById("docaPainel");
+  wrap.innerHTML = data.map(d => `
+    <div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
+      <h3>${d.codigo}</h3>
+      <p>${d.descricao || ""}</p>
+      <p><strong>Ocupação:</strong> ${d.ocupacaoAtual}</p>
+      <span class="badge ${semaforoClass(d.semaforo)}">${d.semaforo}</span>
+      <div class="mt12">
+        <strong>Fila (${d.fila.length})</strong>
+        ${d.fila.length ? d.fila.map(f => `
+          <div class="fila-item">
+            <div><strong>${f.protocolo}</strong> • ${f.motorista}</div>
+            <div>${f.placa} • ${f.horaAgendada} • ${f.status}</div>
+          </div>
+        `).join("") : "<div class='fila-item'>Sem fila</div>"}
+      </div>
+    </div>
+  `).join("");
 }
 
 async function loadCadastro() {
@@ -124,8 +163,8 @@ async function loadAgendamentos() {
   const items = await api(`/api/agendamentos?${params.toString()}`);
   document.getElementById("agendamentosList").innerHTML = tableFromObjects(items.map(i => ({
     id: i.id, protocolo: i.protocolo, status: i.status, fornecedor: i.fornecedor, transportadora: i.transportadora,
-    motorista: i.motorista, placa: i.placa, doca: i.doca, janela: i.janela, data: i.dataAgendada,
-    hora: i.horaAgendada, notas: i.notasFiscais?.length || 0, docs: i.documentos?.length || 0
+    motorista: i.motorista, placa: i.placa, doca: i.doca?.codigo || "", janela: i.janela?.codigo || "", data: i.dataAgendada,
+    hora: i.horaAgendada, notas: i.notasFiscais?.length || 0, docs: i.documentos?.length || 0, semaforo: i.semaforo || ""
   })));
 }
 
@@ -137,36 +176,29 @@ document.getElementById("clearFilters").onclick = async () => {
   try { await loadDashboard(); await loadAgendamentos(); } catch (err) { alert(err.message); }
 };
 
-document.getElementById("loginInitForm").addEventListener("submit", async (e) => {
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
     const payload = Object.fromEntries(new FormData(e.target).entries());
-    const data = await api("/api/auth/login-init", { method: "POST", body: JSON.stringify(payload) });
-    document.getElementById("loginInitMsg").textContent = data.developmentCode ? `${data.message} Código: ${data.developmentCode}` : data.message;
-  } catch (err) {
-    document.getElementById("loginInitMsg").textContent = err.message;
-  }
-});
-
-document.getElementById("loginVerifyForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  try {
-    const payload = Object.fromEntries(new FormData(e.target).entries());
-    const data = await api("/api/auth/login-verify", { method: "POST", body: JSON.stringify(payload) });
+    const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
     state.token = data.token;
     localStorage.setItem("token", data.token);
     state.role = parseJwt(data.token)?.perfil || data.user?.perfil || null;
     updateNav();
+    await fillSelects();
     showView("dashboard");
     await loadDashboard();
-    document.getElementById("loginVerifyMsg").textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
+    document.getElementById("loginMsg").textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
   } catch (err) {
-    document.getElementById("loginVerifyMsg").textContent = err.message;
+    document.getElementById("loginMsg").textContent = err.message;
   }
 });
 
 document.getElementById("loadDashboard").addEventListener("click", async () => {
   try { await loadDashboard(); } catch (err) { alert(err.message); }
+});
+document.getElementById("loadDocas").addEventListener("click", async () => {
+  try { await loadDocas(); } catch (err) { alert(err.message); }
 });
 
 document.querySelectorAll(".cad-tab").forEach(btn => {
@@ -183,6 +215,7 @@ document.getElementById("saveCadastro").addEventListener("click", async () => {
     await api(`/api/cadastros/${state.cadastroTipo}`, { method: "POST", body: JSON.stringify(payload) });
     document.getElementById("cadastroMsg").textContent = "Cadastro salvo.";
     await loadCadastro();
+    await fillSelects();
   } catch (err) {
     document.getElementById("cadastroMsg").textContent = err.message;
   }
@@ -198,6 +231,8 @@ document.getElementById("agendamentoForm").addEventListener("submit", async (e) 
     const data = await api("/api/agendamentos", { method: "POST", body: JSON.stringify(payload) });
     document.getElementById("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo}`;
     await loadAgendamentos();
+    await loadDashboard();
+    await loadDocas();
   } catch (err) {
     document.getElementById("agendamentoMsg").textContent = err.message;
   }
@@ -221,6 +256,7 @@ async function handleOp(fn, success) {
     document.getElementById("operacaoMsg").textContent = success;
     await loadAgendamentos();
     await loadDashboard();
+    await loadDocas();
   } catch (err) {
     document.getElementById("operacaoMsg").textContent = err.message;
   }
@@ -228,7 +264,8 @@ async function handleOp(fn, success) {
 document.getElementById("btnAprovar").onclick = async () => handleOp(() => postStatus("aprovar"), "Agendamento aprovado.");
 document.getElementById("btnReprovar").onclick = async () => handleOp(() => postStatus("reprovar", { motivo: "Reprovado via painel" }), "Agendamento reprovado.");
 document.getElementById("btnReagendar").onclick = async () => handleOp(() => postStatus("reagendar", {
-  dataAgendada: new Date().toISOString().slice(0,10), horaAgendada: "10:00", doca: "DOCA-01", janela: "10:00-11:00"
+  dataAgendada: new Date().toISOString().slice(0,10), horaAgendada: "10:00",
+  docaId: document.getElementById("internalDocaSelect").value, janelaId: document.getElementById("internalJanelaSelect").value
 }), "Agendamento reagendado.");
 document.getElementById("btnCancelar").onclick = async () => handleOp(() => postStatus("cancelar", { motivo: "Cancelado via painel" }), "Agendamento cancelado.");
 document.getElementById("btnIniciar").onclick = async () => handleOp(() => postStatus("iniciar"), "Descarga iniciada.");
@@ -306,6 +343,11 @@ async function validateCheckin(token) {
     const data = await api(`/api/public/checkin/${token}`, { method: "POST", body: JSON.stringify({}) });
     document.getElementById("checkinMsg").textContent = data.message;
     document.getElementById("checkinResult").textContent = JSON.stringify(data.agendamento, null, 2);
+    if (state.token) {
+      await loadDashboard();
+      await loadAgendamentos();
+      await loadDocas();
+    }
   } catch (err) {
     document.getElementById("checkinMsg").textContent = err.message;
   }
@@ -371,3 +413,7 @@ if (view === "motorista" && token) {
   document.getElementById("motoristaConsultaForm").dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
 }
 if (view === "fornecedor") showView("fornecedor");
+
+if (state.token) {
+  fillSelects();
+}

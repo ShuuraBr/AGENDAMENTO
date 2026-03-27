@@ -23,10 +23,12 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
     ["motorista", "Motorista"],
     ["placa", "Placa"],
     ["dataAgendada", "Data agendada"],
-    ["horaAgendada", "Hora agendada"]
+    ["horaAgendada", "Hora agendada"],
+    ["docaId", "Doca"],
+    ["janelaId", "Janela"]
   ];
   for (const [field, label] of required) {
-    if (!payload[field]) throw new Error(`${label} é obrigatório.`);
+    if (!payload[field] && payload[field] !== 0) throw new Error(`${label} é obrigatório.`);
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payload.dataAgendada))) {
     throw new Error("A data deve estar no formato YYYY-MM-DD.");
@@ -40,15 +42,9 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
   if (payload.emailTransportadora && !String(payload.emailTransportadora).includes("@")) {
     throw new Error("E-mail da transportadora inválido.");
   }
-  if (payload.quantidadeNotas !== undefined && Number(payload.quantidadeNotas) < 0) {
-    throw new Error("Quantidade de notas inválida.");
-  }
-  if (payload.quantidadeVolumes !== undefined && Number(payload.quantidadeVolumes) < 0) {
-    throw new Error("Quantidade de volumes inválida.");
-  }
-  if (isPublic && !payload.lgpdConsent) {
-    throw new Error("É obrigatório aceitar o termo LGPD.");
-  }
+  if (Number(payload.quantidadeNotas || 0) < 0) throw new Error("Quantidade de notas inválida.");
+  if (Number(payload.quantidadeVolumes || 0) < 0) throw new Error("Quantidade de volumes inválida.");
+  if (isPublic && !payload.lgpdConsent) throw new Error("É obrigatório aceitar o termo LGPD.");
 }
 
 const transitions = {

@@ -1,30 +1,145 @@
-*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef2f7;color:#1e293b}
-.topbar{background:#0f172a;color:#fff;padding:18px 24px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
-.brand{display:flex;align-items:center;gap:16px;justify-content:space-between;width:100%}
-.topbar h1{margin:0;font-size:28px}
-.topbar nav{display:flex;gap:8px;flex-wrap:wrap}
-.logo{height: 60px; width: auto; object-fit: contain; display: block;}
-button{border:0;background:#2563eb;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
-button:hover{opacity:.94}
-.container{padding:24px}
-.view{display:none}.view.active{display:block}
-.card{background:#fff;padding:18px;border-radius:16px;box-shadow:0 4px 14px rgba(15,23,42,.08)}
-.inner{background:#f8fafc;border:1px solid #dbe2ea}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-top:16px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.filters{display:grid;grid-template-columns:repeat(6,minmax(0,1fr)) auto auto;gap:10px}
-.kpi{padding:16px;border:1px solid #dbe2ea;border-radius:12px;background:#f8fafc}
-.kpi strong{display:block;font-size:12px;text-transform:uppercase;color:#64748b;margin-bottom:6px}.kpi span{font-size:28px;font-weight:700}
-form{display:grid;gap:10px}
-label{display:grid;gap:4px;font-size:14px}
-input,textarea{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff}
-textarea{min-height:90px;resize:vertical}
-.table{width:100%;border-collapse:collapse;margin-top:12px;background:#fff}
-.table th,.table td{border:1px solid #e5e7eb;padding:8px;text-align:left;font-size:13px;vertical-align:top}
-.row{display:flex;align-items:center}.between{justify-content:space-between}.wrap{flex-wrap:wrap}.gap8{gap:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}
-.msg{margin-top:10px;font-size:14px}.hint{color:#64748b;font-size:13px}.tabs{display:flex;gap:8px;flex-wrap:wrap}
-pre{white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:12px;border-radius:10px;overflow:auto}
-small{color:#cbd5e1}.hidden{display:none}.narrow{max-width:520px}.video{width:100%;min-height:260px;background:#111;border-radius:12px}
-.check{grid-template-columns:auto 1fr;gap:8px;align-items:start}ul{margin:8px 0 0 18px}
-@media (max-width:1100px){.filters{grid-template-columns:1fr 1fr}.logo{height:56px}}
-@media (max-width:900px){.grid2{grid-template-columns:1fr}.brand{flex-direction:column;align-items:flex-start}}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#eef2f7;color:#1e293b}
+
+.topbar{
+  background:#0f172a;
+  color:#fff;
+  padding:14px 22px;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+
+.header-main{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+.brand-block{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  min-width:0;
+}
+
+.brand-text{
+  min-width:0;
+}
+
+.brand-text h1{
+  margin:0;
+  font-size:26px;
+  line-height:1.1;
+  font-weight:700;
+}
+
+.brand-text small{
+  display:block;
+  margin-top:4px;
+  color:#cbd5e1;
+  font-size:12px;
+  line-height:1.4;
+}
+
+.brand-logo{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  flex:0 0 auto;
+}
+
+.logo{
+  height:44px;
+  width:auto;
+  max-width:220px;
+  object-fit:contain;
+  display:block;
+}
+
+.nav-block{
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+}
+
+.nav-menu{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+
+.nav-menu button{
+  border:0;
+  background:#2563eb;
+  color:#fff;
+  padding:9px 13px;
+  border-radius:10px;
+  cursor:pointer;
+  font-size:14px;
+  line-height:1.2;
+  white-space:nowrap;
+}
+
+.nav-menu button:hover{
+  opacity:.94;
+}
+
+.hidden{
+  display:none !important;
+}
+
+@media (max-width:900px){
+  .topbar{
+    padding:12px 14px;
+  }
+
+  .brand-block{
+    flex-direction:row;
+    align-items:flex-start;
+  }
+
+  .brand-text h1{
+    font-size:22px;
+  }
+
+  .logo{
+    height:36px;
+    max-width:160px;
+  }
+
+  .nav-menu{
+    width:100%;
+  }
+
+  .nav-menu button{
+    font-size:13px;
+    padding:8px 11px;
+  }
+}
+
+@media (max-width:640px){
+  .brand-block{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+
+  .brand-logo{
+    justify-content:flex-start;
+  }
+
+  .logo{
+    height:32px;
+    max-width:140px;
+  }
+
+  .nav-menu{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    width:100%;
+  }
+
+  .nav-menu button{
+    width:100%;
+    text-align:center;
+  }
+}
