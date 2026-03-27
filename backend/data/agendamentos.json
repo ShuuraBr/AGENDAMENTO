@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "protocolo": "AGD-EXEMPLO-1",
+    "fornecedor": "Fornecedor Exemplo LTDA",
+    "transportadora": "Transportadora Exemplo",
+    "motorista": "Motorista Exemplo",
+    "placa": "ABC1D23",
+    "dataAgendada": "2026-03-27",
+    "horaAgendada": "08:00",
+    "quantidadeNotas": 2,
+    "quantidadeVolumes": 14,
+    "status": "APROVADO",
+    "observacoes": "Carga agendada para teste",
+    "createdAt": "2026-03-27T00:00:00.000Z",
+    "updatedAt": "2026-03-27T00:00:00.000Z"
+  }
+]
