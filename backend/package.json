@@ -6,12 +6,12 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "build": "node ./node_modules/prisma/build/index.js generate",
-    "postinstall": "node ./node_modules/prisma/build/index.js generate",
-    "prisma:generate": "node ./node_modules/prisma/build/index.js generate",
-    "prisma:push": "node ./node_modules/prisma/build/index.js db push",
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
     "prisma:seed": "node prisma/seed.js",
-    "setup": "npm install && node ./node_modules/prisma/build/index.js generate"
+    "setup": "npm install && prisma generate",
+    "build": "node ./node_modules/prisma/build/index.js generate",
+    "postinstall": "node ./node_modules/prisma/build/index.js generate"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -28,5 +28,3 @@
     "prisma": "^5.22.0"
   }
 }
-
-  

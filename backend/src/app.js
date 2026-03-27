@@ -1,12 +1,25 @@
 import express from "express";
 import cors from "cors";
+import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import routes from "./routes/index.js";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const backendRoot = path.resolve(__dirname, "..");
+const backendEnvPath = path.join(backendRoot, ".env");
+
+dotenv.config();
+if (fs.existsSync(backendEnvPath)) {
+  dotenv.config({ path: backendEnvPath, override: false });
+}
+
 const app = express();
-const publicDir = path.resolve("public");
-const uploadsDir = path.resolve("uploads");
+const publicDir = path.join(backendRoot, "public");
+const uploadsDir = path.join(backendRoot, "uploads");
+const indexFile = path.join(publicDir, "index.html");
 
 fs.mkdirSync(publicDir, { recursive: true });
 fs.mkdirSync(uploadsDir, { recursive: true });
@@ -37,17 +50,17 @@ app.use((req, res, next) => {
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(uploadsDir));
 app.use("/api", routes);
 app.use(express.static(publicDir));
 
 app.get("*", (req, res, next) => {
   if (req.path.startsWith("/api")) return next();
-  const indexPath = path.join(publicDir, "index.html");
-  if (!fs.existsSync(indexPath)) {
-    return res.status(404).json({ ok: false, message: "Frontend não encontrado em /public/index.html" });
+  if (!fs.existsSync(indexFile)) {
+    return res.status(200).type("text/plain").send("API online");
   }
-  return res.sendFile(indexPath);
+  return res.sendFile(indexFile);
 });
 
 export default app;

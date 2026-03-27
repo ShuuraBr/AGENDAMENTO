@@ -1,11 +1,6 @@
-import "dotenv/config";
 import app from "./app.js";
 
 const PORT = Number(process.env.PORT || 3000);
-
-const server = app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
 
 process.on("unhandledRejection", (error) => {
   console.error("Unhandled rejection:", error);
@@ -13,5 +8,9 @@ process.on("unhandledRejection", (error) => {
 
 process.on("uncaughtException", (error) => {
   console.error("Uncaught exception:", error);
-  server.close(() => process.exit(1));
+  process.exit(1);
+});
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
