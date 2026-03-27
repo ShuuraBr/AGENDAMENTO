@@ -1,13 +1,15 @@
 import { Router } from "express";
 import { authRequired } from "../middlewares/auth.js";
-import { readCollection } from "../utils/store.js";
+import { prisma } from "../utils/prisma.js";
 
 const router = Router();
 router.use(authRequired);
 
-router.get("/operacional", (_req, res) => {
-  const agendamentos = readCollection("agendamentos");
-  const documentos = readCollection("documentos");
+router.get("/operacional", async (_req, res) => {
+  const [agendamentos, documentos] = await Promise.all([
+    prisma.agendamento.findMany({ orderBy: { id: "desc" } }),
+    prisma.documento.count()
+  ]);
 
   const kpis = {
     total: agendamentos.length,
@@ -17,7 +19,7 @@ router.get("/operacional", (_req, res) => {
     finalizados: agendamentos.filter(x => x.status === "FINALIZADO").length,
     cancelados: agendamentos.filter(x => x.status === "CANCELADO").length,
     noShow: agendamentos.filter(x => x.status === "NO_SHOW").length,
-    documentos: documentos.length
+    documentos
   };
 
   res.json({ kpis, agendamentos });

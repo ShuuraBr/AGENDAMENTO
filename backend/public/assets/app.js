@@ -206,10 +206,7 @@ document.getElementById("btnUploadDoc").addEventListener("click", async () => {
   formData.append("arquivo", file);
 
   try {
-    await api(`/api/agendamentos/${id}/documentos`, {
-      method: "POST",
-      body: formData
-    });
+    await api(`/api/agendamentos/${id}/documentos`, { method: "POST", body: formData });
     document.getElementById("operacaoMsg").textContent = "Documento enviado.";
     await loadAgendamentos();
   } catch (err) {

@@ -1,26 +1,9 @@
 import bcrypt from "bcryptjs";
 import { PrismaClient } from "@prisma/client";
+
 const prisma = new PrismaClient();
 
 async function main() {
-  const adminProfile = await prisma.perfil.upsert({
-    where: { nome: "ADMIN" },
-    update: {},
-    create: { nome: "ADMIN", descricao: "Administrador" }
-  });
-
-  await prisma.perfil.upsert({
-    where: { nome: "GESTOR_LOGISTICO" },
-    update: {},
-    create: { nome: "GESTOR_LOGISTICO", descricao: "Gestor Logístico" }
-  });
-
-  await prisma.perfil.upsert({
-    where: { nome: "OPERADOR_RECEBIMENTO" },
-    update: {},
-    create: { nome: "OPERADOR_RECEBIMENTO", descricao: "Operador" }
-  });
-
   const senhaHash = await bcrypt.hash("123456", 10);
 
   await prisma.usuario.upsert({
@@ -30,96 +13,60 @@ async function main() {
       nome: "Administrador",
       email: "admin@local.test",
       senhaHash,
-      perfilId: adminProfile.id
+      perfil: "ADMIN"
     }
   });
 
-  const unidade = await prisma.unidade.upsert({
-    where: { codigo: "CD-01" },
+  await prisma.fornecedor.upsert({
+    where: { cnpj: "11.111.111/0001-11" },
     update: {},
-    create: { codigo: "CD-01", nome: "Centro de Distribuição 01" }
+    create: { nome: "Fornecedor Exemplo LTDA", cnpj: "11.111.111/0001-11" }
   });
 
-  const doca1 = await prisma.doca.upsert({
-    where: { unidadeId_codigo: { unidadeId: unidade.id, codigo: "DOCA-01" } },
+  await prisma.transportadora.upsert({
+    where: { cnpj: "22.222.222/0001-22" },
     update: {},
-    create: { unidadeId: unidade.id, codigo: "DOCA-01", descricao: "Doca principal" }
+    create: { nome: "Transportadora Exemplo", cnpj: "22.222.222/0001-22" }
   });
 
-  await prisma.regraAgendamento.create({
-    data: {
-      unidadeId: unidade.id,
-      permiteAprovacaoAutomatica: true,
-      toleranciaAtrasoMin: 15,
-      tempoDescargaPrevistoMin: 60
-    }
+  await prisma.motorista.create({
+    data: { nome: "Motorista Exemplo", cpf: "12345678900", transportadora: "Transportadora Exemplo" }
   }).catch(() => {});
 
-  const hoje = new Date();
-  hoje.setHours(0,0,0,0);
-
-  await prisma.janelaAgendamento.createMany({
-    data: [
-      {
-        unidadeId: unidade.id,
-        docaId: doca1.id,
-        dataAgendamento: hoje,
-        horaInicio: "08:00",
-        horaFim: "09:00",
-        capacidadeMaxima: 2,
-        capacidadeOcupada: 0,
-        status: "DISPONIVEL"
-      },
-      {
-        unidadeId: unidade.id,
-        docaId: doca1.id,
-        dataAgendamento: hoje,
-        horaInicio: "09:00",
-        horaFim: "10:00",
-        capacidadeMaxima: 2,
-        capacidadeOcupada: 0,
-        status: "DISPONIVEL"
-      }
-    ]
+  await prisma.veiculo.create({
+    data: { placa: "ABC1D23", tipo: "Truck", transportadora: "Transportadora Exemplo" }
   }).catch(() => {});
 
-  await prisma.fornecedor.create({
-    data: {
-      razaoSocial: "Fornecedor Exemplo LTDA",
-      cnpj: "11111111000111",
-      email: "fornecedor@test.com",
-      whatsapp: "+5500000000001"
-    }
+  await prisma.doca.create({
+    data: { codigo: "DOCA-01", descricao: "Doca principal" }
   }).catch(() => {});
 
-  const transportadora = await prisma.transportadora.create({
+  await prisma.janela.create({
+    data: { codigo: "08:00-09:00", descricao: "Janela manhã 1" }
+  }).catch(() => {});
+
+  await prisma.regra.create({
+    data: { nome: "Padrão", toleranciaAtrasoMin: 15, tempoDescargaPrevistoMin: 60 }
+  }).catch(() => {});
+
+  await prisma.agendamento.create({
     data: {
-      razaoSocial: "Transportadora Exemplo",
-      cnpj: "22222222000122",
-      email: "transportadora@test.com",
-      whatsapp: "+5500000000002"
+      protocolo: "AGD-EXEMPLO-1",
+      checkinToken: "CHK-EXEMPLO-1",
+      fornecedor: "Fornecedor Exemplo LTDA",
+      transportadora: "Transportadora Exemplo",
+      motorista: "Motorista Exemplo",
+      placa: "ABC1D23",
+      doca: "DOCA-01",
+      janela: "08:00-09:00",
+      dataAgendada: "2026-03-27",
+      horaAgendada: "08:00",
+      quantidadeNotas: 2,
+      quantidadeVolumes: 14,
+      status: "APROVADO",
+      observacoes: "Carga agendada para teste"
     }
-  }).catch(async () => prisma.transportadora.findFirst());
-
-  if (transportadora) {
-    await prisma.motorista.create({
-      data: {
-        nome: "Motorista Exemplo",
-        transportadoraId: transportadora.id,
-        cpf: "12345678900",
-        whatsapp: "+5500000000003",
-        email: "motorista@test.com"
-      }
-    }).catch(() => {});
-
-    await prisma.veiculo.create({
-      data: {
-        transportadoraId: transportadora.id,
-        tipoVeiculo: "Truck",
-        placaCavalo: "ABC1D23"
-      }
-    }).catch(() => {});
-  }
+  }).catch(() => {});
 
   console.log("Seed concluído. Usuário: admin@local.test | Senha: 123456");
 }

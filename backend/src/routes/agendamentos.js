@@ -3,7 +3,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import { authRequired } from "../middlewares/auth.js";
-import { readCollection, writeCollection, nextId, nowIso } from "../utils/store.js";
+import { prisma } from "../utils/prisma.js";
 import { generateProtocol, generateCheckinToken } from "../utils/protocol.js";
 import { qrSvg } from "../utils/qrcode.js";
 
@@ -19,146 +19,109 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-function enrich(item) {
-  const docs = readCollection("documentos").filter(d => d.agendamentoId === item.id);
-  return { ...item, documentos: docs };
+async function fullAgendamento(id) {
+  const item = await prisma.agendamento.findUnique({
+    where: { id: Number(id) },
+    include: { documentos: true }
+  });
+  return item;
 }
 
-router.get("/", (_req, res) => {
-  res.json(readCollection("agendamentos").map(enrich));
+router.get("/", async (_req, res) => {
+  const items = await prisma.agendamento.findMany({
+    include: { documentos: true },
+    orderBy: { id: "desc" }
+  });
+  res.json(items);
 });
 
-router.get("/:id", (req, res) => {
-  const item = readCollection("agendamentos").find(x => x.id === Number(req.params.id));
+router.get("/:id", async (req, res) => {
+  const item = await fullAgendamento(req.params.id);
   if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
-  res.json(enrich(item));
+  res.json(item);
 });
 
-router.post("/", (req, res) => {
-  const agendamentos = readCollection("agendamentos");
-  const item = {
-    id: nextId(agendamentos),
-    protocolo: generateProtocol(),
-    checkinToken: generateCheckinToken(),
-    fornecedor: req.body?.fornecedor || "",
-    transportadora: req.body?.transportadora || "",
-    motorista: req.body?.motorista || "",
-    placa: req.body?.placa || "",
-    doca: req.body?.doca || "",
-    janela: req.body?.janela || "",
-    dataAgendada: req.body?.dataAgendada || new Date().toISOString().slice(0, 10),
-    horaAgendada: req.body?.horaAgendada || "08:00",
-    quantidadeNotas: Number(req.body?.quantidadeNotas || 0),
-    quantidadeVolumes: Number(req.body?.quantidadeVolumes || 0),
-    status: "PENDENTE_APROVACAO",
-    observacoes: req.body?.observacoes || "",
-    createdAt: nowIso(),
-    updatedAt: nowIso()
-  };
-  agendamentos.push(item);
-  writeCollection("agendamentos", agendamentos);
+router.post("/", async (req, res) => {
+  const item = await prisma.agendamento.create({
+    data: {
+      protocolo: generateProtocol(),
+      checkinToken: generateCheckinToken(),
+      fornecedor: req.body?.fornecedor || "",
+      transportadora: req.body?.transportadora || "",
+      motorista: req.body?.motorista || "",
+      placa: req.body?.placa || "",
+      doca: req.body?.doca || "",
+      janela: req.body?.janela || "",
+      dataAgendada: req.body?.dataAgendada || new Date().toISOString().slice(0, 10),
+      horaAgendada: req.body?.horaAgendada || "08:00",
+      quantidadeNotas: Number(req.body?.quantidadeNotas || 0),
+      quantidadeVolumes: Number(req.body?.quantidadeVolumes || 0),
+      status: "PENDENTE_APROVACAO",
+      observacoes: req.body?.observacoes || ""
+    }
+  });
   res.status(201).json(item);
 });
 
-router.post("/:id/aprovar", (req, res) => {
-  const items = readCollection("agendamentos");
-  const idx = items.findIndex(x => x.id === Number(req.params.id));
-  if (idx < 0) return res.status(404).json({ message: "Agendamento não encontrado." });
-  items[idx].status = "APROVADO";
-  items[idx].updatedAt = nowIso();
-  writeCollection("agendamentos", items);
-  res.json(items[idx]);
+async function updateStatus(id, data, res) {
+  const exists = await prisma.agendamento.findUnique({ where: { id: Number(id) } });
+  if (!exists) return res.status(404).json({ message: "Agendamento não encontrado." });
+  const item = await prisma.agendamento.update({ where: { id: Number(id) }, data });
+  res.json(item);
+}
+
+router.post("/:id/aprovar", async (req, res) => {
+  await updateStatus(req.params.id, { status: "APROVADO" }, res);
 });
 
-router.post("/:id/reprovar", (req, res) => {
-  const items = readCollection("agendamentos");
-  const idx = items.findIndex(x => x.id === Number(req.params.id));
-  if (idx < 0) return res.status(404).json({ message: "Agendamento não encontrado." });
-  items[idx].status = "REPROVADO";
-  items[idx].motivoReprovacao = req.body?.motivo || "Reprovado";
-  items[idx].updatedAt = nowIso();
-  writeCollection("agendamentos", items);
-  res.json(items[idx]);
+router.post("/:id/reprovar", async (req, res) => {
+  await updateStatus(req.params.id, { status: "REPROVADO", motivoReprovacao: req.body?.motivo || "Reprovado" }, res);
 });
 
-router.post("/:id/reagendar", (req, res) => {
-  const items = readCollection("agendamentos");
-  const idx = items.findIndex(x => x.id === Number(req.params.id));
-  if (idx < 0) return res.status(404).json({ message: "Agendamento não encontrado." });
-  items[idx].dataAgendada = req.body?.dataAgendada || items[idx].dataAgendada;
-  items[idx].horaAgendada = req.body?.horaAgendada || items[idx].horaAgendada;
-  items[idx].doca = req.body?.doca || items[idx].doca;
-  items[idx].janela = req.body?.janela || items[idx].janela;
-  items[idx].status = "PENDENTE_APROVACAO";
-  items[idx].updatedAt = nowIso();
-  writeCollection("agendamentos", items);
-  res.json(items[idx]);
+router.post("/:id/reagendar", async (req, res) => {
+  await updateStatus(req.params.id, {
+    dataAgendada: req.body?.dataAgendada,
+    horaAgendada: req.body?.horaAgendada,
+    doca: req.body?.doca,
+    janela: req.body?.janela,
+    status: "PENDENTE_APROVACAO"
+  }, res);
 });
 
-router.post("/:id/cancelar", (req, res) => {
-  const items = readCollection("agendamentos");
-  const idx = items.findIndex(x => x.id === Number(req.params.id));
-  if (idx < 0) return res.status(404).json({ message: "Agendamento não encontrado." });
-  items[idx].status = "CANCELADO";
-  items[idx].motivoCancelamento = req.body?.motivo || "Cancelado";
-  items[idx].updatedAt = nowIso();
-  writeCollection("agendamentos", items);
-  res.json(items[idx]);
+router.post("/:id/cancelar", async (req, res) => {
+  await updateStatus(req.params.id, { status: "CANCELADO", motivoCancelamento: req.body?.motivo || "Cancelado" }, res);
 });
 
-router.post("/:id/iniciar", (req, res) => {
-  const items = readCollection("agendamentos");
-  const idx = items.findIndex(x => x.id === Number(req.params.id));
-  if (idx < 0) return res.status(404).json({ message: "Agendamento não encontrado." });
-  items[idx].status = "EM_DESCARGA";
-  items[idx].inicioDescargaEm = nowIso();
-  items[idx].updatedAt = nowIso();
-  writeCollection("agendamentos", items);
-  res.json(items[idx]);
+router.post("/:id/iniciar", async (req, res) => {
+  await updateStatus(req.params.id, { status: "EM_DESCARGA", inicioDescargaEm: new Date() }, res);
 });
 
-router.post("/:id/finalizar", (req, res) => {
-  const items = readCollection("agendamentos");
-  const idx = items.findIndex(x => x.id === Number(req.params.id));
-  if (idx < 0) return res.status(404).json({ message: "Agendamento não encontrado." });
-  items[idx].status = "FINALIZADO";
-  items[idx].fimDescargaEm = nowIso();
-  items[idx].updatedAt = nowIso();
-  writeCollection("agendamentos", items);
-  res.json(items[idx]);
+router.post("/:id/finalizar", async (req, res) => {
+  await updateStatus(req.params.id, { status: "FINALIZADO", fimDescargaEm: new Date() }, res);
 });
 
-router.post("/:id/no-show", (req, res) => {
-  const items = readCollection("agendamentos");
-  const idx = items.findIndex(x => x.id === Number(req.params.id));
-  if (idx < 0) return res.status(404).json({ message: "Agendamento não encontrado." });
-  items[idx].status = "NO_SHOW";
-  items[idx].updatedAt = nowIso();
-  writeCollection("agendamentos", items);
-  res.json(items[idx]);
+router.post("/:id/no-show", async (req, res) => {
+  await updateStatus(req.params.id, { status: "NO_SHOW" }, res);
 });
 
-router.post("/:id/documentos", upload.single("arquivo"), (req, res) => {
-  const agendamento = readCollection("agendamentos").find(x => x.id === Number(req.params.id));
+router.post("/:id/documentos", upload.single("arquivo"), async (req, res) => {
+  const agendamento = await prisma.agendamento.findUnique({ where: { id: Number(req.params.id) } });
   if (!agendamento) return res.status(404).json({ message: "Agendamento não encontrado." });
   if (!req.file) return res.status(400).json({ message: "Arquivo não enviado." });
 
-  const documentos = readCollection("documentos");
-  const item = {
-    id: nextId(documentos),
-    agendamentoId: agendamento.id,
-    tipoDocumento: req.body?.tipoDocumento || "ANEXO",
-    nomeArquivo: req.file.originalname,
-    urlArquivo: req.file.path.replace(/\\/g, "/"),
-    createdAt: nowIso()
-  };
-  documentos.push(item);
-  writeCollection("documentos", documentos);
+  const item = await prisma.documento.create({
+    data: {
+      agendamentoId: agendamento.id,
+      tipoDocumento: req.body?.tipoDocumento || "ANEXO",
+      nomeArquivo: req.file.originalname,
+      urlArquivo: req.file.path.replace(/\\/g, "/")
+    }
+  });
   res.status(201).json(item);
 });
 
 router.get("/:id/qrcode.svg", async (req, res) => {
-  const item = readCollection("agendamentos").find(x => x.id === Number(req.params.id));
+  const item = await prisma.agendamento.findUnique({ where: { id: Number(req.params.id) } });
   if (!item) return res.status(404).send("Agendamento não encontrado.");
   const base = process.env.FRONTEND_URL || "http://localhost:3000";
   const url = `${base}/?view=checkin&token=${encodeURIComponent(item.checkinToken)}`;
@@ -168,7 +131,7 @@ router.get("/:id/qrcode.svg", async (req, res) => {
 });
 
 router.get("/:id/voucher", async (req, res) => {
-  const item = readCollection("agendamentos").find(x => x.id === Number(req.params.id));
+  const item = await prisma.agendamento.findUnique({ where: { id: Number(req.params.id) } });
   if (!item) return res.status(404).send("Agendamento não encontrado.");
 
   const base = process.env.FRONTEND_URL || "http://localhost:3000";

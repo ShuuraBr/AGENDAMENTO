@@ -1,27 +1,23 @@
-# Agendamento de Descarga - versão completa base
+# Agendamento de Descarga - versão completa com Prisma + MySQL
 
-Pacote consolidado para Hostinger com frontend e backend no mesmo domínio.
-
-## O que já vem implementado
-- login com JWT
-- dashboard operacional
-- cadastros de:
-  - fornecedores
-  - transportadoras
-  - motoristas
-  - veículos
-  - docas
-  - janelas
-  - regras
-- agendamentos internos
-- aprovação, reprovação, reagendamento, cancelamento, no-show e finalização
+Pacote consolidado para Hostinger com:
+- frontend e backend no mesmo domínio
+- Prisma + MySQL
+- login e perfis
+- cadastros completos
+- agendamentos com workflow
 - upload de documentos
-- voucher em HTML
-- QR Code do check-in
-- área pública para solicitação
-- consulta pública por protocolo
-- check-in por token QR
-- persistência em JSON local
+- QR Code de check-in
+- voucher HTML
+- área pública
+- dashboard operacional
 
-## Observação
-Esta entrega é funcional e mais completa que a versão anterior, mas continua usando persistência em JSON local para simplificar a publicação e reduzir risco de deploy.
+## Configuração Hostinger
+- Framework preset: Express
+- Root directory: backend
+- Entry file: src/server.js
+- Node version: 20.x ou 22.x
+
+## Credenciais seed
+- admin@local.test
+- 123456

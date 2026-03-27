@@ -6,7 +6,7 @@ export function authRequired(req, res, next) {
   if (!token) return res.status(401).json({ message: "Token não informado." });
 
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET || "troque_essa_chave");
+    req.user = jwt.verify(token, process.env.JWT_SECRET || "troque_essa_chave_forte");
     next();
   } catch {
     return res.status(401).json({ message: "Token inválido." });
