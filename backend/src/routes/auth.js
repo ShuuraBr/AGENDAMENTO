@@ -1,11 +1,13 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import { prisma } from "../utils/prisma.js";
+import { generateOtp, signInternalSession } from "../utils/security.js";
+import { sendMail } from "../utils/email.js";
 
 const router = Router();
 
-router.post("/login", async (req, res) => {
+// etapa 1: usuário e senha
+router.post("/login-init", async (req, res) => {
   const { email, senha } = req.body || {};
   if (!email || !senha) return res.status(400).json({ message: "Email e senha são obrigatórios." });
 
@@ -15,11 +17,62 @@ router.post("/login", async (req, res) => {
   const ok = await bcrypt.compare(senha, user.senhaHash);
   if (!ok) return res.status(401).json({ message: "Credenciais inválidas." });
 
-  const token = jwt.sign(
-    { sub: user.id, nome: user.nome, perfil: user.perfil },
-    process.env.JWT_SECRET || "troque_essa_chave_forte",
-    { expiresIn: "8h" }
-  );
+  const otp = generateOtp();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  await prisma.twoFactorCode.create({
+    data: {
+      usuarioId: user.id,
+      code: otp,
+      expiresAt
+    }
+  });
+
+  const result = await sendMail({
+    to: user.email,
+    subject: "Seu código de acesso",
+    text: `Seu código de verificação é ${otp}. Expira em 10 minutos.`,
+    html: `<p>Seu código de verificação é <strong>${otp}</strong>. Expira em 10 minutos.</p>`
+  });
+
+  res.json({
+    ok: true,
+    message: result.sent ? "Código enviado por e-mail." : "SMTP não configurado. Código gerado em desenvolvimento.",
+    developmentCode: result.sent ? undefined : otp,
+    email: user.email
+  });
+});
+
+// etapa 2: OTP
+router.post("/login-verify", async (req, res) => {
+  const { email, code } = req.body || {};
+  if (!email || !code) return res.status(400).json({ message: "Email e código são obrigatórios." });
+
+  const user = await prisma.usuario.findUnique({ where: { email } });
+  if (!user) return res.status(401).json({ message: "Usuário inválido." });
+
+  const factor = await prisma.twoFactorCode.findFirst({
+    where: {
+      usuarioId: user.id,
+      code,
+      usedAt: null,
+      expiresAt: { gt: new Date() }
+    },
+    orderBy: { id: "desc" }
+  });
+
+  if (!factor) return res.status(401).json({ message: "Código inválido ou expirado." });
+
+  await prisma.twoFactorCode.update({
+    where: { id: factor.id },
+    data: { usedAt: new Date() }
+  });
+
+  const token = signInternalSession({
+    sub: user.id,
+    nome: user.nome,
+    perfil: user.perfil
+  });
 
   res.json({
     token,

@@ -15,12 +15,25 @@ model Usuario {
   perfil    String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  twoFactorCodes TwoFactorCode[]
+}
+
+model TwoFactorCode {
+  id        Int      @id @default(autoincrement())
+  usuarioId Int
+  code      String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 }
 
 model Fornecedor {
   id        Int      @id @default(autoincrement())
   nome      String
   cnpj      String?  @unique
+  email     String?
+  telefone  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -29,6 +42,8 @@ model Transportadora {
   id        Int      @id @default(autoincrement())
   nome      String
   cnpj      String?  @unique
+  email     String?
+  telefone  String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -37,6 +52,7 @@ model Motorista {
   id             Int      @id @default(autoincrement())
   nome           String
   cpf            String?
+  telefone       String?
   transportadora String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -77,29 +93,48 @@ model Regra {
 }
 
 model Agendamento {
-  id                 Int         @id @default(autoincrement())
-  protocolo          String      @unique
-  checkinToken       String      @unique
-  fornecedor         String
-  transportadora     String
-  motorista          String
-  placa              String
-  doca               String?
-  janela             String?
-  dataAgendada       String
-  horaAgendada       String
-  quantidadeNotas    Int         @default(0)
-  quantidadeVolumes  Int         @default(0)
-  status             String      @default("PENDENTE_APROVACAO")
-  observacoes        String?
-  motivoReprovacao   String?
-  motivoCancelamento String?
-  inicioDescargaEm   DateTime?
-  fimDescargaEm      DateTime?
-  checkinEm          DateTime?
-  createdAt          DateTime    @default(now())
-  updatedAt          DateTime    @updatedAt
-  documentos         Documento[]
+  id                  Int         @id @default(autoincrement())
+  protocolo           String      @unique
+  publicTokenMotorista String     @unique
+  publicTokenFornecedor String    @unique
+  checkinToken        String      @unique
+  fornecedor          String
+  transportadora      String
+  motorista           String
+  telefoneMotorista   String?
+  placa               String
+  doca                String?
+  janela              String?
+  dataAgendada        String
+  horaAgendada        String
+  quantidadeNotas     Int         @default(0)
+  quantidadeVolumes   Int         @default(0)
+  status              String      @default("PENDENTE_APROVACAO")
+  observacoes         String?
+  motivoReprovacao    String?
+  motivoCancelamento  String?
+  inicioDescargaEm    DateTime?
+  fimDescargaEm       DateTime?
+  checkinEm           DateTime?
+  lgpdConsentAt       DateTime?
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  notasFiscais        NotaFiscal[]
+  documentos          Documento[]
+}
+
+model NotaFiscal {
+  id           Int        @id @default(autoincrement())
+  agendamentoId Int
+  numeroNf     String?
+  serie        String?
+  chaveAcesso  String?
+  volumes      Int        @default(0)
+  peso         Float      @default(0)
+  valorNf      Float      @default(0)
+  observacao   String?
+  createdAt    DateTime   @default(now())
+  agendamento  Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
 }
 
 model Documento {

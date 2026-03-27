@@ -6,8 +6,11 @@ const router = Router();
 router.use(authRequired);
 
 router.get("/operacional", async (_req, res) => {
-  const [agendamentos, documentos] = await Promise.all([
-    prisma.agendamento.findMany({ orderBy: { id: "desc" } }),
+  const [agendamentos, docs] = await Promise.all([
+    prisma.agendamento.findMany({
+      include: { notasFiscais: true, documentos: true },
+      orderBy: { id: "desc" }
+    }),
     prisma.documento.count()
   ]);
 
@@ -15,11 +18,12 @@ router.get("/operacional", async (_req, res) => {
     total: agendamentos.length,
     pendentes: agendamentos.filter(x => x.status === "PENDENTE_APROVACAO").length,
     aprovados: agendamentos.filter(x => x.status === "APROVADO").length,
+    chegou: agendamentos.filter(x => x.status === "CHEGOU").length,
     emDescarga: agendamentos.filter(x => x.status === "EM_DESCARGA").length,
     finalizados: agendamentos.filter(x => x.status === "FINALIZADO").length,
     cancelados: agendamentos.filter(x => x.status === "CANCELADO").length,
     noShow: agendamentos.filter(x => x.status === "NO_SHOW").length,
-    documentos
+    documentos: docs
   };
 
   res.json({ kpis, agendamentos });

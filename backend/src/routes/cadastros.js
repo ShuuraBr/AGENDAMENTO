@@ -5,7 +5,7 @@ import { prisma } from "../utils/prisma.js";
 const router = Router();
 router.use(authRequired);
 
-const map = {
+const models = {
   fornecedores: "fornecedor",
   transportadoras: "transportadora",
   motoristas: "motorista",
@@ -15,32 +15,24 @@ const map = {
   regras: "regra"
 };
 
-function modelFor(tipo) {
-  return map[tipo];
-}
+function model(tipo) { return models[tipo]; }
 
 router.get("/:tipo", async (req, res) => {
-  const model = modelFor(req.params.tipo);
-  if (!model) return res.status(400).json({ message: "Tipo inválido." });
-  const items = await prisma[model].findMany({ orderBy: { id: "desc" } });
-  res.json(items);
+  const m = model(req.params.tipo);
+  if (!m) return res.status(400).json({ message: "Tipo inválido." });
+  res.json(await prisma[m].findMany({ orderBy: { id: "desc" } }));
 });
 
 router.post("/:tipo", async (req, res) => {
-  const model = modelFor(req.params.tipo);
-  if (!model) return res.status(400).json({ message: "Tipo inválido." });
-  const item = await prisma[model].create({ data: req.body });
-  res.status(201).json(item);
+  const m = model(req.params.tipo);
+  if (!m) return res.status(400).json({ message: "Tipo inválido." });
+  res.status(201).json(await prisma[m].create({ data: req.body }));
 });
 
 router.put("/:tipo/:id", async (req, res) => {
-  const model = modelFor(req.params.tipo);
-  if (!model) return res.status(400).json({ message: "Tipo inválido." });
-  const item = await prisma[model].update({
-    where: { id: Number(req.params.id) },
-    data: req.body
-  });
-  res.json(item);
+  const m = model(req.params.tipo);
+  if (!m) return res.status(400).json({ message: "Tipo inválido." });
+  res.json(await prisma[m].update({ where: { id: Number(req.params.id) }, data: req.body }));
 });
 
 export default router;
