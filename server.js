@@ -8,19 +8,15 @@ const __dirname = path.dirname(__filename);
 const backendEnvPath = path.join(__dirname, "backend", ".env");
 
 dotenv.config({ override: true });
-
 if (fs.existsSync(backendEnvPath)) {
   dotenv.config({ path: backendEnvPath, override: true });
 }
 
-const requiredDbVars = ["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASS"];
-const hasDbParts = requiredDbVars.every((key) => {
-  const value = process.env[key];
-  return typeof value === "string" && value.trim() !== "";
-});
-
-if (hasDbParts) {
-  process.env.DATABASE_URL = `mysql://${encodeURIComponent(process.env.DB_USER)}:${encodeURIComponent(process.env.DB_PASS)}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`;
+if (!process.env.DATABASE_URL) {
+  const { DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASS } = process.env;
+  if (DB_HOST && DB_PORT && DB_NAME && DB_USER && typeof DB_PASS !== "undefined") {
+    process.env.DATABASE_URL = `mysql://${encodeURIComponent(DB_USER)}:${encodeURIComponent(DB_PASS)}@${DB_HOST}:${DB_PORT}/${DB_NAME}`;
+  }
 }
 
 await import("./backend/src/server.js");

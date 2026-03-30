@@ -109,6 +109,63 @@
     return `${d}/${m}/${y}`;
   }
 
+  function statusLabel(status) {
+    return String(status || "").replaceAll("_", " ");
+  }
+
+  function renderStatusBadge(status, semaforo) {
+    return `<span class="badge ${semaforoClass(semaforo || status)}">${escapeHtml(statusLabel(status))}</span>`;
+  }
+
+  function renderNotasTable(notas) {
+    if (!Array.isArray(notas) || !notas.length) return '<p class="hint">Sem notas fiscais cadastradas.</p>';
+    return `<table class="table"><thead><tr><th>Número NF</th><th>Série</th><th>Chave</th><th>Volumes</th></tr></thead><tbody>${notas.map((nota) => `<tr><td>${escapeHtml(nota.numeroNf || "-")}</td><td>${escapeHtml(nota.serie || "-")}</td><td>${escapeHtml(nota.chaveAcesso || "-")}</td><td>${escapeHtml(nota.volumes ?? 0)}</td></tr>`).join("")}</tbody></table>`;
+  }
+
+  function renderPublicResult(data, mode = "consulta") {
+    if (!data) return "";
+    const links = data.links || {};
+    const allowCancel = mode === "motorista" && data.cancelamento?.allowed;
+    return `
+      <div class="result-grid">
+        <div class="result-card">
+          <div class="row between wrap gap8">
+            <h3>Agendamento ${escapeHtml(data.protocolo || "")}</h3>
+            ${renderStatusBadge(data.status, data.semaforo)}
+          </div>
+          <div class="kv-grid mt12">
+            <div><span>Fornecedor</span><strong>${escapeHtml(data.fornecedor || "-")}</strong></div>
+            <div><span>Transportadora</span><strong>${escapeHtml(data.transportadora || "-")}</strong></div>
+            <div><span>Motorista</span><strong>${escapeHtml(data.motorista || "-")}</strong></div>
+            <div><span>Placa</span><strong>${escapeHtml(data.placa || "-")}</strong></div>
+            <div><span>Data</span><strong>${escapeHtml(formatDateBR(data.dataAgendada) || "-")}</strong></div>
+            <div><span>Hora</span><strong>${escapeHtml(data.horaAgendada || "-")}</strong></div>
+            <div><span>Doca</span><strong>${escapeHtml(data.doca || "A DEFINIR")}</strong></div>
+            <div><span>Janela</span><strong>${escapeHtml(data.janela || "-")}</strong></div>
+            <div><span>Volumes</span><strong>${escapeHtml(data.quantidadeVolumes ?? 0)}</strong></div>
+            <div><span>Notas</span><strong>${escapeHtml(data.quantidadeNotas ?? 0)}</strong></div>
+            ${mode === "motorista" ? `<div><span>Token do motorista</span><strong>${escapeHtml(data.publicTokenMotorista || "-")}</strong></div>` : `<div><span>Token de consulta</span><strong>${escapeHtml(data.publicTokenFornecedor || "-")}</strong></div>`}
+            <div><span>Check-in</span><strong>${escapeHtml(data.checkinToken || "-")}</strong></div>
+          </div>
+          ${data.observacoes ? `<div class="mt12"><span class="field-label">Observações</span><div class="info-box mt12">${escapeHtml(data.observacoes)}</div></div>` : ""}
+        </div>
+        <div class="result-card">
+          <h3>Ações e links</h3>
+          <div class="public-actions mt12">
+            ${links.consulta ? `<a class="btn-link" href="${links.consulta}">Consulta da transportadora/fornecedor</a>` : ""}
+            ${links.motorista ? `<a class="btn-link" href="${links.motorista}">Acompanhamento do motorista</a>` : ""}
+            ${links.voucher ? `<a class="btn-link" href="${links.voucher}" target="_blank" rel="noreferrer">Voucher PDF</a>` : ""}
+          </div>
+          ${mode === "motorista" ? `<div class="mt16"><span class="field-label">Cancelamento</span><div class="info-box mt12">${escapeHtml(data.cancelamento?.reason || "")}</div>${allowCancel ? `<button type="button" id="btnCancelarMotorista" class="mt12">Cancelar agendamento</button>` : ""}</div>` : ""}
+        </div>
+        <div class="result-card result-card-full">
+          <h3>Notas fiscais</h3>
+          ${renderNotasTable(data.notasFiscais)}
+        </div>
+      </div>
+    `;
+  }
+
   function parseJwt(token) {
     try { return JSON.parse(atob(token.split(".")[1])); } catch { return null; }
   }
@@ -196,7 +253,7 @@
       div.innerHTML = `
         <label>Número NF<input data-nf="${i}" data-field="numeroNf" value="${escapeHtml(row.numeroNf || "")}" /></label>
         <label>Série<input data-nf="${i}" data-field="serie" value="${escapeHtml(row.serie || "")}" /></label>
-        <label>Chave de acesso<input data-nf="${i}" data-field="chaveAcesso" value="${escapeHtml(row.chaveAcesso || "")}" /></label>
+        <label>Chave de acesso<input data-nf="${i}" data-field="chaveAcesso" inputmode="numeric" maxlength="44" value="${escapeHtml(row.chaveAcesso || "")}" /></label>
         <label>Volumes<input data-nf="${i}" data-field="volumes" type="number" min="0" value="${escapeHtml(row.volumes ?? "0")}" /></label>
         <label>Peso<input data-nf="${i}" data-field="peso" type="number" min="0" step="0.001" value="${escapeHtml(row.peso ?? "0")}" /></label>
         <label>Valor NF<input data-nf="${i}" data-field="valorNf" type="number" min="0" step="0.01" value="${escapeHtml(row.valorNf ?? "0")}" /></label>
@@ -216,7 +273,7 @@
       .map((nota) => ({
         numeroNf: String(nota.numeroNf || "").trim(),
         serie: String(nota.serie || "").trim(),
-        chaveAcesso: String(nota.chaveAcesso || "").trim(),
+        chaveAcesso: String(nota.chaveAcesso || "").replace(/\D/g, "").trim(),
         volumes: Number(nota.volumes || 0),
         peso: Number(nota.peso || 0),
         valorNf: Number(nota.valorNf || 0),
@@ -330,9 +387,17 @@
 
   async function loadDocas() {
     const date = byId("docaData")?.value || "";
-    const data = await api(`/api/dashboard/docas${date ? `?dataAgendada=${encodeURIComponent(date)}` : ""}`);
+    const [data, docas] = await Promise.all([
+      api(`/api/dashboard/docas${date ? `?dataAgendada=${encodeURIComponent(date)}` : ""}`),
+      api("/api/cadastros/docas")
+    ]);
     const wrap = byId("docaPainel");
     if (!wrap) return;
+
+    const assignOptions = docas
+      .filter((doca) => doca.codigo !== "A DEFINIR")
+      .map((doca) => `<option value="${doca.id}">${escapeHtml(doca.codigo)}</option>`).join("");
+
     wrap.innerHTML = data.map((d) => `
       <div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
         <h3>${escapeHtml(d.codigo)}</h3>
@@ -341,15 +406,36 @@
         <span class="badge ${semaforoClass(d.semaforo)}">${escapeHtml(d.semaforo)}</span>
         <div class="mt12">
           <strong>Fila (${d.fila.length})</strong>
-          ${d.fila.length ? d.fila.map((f) => `
-            <div class="fila-item">
-              <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
-              <div>${escapeHtml(f.placa)} • ${escapeHtml(f.horaAgendada)} • ${escapeHtml(f.status)}</div>
-            </div>
-          `).join("") : "<div class='fila-item'>Sem fila</div>"}
+          ${d.fila.length ? d.fila.map((f) => {
+            const needsDoca = d.codigo === "A DEFINIR" && !["FINALIZADO", "CANCELADO", "REPROVADO", "NO_SHOW"].includes(f.status);
+            return `
+              <div class="fila-item">
+                <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
+                <div>${escapeHtml(f.placa)} • ${escapeHtml(f.horaAgendada)} • ${escapeHtml(f.status)}</div>
+                ${needsDoca ? `<div class="row gap8 wrap mt12"><select data-define-doca-select="${f.id}">${assignOptions}</select><button type="button" data-define-doca="${f.id}">Definir doca</button></div>` : ""}
+              </div>
+            `;
+          }).join("") : "<div class='fila-item'>Sem fila</div>"}
         </div>
       </div>
     `).join("");
+
+    wrap.querySelectorAll("[data-define-doca]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const agendamentoId = btn.dataset.defineDoca;
+        const select = wrap.querySelector(`[data-define-doca-select="${agendamentoId}"]`);
+        try {
+          await api(`/api/agendamentos/${agendamentoId}/definir-doca`, {
+            method: "POST",
+            body: JSON.stringify({ docaId: select?.value })
+          });
+          byId("operacaoMsg").textContent = "Doca definida com sucesso.";
+          await Promise.allSettled([loadDocas(), loadAgendamentos(), loadDashboard()]);
+        } catch (err) {
+          byId("operacaoMsg").textContent = err.message;
+        }
+      });
+    });
   }
 
   function normalizeValueByField(field, value) {
@@ -649,7 +735,7 @@
         payload.notas = collectNotas();
         payload.quantidadeNotas = payload.notas.length;
         const data = await api("/api/public/solicitacao", { method: "POST", body: JSON.stringify(payload) });
-        byId("fornecedorMsg").textContent = `Solicitação enviada. Protocolo: ${data.protocolo}. Horário: ${data.horaAgendada}. Doca: ${data.doca}.`;
+        byId("fornecedorMsg").innerHTML = `Solicitação enviada. Protocolo: <strong>${data.protocolo}</strong>. Horário: <strong>${data.horaAgendada}</strong>. Doca: <strong>${data.doca}</strong>.<br><a href="${data.linkFornecedor}">Consulta da transportadora/fornecedor</a> • <a href="${data.linkMotorista}">Acompanhamento do motorista</a> • <a href="${data.voucher}" target="_blank" rel="noreferrer">Voucher PDF</a><br>Token do motorista: <strong>${data.tokenMotorista}</strong>`;
         e.target.reset();
         state.nfRows = 1;
         state.nfDrafts = [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }];
@@ -660,14 +746,38 @@
       }
     });
 
+    byId("consultaForm")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const token = new FormData(e.target).get("token");
+        const data = await api(`/api/public/consulta/${token}`);
+        byId("consultaMsg").textContent = `Consulta carregada para o protocolo ${data.protocolo}.`;
+        byId("consultaResult").innerHTML = renderPublicResult(data, "consulta");
+      } catch (err) {
+        byId("consultaMsg").textContent = err.message;
+        byId("consultaResult").innerHTML = "";
+      }
+    });
+
     byId("motoristaConsultaForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
         const token = new FormData(e.target).get("token");
         const data = await api(`/api/public/motorista/${token}`);
-        byId("motoristaResult").textContent = JSON.stringify(data, null, 2);
+        byId("motoristaMsg").textContent = `Acompanhamento carregado para o protocolo ${data.protocolo}.`;
+        byId("motoristaResult").innerHTML = renderPublicResult(data, "motorista");
+        byId("btnCancelarMotorista")?.addEventListener("click", async () => {
+          try {
+            await api(`/api/public/motorista/${token}/cancelar`, { method: "POST", body: JSON.stringify({ motivo: "Cancelado pelo motorista via portal" }) });
+            byId("motoristaMsg").textContent = "Agendamento cancelado com sucesso.";
+            byId("motoristaConsultaForm")?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+          } catch (cancelErr) {
+            byId("motoristaMsg").textContent = cancelErr.message;
+          }
+        });
       } catch (err) {
-        byId("motoristaResult").textContent = err.message;
+        byId("motoristaMsg").textContent = err.message;
+        byId("motoristaResult").innerHTML = "";
       }
     });
 
@@ -701,6 +811,13 @@
       const input = byId("motoristaConsultaForm")?.querySelector('input[name="token"]');
       if (input) input.value = token;
       byId("motoristaConsultaForm")?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    } else if ((view === "consulta" || view === "fornecedor") && token) {
+      showView("consulta");
+      const input = byId("consultaForm")?.querySelector('input[name="token"]');
+      if (input) input.value = token;
+      byId("consultaForm")?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    } else if (view === "consulta") {
+      showView("consulta");
     } else if (view === "fornecedor") {
       showView("fornecedor");
     }

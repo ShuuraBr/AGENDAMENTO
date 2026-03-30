@@ -11,12 +11,7 @@ router.get("/", async (_req, res) => {
 });
 
 router.get("/:id", async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) {
-    return res.status(400).json({ message: "ID de janela inválido." });
-  }
-
-  const item = await prisma.janela.findFirst({ where: { id } });
+  const item = await prisma.janela.findUnique({ where: { id: Number(req.params.id) } });
   if (!item) return res.status(404).json({ message: "Registro não encontrado." });
   res.json(item);
 });
@@ -27,13 +22,8 @@ router.post("/", async (req, res) => {
 });
 
 router.put("/:id", async (req, res) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) {
-    return res.status(400).json({ message: "ID de janela inválido." });
-  }
-
   const item = await prisma.janela.update({
-    where: { id },
+    where: { id: Number(req.params.id) },
     data: req.body
   });
   res.json(item);

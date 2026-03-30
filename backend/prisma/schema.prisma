@@ -8,13 +8,13 @@ datasource db {
 }
 
 model Usuario {
-  id        Int            @id @default(autoincrement())
+  id        Int      @id @default(autoincrement())
   nome      String
-  email     String         @unique
+  email     String   @unique
   senhaHash String
   perfil    String
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   logs      LogAuditoria[]
 
   @@map("Usuario")
@@ -71,9 +71,9 @@ model Doca {
   id           Int           @id @default(autoincrement())
   codigo       String        @unique
   descricao    String?
+  agendamentos Agendamento[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
-  agendamentos Agendamento[]
 
   @@map("Doca")
 }
@@ -82,9 +82,9 @@ model Janela {
   id           Int           @id @default(autoincrement())
   codigo       String        @unique
   descricao    String?
+  agendamentos Agendamento[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
-  agendamentos Agendamento[]
 
   @@map("Janela")
 }
@@ -129,15 +129,15 @@ model Agendamento {
   lgpdConsentAt         DateTime?
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
+  notasFiscais          NotaFiscal[]
+  documentos            Documento[]
   doca                  Doca         @relation(fields: [docaId], references: [id])
   janela                Janela       @relation(fields: [janelaId], references: [id])
-  documentos            Documento[]
-  notasFiscais          NotaFiscal[]
 
   @@index([docaId])
+  @@index([janelaId])
   @@index([dataAgendada])
   @@index([status])
-  @@index([janelaId], map: "Agendamento_janelaId_fkey")
   @@map("Agendamento")
 }
 
@@ -154,7 +154,7 @@ model NotaFiscal {
   createdAt     DateTime    @default(now())
   agendamento   Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
 
-  @@index([agendamentoId], map: "NotaFiscal_agendamentoId_fkey")
+  @@index([agendamentoId])
   @@map("NotaFiscal")
 }
 
@@ -167,7 +167,7 @@ model Documento {
   createdAt     DateTime    @default(now())
   agendamento   Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
 
-  @@index([agendamentoId], map: "Documento_agendamentoId_fkey")
+  @@index([agendamentoId])
   @@map("Documento")
 }
 
@@ -181,9 +181,9 @@ model LogAuditoria {
   detalhes   String?  @db.LongText
   ip         String?
   createdAt  DateTime @default(now())
-  usuario    Usuario? @relation(fields: [usuarioId], references: [id])
+  usuario    Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 
+  @@index([usuarioId])
   @@index([entidade, entidadeId])
-  @@index([usuarioId], map: "LogAuditoria_usuarioId_fkey")
   @@map("LogAuditoria")
 }

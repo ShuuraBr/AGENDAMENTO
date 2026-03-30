@@ -19,7 +19,8 @@
 
     <nav id="publicNav" class="nav-menu">
       <button type="button" class="nav-btn active" data-view="public-home">Início</button>
-      <button type="button" class="nav-btn" data-view="fornecedor">Fornecedor/Transportadora</button>
+      <button type="button" class="nav-btn" data-view="fornecedor">Solicitação</button>
+      <button type="button" class="nav-btn" data-view="consulta">Consulta transportadora/fornecedor</button>
       <button type="button" class="nav-btn" data-view="motorista">Motorista</button>
       <button type="button" class="nav-btn" data-view="login">Área do Colaborador</button>
     </nav>
@@ -39,6 +40,11 @@
       <div class="card">
         <h2>Portais disponíveis</h2>
         <p>Acesso segregado entre área pública e área interna. O colaborador acessa com login direto e permissões por perfil.</p>
+        <div class="portal-links mt12">
+          <button type="button" class="nav-btn" data-view="fornecedor">Nova solicitação</button>
+          <button type="button" class="nav-btn" data-view="consulta">Consulta da transportadora/fornecedor</button>
+          <button type="button" class="nav-btn" data-view="motorista">Acompanhamento do motorista</button>
+        </div>
       </div>
     </section>
 
@@ -92,6 +98,18 @@
       </div>
     </section>
 
+    <section id="consulta" class="view">
+      <div class="card">
+        <h2>Consulta da transportadora / fornecedor</h2>
+        <form id="consultaForm">
+          <label>Token de consulta<input name="token" placeholder="FOR-..." /></label>
+          <button type="submit">Consultar agendamento</button>
+        </form>
+        <p id="consultaMsg" class="msg"></p>
+        <div id="consultaResult" class="mt16"></div>
+      </div>
+    </section>
+
     <section id="motorista" class="view">
       <div class="card">
         <h2>Portal do motorista</h2>
@@ -99,7 +117,8 @@
           <label>Token do motorista<input name="token" placeholder="MOT-..." /></label>
           <button type="submit">Consultar</button>
         </form>
-        <pre id="motoristaResult"></pre>
+        <p id="motoristaMsg" class="msg"></p>
+        <div id="motoristaResult" class="mt16"></div>
       </div>
     </section>
 
