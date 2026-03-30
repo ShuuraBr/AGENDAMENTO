@@ -1,53 +1,77 @@
 import express from "express";
 import { prisma } from "../utils/prisma.js";
 import { generateProtocol, generatePublicToken } from "../utils/security.js";
-import { normalizeChaveAcesso, validateAgendamentoPayload, validateNf } from "../utils/validators.js";
+import { validateAgendamentoPayload, validateNf, normalizeChaveAcesso } from "../utils/validators.js";
 import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js";
 import { fetchJanelasDocas, fetchAgendamentosByDatasStatuses } from "../utils/db-fallback.js";
 
 const router = express.Router();
-
 const ACTIVE_STATUSES = ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"];
 
 function validateNfBatch(notas = []) {
-  for (const nota of notas) {
-    validateNf(nota || {});
-  }
+  for (const nota of notas) validateNf(nota || {});
 }
 
 function parseJanelaCodigo(codigo = "") {
   const match = String(codigo).match(/(\d{2}:\d{2})(?:\s*[-–]\s*(\d{2}:\d{2}))?/);
-  if (!match) {
-    return { horaInicio: String(codigo).trim() || "00:00", horaFim: "", codigo: String(codigo) };
-  }
-  return {
-    horaInicio: match[1],
-    horaFim: match[2] || "",
-    codigo: String(codigo)
-  };
+  if (!match) return { horaInicio: String(codigo).trim() || "00:00", horaFim: "", codigo: String(codigo) };
+  return { horaInicio: match[1], horaFim: match[2] || "", codigo: String(codigo) };
 }
 
 function formatDate(date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
+function baseUrl() {
+  return process.env.FRONTEND_URL || `http://localhost:${process.env.PORT || 3000}`;
+}
+
+function displayDoca(item) {
+  return item?.doca?.codigo === "A DEFINIR" ? "A definir pelo operador" : (item?.doca?.codigo || "A definir");
+}
+
+function publicPayload(item) {
+  return {
+    protocolo: item.protocolo,
+    status: item.status,
+    semaforo: trafficColor(item.status),
+    fornecedor: item.fornecedor || "-",
+    transportadora: item.transportadora || "-",
+    motorista: item.motorista || "-",
+    telefoneMotorista: item.telefoneMotorista || "-",
+    emailMotorista: item.emailMotorista || "-",
+    emailTransportadora: item.emailTransportadora || "-",
+    placa: item.placa || "-",
+    dataAgendada: item.dataAgendada,
+    horaAgendada: item.horaAgendada,
+    janela: item.janela?.codigo || "-",
+    janelaDescricao: item.janela?.descricao || "-",
+    doca: displayDoca(item),
+    observacoes: item.observacoes || "",
+    tokenVerificacao: item.publicTokenFornecedor,
+    tokenMotorista: item.publicTokenMotorista,
+    tokenCheckin: item.checkinToken,
+    linkConsulta: `${baseUrl()}/public/consulta-agendamento?token=${encodeURIComponent(item.publicTokenFornecedor)}`,
+    linkMotorista: `${baseUrl()}/public/motorista?token=${encodeURIComponent(item.publicTokenMotorista)}`,
+    linkCheckin: `${baseUrl()}/api/public/checkin/${encodeURIComponent(item.checkinToken)}`,
+    notasFiscais: Array.isArray(item.notasFiscais) ? item.notasFiscais.map((nf) => ({
+      numeroNf: nf.numeroNf || "-",
+      serie: nf.serie || "-",
+      chaveAcesso: nf.chaveAcesso || "-",
+      volumes: nf.volumes || 0,
+      peso: nf.peso || 0,
+      valorNf: nf.valorNf || 0,
+      observacao: nf.observacao || ""
+    })) : []
+  };
+}
+
 async function getOrCreateDocaPadrao() {
-  const existing = await prisma.doca.findFirst({
-    where: { codigo: "A DEFINIR" },
-    orderBy: { id: "asc" }
-  });
-
+  const existing = await prisma.doca.findFirst({ where: { codigo: "A DEFINIR" }, orderBy: { id: "asc" } });
   if (existing) return existing;
-
   const first = await prisma.doca.findFirst({ orderBy: { id: "asc" } });
   if (first) return first;
-
-  return prisma.doca.create({
-    data: {
-      codigo: "A DEFINIR",
-      descricao: "Doca definida pelo operador no recebimento"
-    }
-  });
+  return prisma.doca.create({ data: { codigo: "A DEFINIR", descricao: "Doca definida pelo operador no recebimento" } });
 }
 
 async function loadJanelasDocas() {
@@ -57,8 +81,7 @@ async function loadJanelasDocas() {
       prisma.doca.findMany({ orderBy: { codigo: "asc" } })
     ]);
     return { janelas, docas };
-  } catch (ormError) {
-    console.error("Prisma ORM falhou em disponibilidade. Tentando fallback SQL:", ormError?.message || ormError);
+  } catch {
     return fetchJanelasDocas();
   }
 }
@@ -66,47 +89,23 @@ async function loadJanelasDocas() {
 async function loadAgendamentos(datas) {
   try {
     return await prisma.agendamento.findMany({
-      where: {
-        dataAgendada: { in: datas },
-        status: { in: ACTIVE_STATUSES }
-      },
-      select: {
-        dataAgendada: true,
-        janelaId: true,
-        protocolo: true,
-        status: true,
-        motorista: true,
-        placa: true,
-        fornecedor: true,
-        transportadora: true,
-        horaAgendada: true
-      }
+      where: { dataAgendada: { in: datas }, status: { in: ACTIVE_STATUSES } },
+      select: { dataAgendada: true, janelaId: true, protocolo: true, status: true, motorista: true, placa: true, fornecedor: true, transportadora: true, horaAgendada: true }
     });
-  } catch (ormError) {
-    console.error("Prisma ORM falhou ao carregar agendamentos. Tentando fallback SQL:", ormError?.message || ormError);
+  } catch {
     return fetchAgendamentosByDatasStatuses(datas, ACTIVE_STATUSES);
   }
 }
 
 async function buildAgenda({ dias = 21 } = {}) {
   const { janelas, docas } = await loadJanelasDocas();
-
   if (!janelas.length) {
-    return {
-      agenda: [],
-      meta: {
-        dias,
-        capacidadePorHorario: 0,
-        totalDocas: docas.length,
-        motivo: "Nenhuma janela cadastrada"
-      }
-    };
+    return { agenda: [], meta: { dias, capacidadePorHorario: 0, totalDocas: docas.length, motivo: "Nenhuma janela cadastrada" } };
   }
 
   const capacidadePorHorario = Math.max(docas.length, 1);
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
-
   const datas = Array.from({ length: dias }, (_, index) => {
     const date = new Date(hoje);
     date.setDate(hoje.getDate() + index);
@@ -114,15 +113,16 @@ async function buildAgenda({ dias = 21 } = {}) {
   });
 
   const agendamentos = await loadAgendamentos(datas);
-
   const occupancy = new Map();
   for (const item of agendamentos) {
     const key = `${item.dataAgendada}::${item.janelaId}`;
     occupancy.set(key, (occupancy.get(key) || 0) + 1);
   }
 
-  const agenda = datas.map((data) => {
-    const horarios = janelas.map((janela) => {
+  const agenda = datas.map((data) => ({
+    data,
+    disponivel: false,
+    horarios: janelas.map((janela) => {
       const parsed = parseJanelaCodigo(janela.codigo);
       const key = `${data}::${janela.id}`;
       const ocupados = occupancy.get(key) || 0;
@@ -138,34 +138,18 @@ async function buildAgenda({ dias = 21 } = {}) {
         disponivel,
         ativo: disponivel > 0
       };
-    });
+    })
+  })).map((dia) => ({ ...dia, disponivel: dia.horarios.some((slot) => slot.disponivel > 0) }));
 
-    return {
-      data,
-      disponivel: horarios.some((slot) => slot.disponivel > 0),
-      horarios
-    };
-  });
-
-  return {
-    agenda,
-    meta: {
-      dias,
-      capacidadePorHorario,
-      totalDocas: docas.length,
-      totalJanelas: janelas.length
-    }
-  };
+  return { agenda, meta: { dias, capacidadePorHorario, totalDocas: docas.length, totalJanelas: janelas.length } };
 }
 
 router.get("/disponibilidade", async (req, res) => {
   try {
     const diasRaw = Number(req.query?.dias || 21);
     const dias = Number.isFinite(diasRaw) ? Math.min(Math.max(diasRaw, 1), 60) : 21;
-    const payload = await buildAgenda({ dias });
-    res.json(payload);
+    res.json(await buildAgenda({ dias }));
   } catch (err) {
-    console.error("Erro em /public/disponibilidade:", err);
     res.status(500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
   }
 });
@@ -174,30 +158,13 @@ router.post("/solicitacao", async (req, res) => {
   try {
     const payload = { ...(req.body || {}) };
     const janelaId = Number(payload.janelaId);
-
-    if (!Number.isInteger(janelaId) || janelaId <= 0) {
-      return res.status(400).json({ message: "Janela inválida." });
-    }
+    if (!janelaId) return res.status(400).json({ message: "Janela é obrigatória." });
 
     const janela = await prisma.janela.findUnique({ where: { id: janelaId } });
-    if (!janela) {
-      return res.status(404).json({ message: "Janela não encontrada." });
-    }
+    if (!janela) return res.status(404).json({ message: "Janela não encontrada." });
 
     const horaAgendada = parseJanelaCodigo(janela.codigo).horaInicio;
     const doca = await getOrCreateDocaPadrao();
-
-    const notasNormalizadas = Array.isArray(payload.notas)
-      ? payload.notas.map((nota) => ({
-          numeroNf: String(nota?.numeroNf || "").trim(),
-          serie: String(nota?.serie || "").trim(),
-          chaveAcesso: normalizeChaveAcesso(nota?.chaveAcesso || ""),
-          volumes: Number(nota?.volumes || 0),
-          peso: Number(nota?.peso || 0),
-          valorNf: Number(nota?.valorNf || 0),
-          observacao: String(nota?.observacao || "").trim()
-        }))
-      : [];
 
     const agendamentoPayload = {
       fornecedor: String(payload.fornecedor || "").trim(),
@@ -211,20 +178,16 @@ router.post("/solicitacao", async (req, res) => {
       horaAgendada,
       janelaId,
       docaId: doca.id,
-      quantidadeNotas: Number(payload.quantidadeNotas || notasNormalizadas.length || 0),
+      quantidadeNotas: Number(payload.quantidadeNotas || 0),
       quantidadeVolumes: Number(payload.quantidadeVolumes || 0),
       observacoes: String(payload.observacoes || "").trim(),
       lgpdConsent: Boolean(payload.lgpdConsent)
     };
 
     validateAgendamentoPayload(agendamentoPayload, true);
-    validateNfBatch(notasNormalizadas);
+    validateNfBatch(Array.isArray(payload.notas) ? payload.notas : []);
 
-    await assertJanelaDocaDisponivel({
-      docaId: doca.id,
-      janelaId,
-      dataAgendada: agendamentoPayload.dataAgendada
-    });
+    await assertJanelaDocaDisponivel({ docaId: doca.id, janelaId, dataAgendada: agendamentoPayload.dataAgendada });
 
     const created = await prisma.agendamento.create({
       data: {
@@ -251,108 +214,91 @@ router.post("/solicitacao", async (req, res) => {
       }
     });
 
-    if (notasNormalizadas.length) {
+    const notas = Array.isArray(payload.notas) ? payload.notas : [];
+    if (notas.length) {
       await prisma.notaFiscal.createMany({
-        data: notasNormalizadas.map((nota) => ({
+        data: notas.map((nota) => ({
           agendamentoId: created.id,
-          numeroNf: nota.numeroNf,
-          serie: nota.serie,
-          chaveAcesso: nota.chaveAcesso,
-          volumes: nota.volumes,
-          peso: nota.peso,
-          valorNf: nota.valorNf,
-          observacao: nota.observacao
+          numeroNf: String(nota.numeroNf || "").trim(),
+          serie: String(nota.serie || "").trim(),
+          chaveAcesso: normalizeChaveAcesso(nota.chaveAcesso || ""),
+          volumes: Number(nota.volumes || 0),
+          peso: Number(nota.peso || 0),
+          valorNf: Number(nota.valorNf || 0),
+          observacao: String(nota.observacao || "").trim()
         }))
       });
     }
-
-    const base = process.env.FRONTEND_URL || `http://localhost:${process.env.PORT || 3000}`;
 
     res.status(201).json({
       ok: true,
       id: created.id,
       protocolo: created.protocolo,
+      status: created.status,
       horaAgendada,
       doca: doca.codigo,
-      linkMotorista: `${base}/?view=motorista&token=${encodeURIComponent(created.publicTokenMotorista)}`,
-      linkFornecedor: `${base}/?view=fornecedor&token=${encodeURIComponent(created.publicTokenFornecedor)}`
+      tokenVerificacao: created.publicTokenFornecedor,
+      linkConsulta: `${baseUrl()}/public/consulta-agendamento?token=${encodeURIComponent(created.publicTokenFornecedor)}`,
+      linkMotorista: `${baseUrl()}/public/motorista?token=${encodeURIComponent(created.publicTokenMotorista)}`
     });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
 });
 
+async function loadByToken(field, token) {
+  return prisma.agendamento.findUnique({
+    where: { [field]: token },
+    include: { notasFiscais: true, doca: true, janela: true, documentos: true }
+  });
+}
+
 router.get("/motorista/:token", async (req, res) => {
   try {
-    const item = await prisma.agendamento.findUnique({
-      where: { publicTokenMotorista: req.params.token },
-      include: {
-        notasFiscais: true,
-        doca: true,
-        janela: true,
-        documentos: true
-      }
-    });
-
-    if (!item) {
-      return res.status(404).json({ message: "Token inválido." });
-    }
-
-    res.json({
-      ...item,
-      semaforo: trafficColor(item.status)
-    });
+    const item = await loadByToken("publicTokenMotorista", req.params.token);
+    if (!item) return res.status(404).json({ message: "Token inválido." });
+    res.json(publicPayload(item));
   } catch (err) {
-    console.error("Erro em /public/disponibilidade:", err);
     res.status(500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
   }
 });
 
 router.get("/fornecedor/:token", async (req, res) => {
   try {
-    const item = await prisma.agendamento.findUnique({
-      where: { publicTokenFornecedor: req.params.token },
-      include: {
-        notasFiscais: true,
-        doca: true,
-        janela: true,
-        documentos: true
-      }
-    });
-
-    if (!item) {
-      return res.status(404).json({ message: "Token inválido." });
-    }
-
-    res.json(item);
+    const item = await loadByToken("publicTokenFornecedor", req.params.token);
+    if (!item) return res.status(404).json({ message: "Token inválido." });
+    res.json(publicPayload(item));
   } catch (err) {
-    console.error("Erro em /public/disponibilidade:", err);
     res.status(500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
+  }
+});
+
+router.get("/consulta-agendamento/:token", async (req, res) => {
+  try {
+    const item = await loadByToken("publicTokenFornecedor", req.params.token);
+    if (!item) return res.status(404).json({ message: "Token inválido." });
+    res.json(publicPayload(item));
+  } catch (err) {
+    res.status(500).json({ message: err?.message || "Falha ao consultar agendamento." });
   }
 });
 
 router.post("/fornecedor/:token/notas", async (req, res) => {
   try {
-    const item = await prisma.agendamento.findUnique({
-      where: { publicTokenFornecedor: req.params.token }
-    });
-
-    if (!item) {
-      return res.status(404).json({ message: "Token inválido." });
-    }
+    const item = await prisma.agendamento.findUnique({ where: { publicTokenFornecedor: req.params.token } });
+    if (!item) return res.status(404).json({ message: "Token inválido." });
 
     validateNf(req.body || {});
-
     const nf = await prisma.notaFiscal.create({
       data: {
         agendamentoId: item.id,
-        numeroNf: String(req.body?.numeroNf || "").trim(),
-        serie: String(req.body?.serie || "").trim(),
-        chaveAcesso: normalizeChaveAcesso(req.body?.chaveAcesso || ""),
-        volumes: Number(req.body?.volumes || 0),
-        peso: Number(req.body?.peso || 0),
-        valorNf: Number(req.body?.valorNf || 0),
-        observacao: String(req.body?.observacao || "").trim()
+        numeroNf: req.body.numeroNf || "",
+        serie: req.body.serie || "",
+        chaveAcesso: normalizeChaveAcesso(req.body.chaveAcesso || ""),
+        volumes: Number(req.body.volumes || 0),
+        peso: Number(req.body.peso || 0),
+        valorNf: Number(req.body.valorNf || 0),
+        observacao: req.body.observacao || ""
       }
     });
 
@@ -364,35 +310,19 @@ router.post("/fornecedor/:token/notas", async (req, res) => {
 
 router.post("/checkin/:token", async (req, res) => {
   try {
-    const item = await prisma.agendamento.findUnique({
-      where: { checkinToken: req.params.token }
-    });
-
-    if (!item) {
-      return res.status(404).json({ message: "Token de check-in inválido." });
-    }
-
+    const item = await prisma.agendamento.findUnique({ where: { checkinToken: req.params.token } });
+    if (!item) return res.status(404).json({ message: "Token de check-in inválido." });
     if (!["APROVADO", "CHEGOU"].includes(item.status)) {
-      return res.status(400).json({
-        message: "Check-in só permitido para agendamentos aprovados"
-      });
+      return res.status(400).json({ message: "Check-in só permitido para agendamentos aprovados" });
     }
 
     const updated = await prisma.agendamento.update({
       where: { id: item.id },
-      data: {
-        status: "CHEGOU",
-        checkinEm: new Date()
-      }
+      data: { status: item.status === "CHEGOU" ? "CHEGOU" : "CHEGOU", checkinEm: item.checkinEm || new Date() }
     });
 
-    res.json({
-      ok: true,
-      message: "Check-in realizado com sucesso",
-      agendamento: updated
-    });
+    res.json({ ok: true, message: "Check-in realizado com sucesso", agendamento: updated });
   } catch (err) {
-    console.error("Erro em /public/disponibilidade:", err);
     res.status(500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
   }
 });

@@ -10,7 +10,7 @@ function transporter() {
   });
 }
 
-export async function sendMail({ to, subject, text, html }) {
+export async function sendMail({ to, subject, text, html, attachments = [] }) {
   const tx = transporter();
   if (!tx) return { sent: false, reason: "SMTP não configurado" };
   const info = await tx.sendMail({
@@ -18,7 +18,8 @@ export async function sendMail({ to, subject, text, html }) {
     to,
     subject,
     text,
-    html
+    html,
+    attachments
   });
   return { sent: true, messageId: info.messageId };
 }

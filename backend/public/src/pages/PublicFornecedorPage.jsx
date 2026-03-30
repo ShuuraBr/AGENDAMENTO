@@ -254,15 +254,7 @@ export default function PublicFornecedorPage() {
                   </label>
                   <label style={{ display: "grid", gap: 6 }}>
                     <span>Chave de acesso</span>
-                    <input
-                      inputMode="numeric"
-                      maxLength={44}
-                      value={nota.chaveAcesso}
-                      onChange={(e) => {
-                        const onlyDigits = e.target.value.replace(/\D/g, "").slice(0, 44);
-                        updateNota(index, "chaveAcesso", onlyDigits);
-                      }}
-                    />
+                    <input value={nota.chaveAcesso} onChange={(e) => updateNota(index, "chaveAcesso", e.target.value)} />
                   </label>
                   <label style={{ display: "grid", gap: 6 }}>
                     <span>Volumes</span>
@@ -310,6 +302,9 @@ export default function PublicFornecedorPage() {
         <div style={{ marginTop: 20, padding: 16, border: "1px solid #d1fae5", borderRadius: 14, background: "#ecfdf5" }}>
           <p><strong>Protocolo:</strong> {resultado.protocolo}</p>
           <p><strong>Status:</strong> {resultado.status}</p>
+          <p><strong>Token de verificação:</strong> {resultado.tokenVerificacao}</p>
+          <p><strong>Consulta do agendamento:</strong> <a href={resultado.linkConsulta} target="_blank" rel="noreferrer">abrir consulta</a></p>
+          <p><strong>Área do motorista:</strong> <a href={resultado.linkMotorista} target="_blank" rel="noreferrer">abrir acompanhamento</a></p>
           <p>Solicitação registrada com sucesso. O operador fará a definição da doca e a aprovação conforme disponibilidade operacional.</p>
         </div>
       )}

@@ -7,6 +7,7 @@ import CadastrosPage from "./pages/CadastrosPage";
 import AgendamentosPage from "./pages/AgendamentosPage";
 import PublicFornecedorPage from "./pages/PublicFornecedorPage";
 import PublicMotoristaPage from "./pages/PublicMotoristaPage";
+import PublicConsultaAgendamentoPage from "./pages/PublicConsultaAgendamentoPage";
 
 function Layout({ children }) {
   const token = localStorage.getItem("token");
@@ -19,8 +20,9 @@ function Layout({ children }) {
         <Link to="/">Dashboard</Link>
         <Link to="/cadastros">Cadastros</Link>
         <Link to="/agendamentos">Agendamentos</Link>
-        <Link to="/public/fornecedor">Área Pública Fornecedor</Link>
-        <Link to="/public/motorista">Área Pública Motorista</Link>
+        <Link to="/public/fornecedor">Solicitação pública</Link>
+        <Link to="/public/consulta-agendamento">Verificação de agendamento</Link>
+        <Link to="/public/motorista">Área do motorista</Link>
         <button onClick={() => { localStorage.clear(); location.href = "/login"; }}>Sair</button>
       </nav>
       {children}
@@ -34,6 +36,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/public/fornecedor" element={<PublicFornecedorPage />} />
+        <Route path="/public/consulta-agendamento" element={<PublicConsultaAgendamentoPage />} />
         <Route path="/public/motorista" element={<PublicMotoristaPage />} />
         <Route path="/" element={<Layout><DashboardPage /></Layout>} />
         <Route path="/cadastros" element={<Layout><CadastrosPage /></Layout>} />
