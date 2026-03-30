@@ -8,7 +8,10 @@ import { pingDatabase } from "../utils/db-fallback.js";
 
 const router = Router();
 
+// Endpoint de Health Check
 router.get("/health", (_req, res) => res.json({ ok: true, message: "API online" }));
+
+// Endpoint de Health Check do Banco de Dados
 router.get("/health/db", async (_req, res) => {
   try {
     const db = await pingDatabase();
@@ -18,6 +21,8 @@ router.get("/health/db", async (_req, res) => {
     res.status(500).json({ ok: false, message: error?.message || "Falha no banco" });
   }
 });
+
+// Rotas do Sistema
 router.use("/auth", authRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/cadastros", cadastrosRoutes);

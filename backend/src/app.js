@@ -1,17 +1,41 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
+import routes from "./routes/index.js";
+import { errorHandler } from "./middlewares/errorHandler.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Configurações Globais
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-app.get("/api/health", (_req, res) => {
-  res.json({ ok: true });
+// Servir arquivos estáticos do Frontend (Pasta Public)
+const publicPath = path.join(__dirname, "../public");
+app.use(express.static(publicPath));
+
+// Servir arquivos de Upload (Documentos/Fotos)
+const uploadsPath = path.join(__dirname, "../uploads");
+app.use("/uploads", express.static(uploadsPath));
+
+// Registrar todas as Rotas da API
+app.use("/api", routes);
+
+// Rota para o Frontend (Single Page Application)
+// Garante que qualquer rota não encontrada na API carregue o index.html
+app.get("*", (req, res) => {
+  if (req.path.startsWith("/api")) {
+    return res.status(404).json({ message: "Rota de API não encontrada" });
+  }
+  res.sendFile(path.join(publicPath, "index.html"));
 });
 
-app.get("/", (_req, res) => {
-  res.send("API online");
-});
+// Middleware de Tratamento de Erros
+app.use(errorHandler);
 
 export default app;
