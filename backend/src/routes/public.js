@@ -63,6 +63,25 @@ async function loadJanelasDocas() {
   }
 }
 
+
+async function resolveJanela(rawJanelaId) {
+  const janelaId = Number(rawJanelaId);
+  if (!Number.isInteger(janelaId) || janelaId <= 0) {
+    const error = new Error("Janela inválida.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const janela = await prisma.janela.findFirst({ where: { id: janelaId } });
+  if (!janela) {
+    const error = new Error("Janela não encontrada.");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  return janela;
+}
+
 async function loadAgendamentos(datas) {
   try {
     return await prisma.agendamento.findMany({
@@ -166,23 +185,19 @@ router.get("/disponibilidade", async (req, res) => {
     res.json(payload);
   } catch (err) {
     console.error("Erro em /public/disponibilidade:", err);
-    res.status(500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
+    res.status(err?.statusCode || 500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
   }
 });
 
 router.post("/solicitacao", async (req, res) => {
   try {
     const payload = { ...(req.body || {}) };
-    const janelaId = Number(payload.janelaId);
-
-    if (!janelaId) {
+    if (payload.janelaId == null || payload.janelaId === "") {
       return res.status(400).json({ message: "Janela é obrigatória." });
     }
 
-    const janela = await prisma.janela.findUnique({ where: { id: janelaId } });
-    if (!janela) {
-      return res.status(404).json({ message: "Janela não encontrada." });
-    }
+    const janela = await resolveJanela(payload.janelaId);
+    const janelaId = janela.id;
 
     const horaAgendada = parseJanelaCodigo(janela.codigo).horaInicio;
     const doca = await getOrCreateDocaPadrao();
@@ -293,7 +308,7 @@ router.get("/motorista/:token", async (req, res) => {
     });
   } catch (err) {
     console.error("Erro em /public/disponibilidade:", err);
-    res.status(500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
+    res.status(err?.statusCode || 500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
   }
 });
 
@@ -316,7 +331,7 @@ router.get("/fornecedor/:token", async (req, res) => {
     res.json(item);
   } catch (err) {
     console.error("Erro em /public/disponibilidade:", err);
-    res.status(500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
+    res.status(err?.statusCode || 500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
   }
 });
 
@@ -382,7 +397,7 @@ router.post("/checkin/:token", async (req, res) => {
     });
   } catch (err) {
     console.error("Erro em /public/disponibilidade:", err);
-    res.status(500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
+    res.status(err?.statusCode || 500).json({ message: err?.message || "Falha ao consultar disponibilidade." });
   }
 });
 

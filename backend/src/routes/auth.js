@@ -5,7 +5,6 @@ import { fetchUserByEmail } from "../utils/db-fallback.js";
 import { signInternalSession } from "../utils/security.js";
 import { auditLog } from "../utils/audit.js";
 import { loginRateLimit, registerLoginFailure, clearLoginFailures } from "../middlewares/rateLimit.js";
-import { normalizeDatabaseError } from "../utils/db-error.js";
 
 const router = Router();
 
@@ -66,11 +65,10 @@ router.post("/login", loginRateLimit, async (req, res) => {
       }
     });
   } catch (err) {
-    const normalizedError = normalizeDatabaseError(err);
-    console.error("Erro no login:", normalizedError);
-    return res.status(normalizedError.statusCode || 500).json({
-      message: normalizedError.statusCode === 503 ? "Falha de conexão com o banco." : "Erro interno no login.",
-      error: normalizedError.message || "Falha não identificada"
+    console.error("Erro no login:", err);
+    return res.status(500).json({
+      message: "Erro interno no login.",
+      error: err?.message || "Falha não identificada"
     });
   }
 });

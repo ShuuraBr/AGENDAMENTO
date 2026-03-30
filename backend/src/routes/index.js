@@ -5,7 +5,6 @@ import cadastrosRoutes from "./cadastros.js";
 import agendamentosRoutes from "./agendamentos.js";
 import publicRoutes from "./public.js";
 import { pingDatabase } from "../utils/db-fallback.js";
-import { normalizeDatabaseError } from "../utils/db-error.js";
 
 const router = Router();
 
@@ -15,9 +14,8 @@ router.get("/health/db", async (_req, res) => {
     const db = await pingDatabase();
     res.json({ ok: true, message: "Banco online", db });
   } catch (error) {
-    const normalizedError = normalizeDatabaseError(error);
-    console.error("Erro em /health/db:", normalizedError);
-    res.status(normalizedError.statusCode || 500).json({ ok: false, message: normalizedError.message || "Falha no banco" });
+    console.error("Erro em /health/db:", error);
+    res.status(500).json({ ok: false, message: error?.message || "Falha no banco" });
   }
 });
 router.use("/auth", authRoutes);
