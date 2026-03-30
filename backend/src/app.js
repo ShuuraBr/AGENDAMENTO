@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -9,19 +8,6 @@ import routes from "./routes/index.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const backendRoot = path.resolve(__dirname, "..");
-const backendEnvPath = path.join(backendRoot, ".env");
-
-dotenv.config({ override: true });
-if (fs.existsSync(backendEnvPath)) {
-  dotenv.config({ path: backendEnvPath, override: true });
-}
-
-if (!process.env.DATABASE_URL) {
-  const { DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASS } = process.env;
-  if (DB_HOST && DB_PORT && DB_NAME && DB_USER && typeof DB_PASS !== "undefined") {
-    process.env.DATABASE_URL = `mysql://${encodeURIComponent(DB_USER)}:${encodeURIComponent(DB_PASS)}@${DB_HOST}:${DB_PORT}/${DB_NAME}`;
-  }
-}
 
 const app = express();
 const publicDir = path.join(backendRoot, "public");
