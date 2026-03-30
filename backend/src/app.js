@@ -31,7 +31,7 @@ app.use((req, res, next) => {
       "img-src 'self' data: https:",
       "style-src 'self' 'unsafe-inline'",
       "script-src 'self' 'unsafe-inline'",
-      "connect-src 'self'",
+      "connect-src 'self' https:",
       "font-src 'self' data:",
       "frame-ancestors 'self'",
       "base-uri 'self'",
