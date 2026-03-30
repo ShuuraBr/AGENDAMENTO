@@ -12,7 +12,6 @@ const backendRoot = path.resolve(__dirname, "../..");
 const backendEnvPath = path.join(backendRoot, ".env");
 
 dotenv.config({ override: true });
-
 if (fs.existsSync(backendEnvPath)) {
   dotenv.config({ path: backendEnvPath, override: true });
 }
@@ -77,8 +76,8 @@ function createModelProxy(pathParts = []) {
       if (prop === Symbol.toStringTag) return "PrismaProxy";
       return createModelProxy([...pathParts, prop]);
     },
-    apply() {
-      return createDeferredMethod(pathParts)();
+    apply(_target, _thisArg, args) {
+      return createDeferredMethod(pathParts)(...(args || []));
     }
   });
 }
