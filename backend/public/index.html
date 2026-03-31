@@ -19,8 +19,7 @@
 
     <nav id="publicNav" class="nav-menu">
       <button type="button" class="nav-btn active" data-view="public-home">Início</button>
-      <button type="button" class="nav-btn" data-view="fornecedor">Solicitação</button>
-      <button type="button" class="nav-btn" data-view="consulta">Consulta transportadora/fornecedor</button>
+            <button type="button" class="nav-btn" data-view="consulta">Consulta transportadora/fornecedor</button>
       <button type="button" class="nav-btn" data-view="motorista">Motorista</button>
       <button type="button" class="nav-btn" data-view="login">Área do Colaborador</button>
     </nav>
@@ -41,8 +40,7 @@
         <h2>Portais disponíveis</h2>
         <p>Acesso segregado entre área pública e área interna. O colaborador acessa com login direto e permissões por perfil.</p>
         <div class="portal-links mt12">
-          <button type="button" class="nav-btn" data-view="fornecedor">Nova solicitação</button>
-          <button type="button" class="nav-btn" data-view="consulta">Consulta da transportadora/fornecedor</button>
+                    <button type="button" class="nav-btn" data-view="consulta">Consulta da transportadora/fornecedor</button>
           <button type="button" class="nav-btn" data-view="motorista">Acompanhamento do motorista</button>
         </div>
       </div>
@@ -52,8 +50,8 @@
       <div class="card narrow login-card">
         <h2>Login do colaborador</h2>
         <form id="loginForm">
-          <label>Email<input name="email" value="admin@local.test" /></label>
-          <label>Senha<input name="senha" type="password" value="123456" /></label>
+          <label>Login / E-mail<input name="email" autocomplete="username" placeholder="Digite seu login" /></label>
+          <label>Senha<input name="senha" type="password" autocomplete="current-password" placeholder="Digite sua senha" /></label>
           <button type="submit">Entrar</button>
         </form>
         <p id="loginMsg" class="msg"></p>
@@ -69,6 +67,7 @@
               <label>Fornecedor<input name="fornecedor" value="Fornecedor Externo" /></label>
               <label>Transportadora<input name="transportadora" value="Transportadora Externa" /></label>
               <label>Motorista<input name="motorista" value="Motorista Externo" /></label>
+              <label>CPF do motorista<input name="motoristaCpf" value="12345678901" inputmode="numeric" /></label>
               <label>Telefone do motorista<input name="telefoneMotorista" value="61999998888" /></label>
               <label>E-mail do motorista<input name="emailMotorista" value="motorista@teste.com" /></label>
               <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@teste.com" /></label>
@@ -78,8 +77,10 @@
               <div class="info-box"><strong>Doca:</strong> definida pelo operador do recebimento conforme disponibilidade operacional.</div>
               <label>Data<select name="dataAgendada" id="publicDataSelect"></select></label>
               <label>Horário disponível<select name="janelaId" id="publicJanelaSelect"></select></label>
-              <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" /></label>
-              <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="8" /></label>
+              <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="0" readonly /></label>
+              <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="0" readonly /></label>
+              <label>Peso total (kg)<input name="pesoTotal" type="number" step="0.001" value="0" readonly /></label>
+              <label>Valor total (R$)<input name="valorTotal" type="number" step="0.01" value="0" readonly /></label>
               <label>Observações<textarea name="observacoes"></textarea></label>
               <label class="check">
                 <input name="lgpdConsent" type="checkbox" />
@@ -225,35 +226,59 @@
     </section>
 
     <section id="agendamentos" class="view">
-      <div class="grid2">
+      <div class="grid2 agendamento-layout">
         <div class="card">
-          <h2>Novo agendamento interno</h2>
-          <form id="agendamentoForm">
-            <label>Fornecedor<input name="fornecedor" value="Fornecedor Exemplo LTDA" /></label>
+          <div class="section-head">
+            <div>
+              <span class="eyebrow">Área do colaborador</span>
+              <h2>Novo agendamento interno</h2>
+              <p class="section-copy">Preencha os dados operacionais e registre o agendamento com envio automático de comunicações.</p>
+            </div>
+          </div>
+          <form id="agendamentoForm" class="agendamento-form">
+            <div class="form-section">
+              <h3>Dados da operação</h3>
+              <div class="form-grid mt12">
+            <label>Fornecedor<input name="fornecedor" list="fornecedorPendenteList" value="Fornecedor Exemplo LTDA" /></label>
+                <datalist id="fornecedorPendenteList"></datalist>
             <label>Transportadora<input name="transportadora" value="Transportadora Exemplo" /></label>
             <label>Motorista<input name="motorista" value="Motorista Exemplo" /></label>
+            <label>CPF do motorista<input name="motoristaCpf" value="12345678901" inputmode="numeric" /></label>
             <label>Telefone do motorista<input name="telefoneMotorista" value="61999999999" /></label>
             <label>E-mail do motorista<input name="emailMotorista" value="motorista@test.com" /></label>
             <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@test.com" /></label>
             <label>Placa<input name="placa" value="ABC1D23" /></label>
-            <label>Doca<select name="docaId" id="internalDocaSelect"></select></label>
-            <label>Janela<select name="janelaId" id="internalJanelaSelect"></select></label>
-            <label>Data<input name="dataAgendada" type="date" /></label>
-            <label>Hora<input name="horaAgendada" value="08:00" /></label>
-            <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" /></label>
-            <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="10" /></label>
-            <label>Observações<textarea name="observacoes"></textarea></label>
-            <button type="submit">Salvar agendamento</button>
+            <label class="form-group-full">Observações<textarea name="observacoes" placeholder="Informações adicionais para recebimento, conferência ou portaria"></textarea></label>
+              </div>
+            </div>
+            <div class="form-section">
+              <h3>Janela e capacidade</h3>
+              <div class="form-grid mt12">
+                <label>Data<input name="dataAgendada" type="date" /></label>
+                <label>Hora<input name="horaAgendada" value="08:00" /></label>
+                <label>Doca<select name="docaId" id="internalDocaSelect"></select></label>
+                <label>Janela<select name="janelaId" id="internalJanelaSelect"></select></label>
+                <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="0" readonly /></label>
+                <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="0" readonly /></label>
+                <label>Peso total (kg)<input name="pesoTotal" type="number" step="0.001" value="0" readonly /></label>
+                <label>Valor total (R$)<input name="valorTotal" type="number" step="0.01" value="0" readonly /></label>
+              </div>
+            </div>
+            <div class="totals-strip"><div><span>Notas</span><strong id="totalNotasLabel">0</strong></div><div><span>Volumes</span><strong id="totalVolumesLabel">0</strong></div><div><span>Peso total</span><strong id="totalPesoLabel">0.000</strong></div><div><span>Valor total</span><strong id="totalValorLabel">R$ 0,00</strong></div></div>
+            <div class="form-actions">
+              <button type="submit">Salvar agendamento</button>
+            </div>
           </form>
           <p id="agendamentoMsg" class="msg"></p>
         </div>
 
         <div class="card">
           <h2>Workflow operacional</h2>
-          <div class="row gap8">
+          <div class="row gap8 wrap">
             <button id="loadAgendamentos">Atualizar lista</button>
             <input id="agendamentoId" placeholder="ID do agendamento" />
           </div>
+          <div id="statusHelper" class="info-box mt12">Informe o ID do agendamento para validar a transição de status antes de executar a operação.</div>
           <div class="row gap8 wrap mt12">
             <button id="btnAprovar">Aprovar</button>
             <button id="btnReprovar">Reprovar</button>
@@ -263,7 +288,8 @@
             <button id="btnFinalizar">Finalizar</button>
             <button id="btnNoShow">No-show</button>
             <button id="btnVoucher">Voucher</button>
-            <button id="btnQr">QR Code</button>
+            <button id="btnQr">QR check-in</button>
+            <button id="btnQrCheckout" class="btn-secondary">QR check-out</button>
             <button id="btnEnviarInfos">Enviar informações</button>
           </div>
 

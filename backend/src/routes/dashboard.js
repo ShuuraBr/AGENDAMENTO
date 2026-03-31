@@ -37,6 +37,9 @@ router.get("/operacional", async (req, res) => {
     finalizados: all.filter(x => x.status === "FINALIZADO").length,
     cancelados: all.filter(x => x.status === "CANCELADO").length,
     noShow: all.filter(x => x.status === "NO_SHOW").length,
+    volumes: all.reduce((acc, x) => acc + Number(x.quantidadeVolumes || 0), 0),
+    pesoTotal: all.reduce((acc, x) => acc + Number(x.pesoTotal || 0), 0),
+    valorTotal: all.reduce((acc, x) => acc + Number(x.valorTotal || 0), 0),
     documentos: docs
   };
 
