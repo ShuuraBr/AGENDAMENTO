@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
+    "start": "node backend/src/server.js",
+    "dev": "node backend/src/server.js",
     "prisma:generate": "node ./node_modules/prisma/build/index.js generate --schema=backend/prisma/schema.prisma",
     "prisma:push": "node ./node_modules/prisma/build/index.js db push --schema=backend/prisma/schema.prisma",
     "prisma:seed": "node backend/prisma/seed.js",
@@ -20,7 +20,9 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "1.4.5-lts.2",
     "nodemailer": "^6.9.15",
+    "pdfkit": "^0.15.0",
     "prisma": "^5.22.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "zod": "^3.23.8"
   }
 }
