@@ -45,11 +45,7 @@ function buildPublicLinks(req, item) {
     motorista: `${base}/?view=motorista&token=${encodeURIComponent(item.publicTokenMotorista)}`,
     voucher: `${base}/api/public/voucher/${encodeURIComponent(item.publicTokenFornecedor)}`,
     checkin: `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`,
-<<<<<<< HEAD
     checkout: `${base}/api/public/checkout/${encodeURIComponent(item.checkinToken)}`
-=======
-    checkout: `${base}/?view=checkout&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
   };
 }
 
@@ -76,13 +72,8 @@ function formatPublicAgendamento(item, req) {
     observacoes: item.observacoes || "",
     quantidadeNotas: item.quantidadeNotas,
     quantidadeVolumes: item.quantidadeVolumes,
-<<<<<<< HEAD
     pesoTotal: item.pesoTotal || 0,
     valorTotal: item.valorTotal || 0,
-=======
-    pesoTotalKg: item.pesoTotalKg,
-    valorTotalNf: item.valorTotalNf,
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
     motivoReprovacao: item.motivoReprovacao,
     motivoCancelamento: item.motivoCancelamento,
     checkinEm: item.checkinEm,
@@ -266,17 +257,10 @@ router.post("/solicitacao", async (req, res) => {
     const totaisNotas = calculateNotasTotals(notas);
 
     const agendamentoPayload = {
-<<<<<<< HEAD
       fornecedor: String(payload.fornecedor || "").trim(),
       transportadora: String(payload.transportadora || "").trim(),
       motorista: String(payload.motorista || "").trim(),
       motoristaCpf: normalizeCpf(payload.motoristaCpf || ""),
-=======
-      fornecedor: String(relatorio?.fornecedor || payload.fornecedor || "").trim(),
-      transportadora: String(relatorio?.transportadora || payload.transportadora || "").trim(),
-      motorista: String(relatorio?.motorista || payload.motorista || "").trim(),
-      cpfMotorista: normalizeCpf(relatorio?.cpfMotorista || payload.cpfMotorista || ""),
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
       telefoneMotorista: String(payload.telefoneMotorista || "").trim(),
       emailMotorista: String(payload.emailMotorista || "").trim(),
       emailTransportadora: String(payload.emailTransportadora || "").trim(),
@@ -285,17 +269,10 @@ router.post("/solicitacao", async (req, res) => {
       horaAgendada,
       janelaId,
       docaId: doca.id,
-<<<<<<< HEAD
       quantidadeNotas: totaisNotas.quantidadeNotas,
       quantidadeVolumes: totaisNotas.quantidadeVolumes,
       pesoTotal: totaisNotas.pesoTotal,
       valorTotal: totaisNotas.valorTotal,
-=======
-      quantidadeNotas: Number(relatorio?.quantidadeNotas || payload.quantidadeNotas || resumo.quantidadeNotas || 0),
-      quantidadeVolumes: Number(relatorio?.quantidadeVolumes || payload.quantidadeVolumes || resumo.quantidadeVolumes || 0),
-      pesoTotalKg: Number(relatorio?.pesoTotalKg || payload.pesoTotalKg || resumo.pesoTotalKg || 0),
-      valorTotalNf: Number(relatorio?.valorTotalNf || payload.valorTotalNf || resumo.valorTotalNf || 0),
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
       observacoes: String(payload.observacoes || "").trim(),
       lgpdConsent: Boolean(payload.lgpdConsent)
     };
@@ -308,21 +285,13 @@ router.post("/solicitacao", async (req, res) => {
     const created = await prisma.agendamento.create({
       data: {
         protocolo: generateProtocol(),
-<<<<<<< HEAD
         publicTokenMotorista: generateCpfBasedMotoristaToken(agendamentoPayload.motoristaCpf),
-=======
-        publicTokenMotorista: generateDriverToken(agendamentoPayload.cpfMotorista),
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
         publicTokenFornecedor: generatePublicToken("FOR"),
         checkinToken: generatePublicToken("CHK"),
         fornecedor: agendamentoPayload.fornecedor,
         transportadora: agendamentoPayload.transportadora,
         motorista: agendamentoPayload.motorista,
-<<<<<<< HEAD
         motoristaCpf: agendamentoPayload.motoristaCpf,
-=======
-        cpfMotorista: agendamentoPayload.cpfMotorista || null,
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
         telefoneMotorista: agendamentoPayload.telefoneMotorista,
         emailMotorista: agendamentoPayload.emailMotorista,
         emailTransportadora: agendamentoPayload.emailTransportadora,
@@ -333,13 +302,8 @@ router.post("/solicitacao", async (req, res) => {
         horaAgendada,
         quantidadeNotas: agendamentoPayload.quantidadeNotas,
         quantidadeVolumes: agendamentoPayload.quantidadeVolumes,
-<<<<<<< HEAD
         pesoTotal: agendamentoPayload.pesoTotal,
         valorTotal: agendamentoPayload.valorTotal,
-=======
-        pesoTotalKg: agendamentoPayload.pesoTotalKg,
-        valorTotalNf: agendamentoPayload.valorTotalNf,
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
         status: "PENDENTE_APROVACAO",
         observacoes: agendamentoPayload.observacoes,
         lgpdConsentAt: new Date()

@@ -57,11 +57,7 @@ function buildPublicLinks(req, item) {
     motorista: `${base}/?view=motorista&token=${encodeURIComponent(item.publicTokenMotorista)}`,
     voucher: `${base}/api/public/voucher/${encodeURIComponent(item.publicTokenFornecedor)}`,
     checkin: `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`,
-<<<<<<< HEAD
     checkout: `${base}/api/public/checkout/${encodeURIComponent(item.checkinToken)}`
-=======
-    checkout: `${base}/?view=checkout&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
   };
 }
 
@@ -344,7 +340,6 @@ router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res
     const item = await prisma.agendamento.create({
       data: {
         protocolo: generateProtocol(),
-<<<<<<< HEAD
         publicTokenMotorista: generateCpfBasedMotoristaToken(payload.motoristaCpf),
         publicTokenFornecedor: generatePublicToken("FOR"),
         checkinToken: generatePublicToken("CHK"),
@@ -364,56 +359,15 @@ router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res
         quantidadeVolumes: Number(payload.quantidadeVolumes || 0),
         pesoTotal: Number(payload.pesoTotal || 0),
         valorTotal: Number(payload.valorTotal || 0),
-=======
-        publicTokenMotorista: generateDriverToken(merged.cpfMotorista),
-        publicTokenFornecedor: generatePublicToken("FOR"),
-        checkinToken: generatePublicToken("CHK"),
-        fornecedor: merged.fornecedor,
-        transportadora: merged.transportadora,
-        motorista: merged.motorista,
-        cpfMotorista: merged.cpfMotorista || null,
-        telefoneMotorista: merged.telefoneMotorista || "",
-        emailMotorista: merged.emailMotorista || "",
-        emailTransportadora: merged.emailTransportadora || "",
-        placa: merged.placa,
-        docaId: Number(merged.docaId),
-        janelaId: Number(merged.janelaId),
-        dataAgendada: merged.dataAgendada,
-        horaAgendada: merged.horaAgendada,
-        quantidadeNotas: Number(merged.quantidadeNotas || 0),
-        quantidadeVolumes: Number(merged.quantidadeVolumes || 0),
-        pesoTotalKg: Number(merged.pesoTotalKg || 0),
-        valorTotalNf: Number(merged.valorTotalNf || 0),
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
         status: "PENDENTE_APROVACAO",
         observacoes: merged.observacoes || ""
       }
     });
 
-<<<<<<< HEAD
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CREATE", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: payload, ip: req.ip });
     const created = await full(item.id);
     const notificacoes = await sendSchedulingNotifications(created, req, "agendamento");
     res.status(201).json({ ...created, notificacoesEnviadas: notificacoes.results, links: notificacoes.links });
-=======
-    if (notasPayload.length) {
-      await prisma.notaFiscal.createMany({
-        data: notasPayload.map((nota) => ({ ...nota, agendamentoId: item.id }))
-      });
-    }
-
-    if (relatorio) {
-      await prisma.relatorioTerceirizado.update({
-        where: { id: relatorio.id },
-        data: { agendamentoId: item.id, status: "AGENDADO" }
-      });
-    }
-
-    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CREATE", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: merged, ip: req.ip });
-    const detailed = await full(item.id);
-    const notificacoes = await sendCreationNotifications(detailed, req);
-    res.status(201).json({ ...detailed, notificacoes });
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -591,11 +545,7 @@ router.post("/:id/notas", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async 
         observacao: payload.observacao || ""
       }
     });
-<<<<<<< HEAD
     await recalculateAgendamentoTotals(ag.id);
-=======
-    await recalcAgendamentoTotals(ag.id);
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "ADD_NF", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: payload, ip: req.ip });
     res.status(201).json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
@@ -647,11 +597,7 @@ router.get("/:id/qrcode.svg", async (req, res) => {
 router.get("/:id/checkout-qrcode.svg", async (req, res) => {
   const item = await mustExist(req.params.id);
   if (!item) return res.status(404).send("Agendamento não encontrado.");
-<<<<<<< HEAD
   const url = `OUT-${item.id}-${item.checkinToken}`;
-=======
-  const url = `${getBaseUrl(req)}/?view=checkout&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`;
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
   const svg = await qrSvg(url);
   res.setHeader("Content-Type", "image/svg+xml");
   res.send(svg);

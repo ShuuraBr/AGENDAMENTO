@@ -8,18 +8,10 @@
     nfRows: 1,
     nfDrafts: [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }],
     disponibilidadePublica: [],
-<<<<<<< HEAD
     cameraStream: null,
     cameraTimer: null,
     barcodeDetector: null,
     lastScannedCode: ""
-=======
-    fornecedoresPendentes: [],
-    currentAgendamento: null,
-    qrStream: null,
-    qrScanTimer: null,
-    qrLastValue: ""
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
   };
 
   const CADASTRO_CONFIG = {
@@ -479,15 +471,9 @@
       janela: a.janela?.codigo || "",
       data: a.dataAgendada,
       hora: a.horaAgendada,
-<<<<<<< HEAD
       volumes: a.quantidadeVolumes || 0,
       peso: a.pesoTotal || 0,
       valor: formatCurrencyBRL(a.valorTotal || 0)
-=======
-      volumes: a.quantidadeVolumes ?? 0,
-      pesoKg: a.pesoTotalKg ?? 0,
-      valorNf: a.valorTotalNf ?? 0
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
     })));
   }
 
@@ -668,16 +654,9 @@
       janela: i.janela?.codigo || "",
       data: i.dataAgendada,
       hora: i.horaAgendada,
-<<<<<<< HEAD
       volumes: i.quantidadeVolumes || 0,
       peso: i.pesoTotal || 0,
       valor: formatCurrencyBRL(i.valorTotal || 0),
-=======
-      volumes: i.quantidadeVolumes ?? 0,
-      pesoKg: i.pesoTotalKg ?? 0,
-      valorNf: i.valorTotalNf ?? 0,
-      cpfMotorista: i.cpfMotorista || "",
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
       semaforo: i.semaforo || ""
     })));
     bindAgendamentoSelection(items);
@@ -1016,16 +995,11 @@
       e.preventDefault();
       try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
-<<<<<<< HEAD
         payload.motoristaCpf = String(payload.motoristaCpf || "").replace(/\D/g, "");
         payload.pesoTotal = Number(payload.pesoTotal || 0);
         payload.valorTotal = Number(payload.valorTotal || 0);
         payload.quantidadeNotas = Number(payload.quantidadeNotas || 0);
         payload.quantidadeVolumes = Number(payload.quantidadeVolumes || 0);
-=======
-        const selected = state.fornecedoresPendentes.find((item) => String(item.id) === String(payload.relatorioTerceirizadoId || ""));
-        if (selected) fillFormFromImport("agendamentoForm", selected);
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
         const data = await api("/api/agendamentos", { method: "POST", body: JSON.stringify(payload) });
         byId("agendamentoId").value = data.id || "";
         const notificacoes = Array.isArray(data.notificacoesEnviadas) ? data.notificacoesEnviadas.length : 0;
@@ -1158,29 +1132,16 @@
 
     byId("checkinForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-<<<<<<< HEAD
       await validateCheckin(extractTokenFromQrText(new FormData(e.target).get("token")));
-=======
-      const token = new FormData(e.target).get("token");
-      const view = new URLSearchParams(location.search).get("view");
-      if (view === "checkout") await validateCheckout(token);
-      else await validateCheckin(token);
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
     });
 
     byId("startCamera")?.addEventListener("click", async () => {
       try { await startCamera(); } catch (err) { byId("checkinMsg").textContent = err.message; }
     });
 
-<<<<<<< HEAD
     byId("stopCamera")?.addEventListener("click", async () => {
       await stopCamera();
       byId("checkinMsg").textContent = "Câmera desativada.";
-=======
-    byId("stopCamera")?.addEventListener("click", () => {
-      stopCamera();
-      byId("checkinMsg").textContent = "Câmera desligada.";
->>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
     });
 
     byId("publicDataSelect")?.addEventListener("change", (e) => renderPublicSlots(e.target.value));
