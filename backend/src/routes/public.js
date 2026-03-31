@@ -45,7 +45,11 @@ function buildPublicLinks(req, item) {
     motorista: `${base}/?view=motorista&token=${encodeURIComponent(item.publicTokenMotorista)}`,
     voucher: `${base}/api/public/voucher/${encodeURIComponent(item.publicTokenFornecedor)}`,
     checkin: `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`,
+<<<<<<< HEAD
     checkout: `${base}/api/public/checkout/${encodeURIComponent(item.checkinToken)}`
+=======
+    checkout: `${base}/?view=checkout&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`
+>>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
   };
 }
 
@@ -59,6 +63,7 @@ function formatPublicAgendamento(item, req) {
     fornecedor: item.fornecedor,
     transportadora: item.transportadora,
     motorista: item.motorista,
+    cpfMotorista: item.cpfMotorista,
     telefoneMotorista: item.telefoneMotorista,
     motoristaCpf: item.motoristaCpf,
     emailMotorista: item.emailMotorista,
@@ -71,8 +76,13 @@ function formatPublicAgendamento(item, req) {
     observacoes: item.observacoes || "",
     quantidadeNotas: item.quantidadeNotas,
     quantidadeVolumes: item.quantidadeVolumes,
+<<<<<<< HEAD
     pesoTotal: item.pesoTotal || 0,
     valorTotal: item.valorTotal || 0,
+=======
+    pesoTotalKg: item.pesoTotalKg,
+    valorTotalNf: item.valorTotalNf,
+>>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
     motivoReprovacao: item.motivoReprovacao,
     motivoCancelamento: item.motivoCancelamento,
     checkinEm: item.checkinEm,
@@ -214,6 +224,29 @@ router.get("/disponibilidade", async (req, res) => {
   }
 });
 
+router.get("/fornecedores-pendentes", async (_req, res) => {
+  try {
+    const itens = await prisma.relatorioTerceirizado.findMany({
+      where: { status: "AGUARDANDO_CHEGADA", agendamentoId: null },
+      orderBy: [{ fornecedor: "asc" }, { id: "desc" }]
+    });
+    res.json(itens.map((item) => ({
+      id: item.id,
+      fornecedor: item.fornecedor,
+      transportadora: item.transportadora,
+      motorista: item.motorista,
+      cpfMotorista: item.cpfMotorista,
+      placa: item.placa,
+      quantidadeNotas: item.quantidadeNotas,
+      quantidadeVolumes: item.quantidadeVolumes,
+      pesoTotalKg: item.pesoTotalKg,
+      valorTotalNf: item.valorTotalNf
+    })));
+  } catch (err) {
+    res.status(500).json({ message: err?.message || "Falha ao consultar fornecedores pendentes." });
+  }
+});
+
 router.post("/solicitacao", async (req, res) => {
   try {
     const payload = { ...(req.body || {}) };
@@ -226,35 +259,43 @@ router.post("/solicitacao", async (req, res) => {
     const horaAgendada = parseJanelaCodigo(janela.codigo).horaInicio;
     const doca = await getOrCreateDocaPadrao();
 
-    const notas = Array.isArray(payload.notas) ? payload.notas.map((nota) => ({
-      numeroNf: String(nota?.numeroNf || "").trim(),
-      serie: String(nota?.serie || "").trim(),
-      chaveAcesso: normalizeChaveAcesso(nota?.chaveAcesso || ""),
-      volumes: Number(nota?.volumes || 0),
-      peso: Number(nota?.peso || 0),
-      valorNf: Number(nota?.valorNf || 0),
-      observacao: String(nota?.observacao || "").trim()
-    })) : [];
+    const relatorio = payload.relatorioTerceirizadoId ? await prisma.relatorioTerceirizado.findUnique({ where: { id: Number(payload.relatorioTerceirizadoId) } }) : null;
+    const notas = normalizeNotas(payload.notas || (relatorio?.notasJson ? JSON.parse(relatorio.notasJson) : []));
+    const resumo = summarizeNotas(notas);
 
     const totaisNotas = calculateNotasTotals(notas);
 
     const agendamentoPayload = {
+<<<<<<< HEAD
       fornecedor: String(payload.fornecedor || "").trim(),
       transportadora: String(payload.transportadora || "").trim(),
       motorista: String(payload.motorista || "").trim(),
       motoristaCpf: normalizeCpf(payload.motoristaCpf || ""),
+=======
+      fornecedor: String(relatorio?.fornecedor || payload.fornecedor || "").trim(),
+      transportadora: String(relatorio?.transportadora || payload.transportadora || "").trim(),
+      motorista: String(relatorio?.motorista || payload.motorista || "").trim(),
+      cpfMotorista: normalizeCpf(relatorio?.cpfMotorista || payload.cpfMotorista || ""),
+>>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
       telefoneMotorista: String(payload.telefoneMotorista || "").trim(),
       emailMotorista: String(payload.emailMotorista || "").trim(),
       emailTransportadora: String(payload.emailTransportadora || "").trim(),
-      placa: String(payload.placa || "").trim().toUpperCase(),
+      placa: String(relatorio?.placa || payload.placa || "").trim().toUpperCase(),
       dataAgendada: String(payload.dataAgendada || "").trim(),
       horaAgendada,
       janelaId,
       docaId: doca.id,
+<<<<<<< HEAD
       quantidadeNotas: totaisNotas.quantidadeNotas,
       quantidadeVolumes: totaisNotas.quantidadeVolumes,
       pesoTotal: totaisNotas.pesoTotal,
       valorTotal: totaisNotas.valorTotal,
+=======
+      quantidadeNotas: Number(relatorio?.quantidadeNotas || payload.quantidadeNotas || resumo.quantidadeNotas || 0),
+      quantidadeVolumes: Number(relatorio?.quantidadeVolumes || payload.quantidadeVolumes || resumo.quantidadeVolumes || 0),
+      pesoTotalKg: Number(relatorio?.pesoTotalKg || payload.pesoTotalKg || resumo.pesoTotalKg || 0),
+      valorTotalNf: Number(relatorio?.valorTotalNf || payload.valorTotalNf || resumo.valorTotalNf || 0),
+>>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
       observacoes: String(payload.observacoes || "").trim(),
       lgpdConsent: Boolean(payload.lgpdConsent)
     };
@@ -267,13 +308,21 @@ router.post("/solicitacao", async (req, res) => {
     const created = await prisma.agendamento.create({
       data: {
         protocolo: generateProtocol(),
+<<<<<<< HEAD
         publicTokenMotorista: generateCpfBasedMotoristaToken(agendamentoPayload.motoristaCpf),
+=======
+        publicTokenMotorista: generateDriverToken(agendamentoPayload.cpfMotorista),
+>>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
         publicTokenFornecedor: generatePublicToken("FOR"),
         checkinToken: generatePublicToken("CHK"),
         fornecedor: agendamentoPayload.fornecedor,
         transportadora: agendamentoPayload.transportadora,
         motorista: agendamentoPayload.motorista,
+<<<<<<< HEAD
         motoristaCpf: agendamentoPayload.motoristaCpf,
+=======
+        cpfMotorista: agendamentoPayload.cpfMotorista || null,
+>>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
         telefoneMotorista: agendamentoPayload.telefoneMotorista,
         emailMotorista: agendamentoPayload.emailMotorista,
         emailTransportadora: agendamentoPayload.emailTransportadora,
@@ -284,8 +333,13 @@ router.post("/solicitacao", async (req, res) => {
         horaAgendada,
         quantidadeNotas: agendamentoPayload.quantidadeNotas,
         quantidadeVolumes: agendamentoPayload.quantidadeVolumes,
+<<<<<<< HEAD
         pesoTotal: agendamentoPayload.pesoTotal,
         valorTotal: agendamentoPayload.valorTotal,
+=======
+        pesoTotalKg: agendamentoPayload.pesoTotalKg,
+        valorTotalNf: agendamentoPayload.valorTotalNf,
+>>>>>>> 64a771ccaedbc0098087bfaf0dcf9a2de3d2e2e4
         status: "PENDENTE_APROVACAO",
         observacoes: agendamentoPayload.observacoes,
         lgpdConsentAt: new Date()
@@ -295,6 +349,13 @@ router.post("/solicitacao", async (req, res) => {
     if (notas.length) {
       await prisma.notaFiscal.createMany({
         data: notas.map((nota) => ({ ...nota, agendamentoId: created.id }))
+      });
+    }
+
+    if (relatorio) {
+      await prisma.relatorioTerceirizado.update({
+        where: { id: relatorio.id },
+        data: { agendamentoId: created.id, status: "AGENDADO" }
       });
     }
 
@@ -405,6 +466,9 @@ router.post("/fornecedor/:token/notas", async (req, res) => {
       }
     });
 
+    const notasAtualizadas = await prisma.notaFiscal.findMany({ where: { agendamentoId: item.id } });
+    const resumoAtualizado = summarizeNotas(notasAtualizadas);
+    await prisma.agendamento.update({ where: { id: item.id }, data: resumoAtualizado });
     res.status(201).json(nf);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -429,7 +493,7 @@ router.get("/voucher/:token", async (req, res) => {
   try {
     const item = await resolveAgendamentoByAnyToken(req.params.token);
     if (!item) return res.status(404).json({ message: "Token inválido." });
-    const pdf = generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
+    const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename=voucher-${item.protocolo}.pdf`);
     res.send(pdf);
@@ -468,6 +532,30 @@ router.post("/checkout/:token", async (req, res) => {
     const updated = await prisma.agendamento.update({
       where: { id: item.id },
       data: { status: "FINALIZADO", inicioDescargaEm: item.inicioDescargaEm || item.checkinEm || new Date(), fimDescargaEm: new Date() }
+    });
+
+    res.json({ ok: true, message: "Check-out realizado com sucesso.", agendamento: updated });
+  } catch (err) {
+    console.error("Erro em /public/checkout:", err);
+    res.status(500).json({ message: err?.message || "Falha ao realizar check-out." });
+  }
+});
+
+router.post("/checkout/:token", async (req, res) => {
+  try {
+    const item = await prisma.agendamento.findUnique({ where: { checkinToken: req.params.token } });
+    if (!item) return res.status(404).json({ message: "Token de check-out inválido." });
+    if (!["CHEGOU", "EM_DESCARGA", "FINALIZADO"].includes(item.status)) {
+      return res.status(400).json({ message: "Check-out só permitido após a chegada do veículo." });
+    }
+
+    const updated = item.status === "FINALIZADO" ? item : await prisma.agendamento.update({
+      where: { id: item.id },
+      data: {
+        status: "FINALIZADO",
+        inicioDescargaEm: item.inicioDescargaEm || new Date(),
+        fimDescargaEm: item.fimDescargaEm || new Date()
+      }
     });
 
     res.json({ ok: true, message: "Check-out realizado com sucesso.", agendamento: updated });

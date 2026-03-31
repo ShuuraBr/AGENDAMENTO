@@ -1,23 +1,24 @@
+import fs from "fs";
+import path from "path";
+import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
+import { fileURLToPath } from "url";
 
-function escapePdfText(value = "") {
-  return String(value ?? "")
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)")
-    .replace(/\r?\n/g, " ");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const logoPath = path.resolve(__dirname, "../../public/assets/objetiva.png");
+
+function asMoney(value) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
 }
 
-function normalizeText(value = "") {
-  return String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[–—]/g, "-")
-    .replace(/[^\x20-\x7E]/g, " ");
+function asWeight(value) {
+  return `${Number(value || 0).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 3 })} kg`;
 }
 
-function textCmd(x, y, size, text) {
-  return `BT /F1 ${size} Tf 1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm (${escapePdfText(normalizeText(text))}) Tj ET`;
+function line(doc, label, value, x, y, w) {
+  doc.font("Helvetica-Bold").fontSize(9).text(label, x, y, { width: w });
+  doc.font("Helvetica").fontSize(10).text(value || "-", x, y + 12, { width: w });
 }
 
 function wrapText(text, maxChars = 80) {

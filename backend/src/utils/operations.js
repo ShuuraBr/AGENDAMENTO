@@ -52,7 +52,8 @@ export async function docaPainel(dataAgendada = null) {
         return String(a.horaAgendada).localeCompare(String(b.horaAgendada));
       });
 
-    const ativo = fila.find(a => ["CHEGOU", "EM_DESCARGA"].includes(a.status)) || fila[0] || null;
+    const filaVisivel = fila.filter(a => a.status === "CHEGOU" || a.status === "EM_DESCARGA");
+    const ativo = filaVisivel.find(a => ["EM_DESCARGA", "CHEGOU"].includes(a.status)) || null;
 
     return {
       docaId: doca.id,
@@ -60,7 +61,7 @@ export async function docaPainel(dataAgendada = null) {
       descricao: doca.descricao,
       ocupacaoAtual: ativo ? ativo.status : "LIVRE",
       semaforo: ativo ? trafficColor(ativo.status) : "VERDE",
-      fila
+      fila: filaVisivel
     };
   });
 }
