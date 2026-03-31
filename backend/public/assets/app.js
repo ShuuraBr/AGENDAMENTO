@@ -6,7 +6,12 @@
     cadastroCache: [],
     nfRows: 1,
     nfDrafts: [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }],
-    disponibilidadePublica: []
+    disponibilidadePublica: [],
+    fornecedoresPendentes: [],
+    currentAgendamento: null,
+    qrStream: null,
+    qrScanTimer: null,
+    qrLastValue: ""
   };
 
   const CADASTRO_CONFIG = {
@@ -138,11 +143,14 @@
             <div><span>Transportadora</span><strong>${escapeHtml(data.transportadora || "-")}</strong></div>
             <div><span>Motorista</span><strong>${escapeHtml(data.motorista || "-")}</strong></div>
             <div><span>Placa</span><strong>${escapeHtml(data.placa || "-")}</strong></div>
+            <div><span>CPF motorista</span><strong>${escapeHtml(data.cpfMotorista || "-")}</strong></div>
             <div><span>Data</span><strong>${escapeHtml(formatDateBR(data.dataAgendada) || "-")}</strong></div>
             <div><span>Hora</span><strong>${escapeHtml(data.horaAgendada || "-")}</strong></div>
             <div><span>Doca</span><strong>${escapeHtml(data.doca || "A DEFINIR")}</strong></div>
             <div><span>Janela</span><strong>${escapeHtml(data.janela || "-")}</strong></div>
             <div><span>Volumes</span><strong>${escapeHtml(data.quantidadeVolumes ?? 0)}</strong></div>
+            <div><span>Peso total</span><strong>${escapeHtml(data.pesoTotalKg ?? 0)} kg</strong></div>
+            <div><span>Valor total</span><strong>R$ ${escapeHtml(Number(data.valorTotalNf || 0).toFixed(2))}</strong></div>
             <div><span>Notas</span><strong>${escapeHtml(data.quantidadeNotas ?? 0)}</strong></div>
             ${mode === "motorista" ? `<div><span>Token do motorista</span><strong>${escapeHtml(data.publicTokenMotorista || "-")}</strong></div>` : `<div><span>Token de consulta</span><strong>${escapeHtml(data.publicTokenFornecedor || "-")}</strong></div>`}
             <div><span>Check-in</span><strong>${escapeHtml(data.checkinToken || "-")}</strong></div>
@@ -262,9 +270,14 @@
       wrap.appendChild(div);
     }
     wrap.querySelectorAll("[data-nf]").forEach((el) => {
-      el.addEventListener("input", syncNfDraftsFromDom);
-      el.addEventListener("change", syncNfDraftsFromDom);
+      const handler = () => {
+        syncNfDraftsFromDom();
+        updateAutomaticTotals("fornecedorForm");
+      };
+      el.addEventListener("input", handler);
+      el.addEventListener("change", handler);
     });
+    updateAutomaticTotals("fornecedorForm");
   }
 
   function collectNotas() {
@@ -280,6 +293,51 @@
         observacao: String(nota.observacao || "").trim()
       }))
       .filter((item) => item.numeroNf || item.chaveAcesso);
+  }
+
+  function summarizeNotas(notas) {
+    const items = Array.isArray(notas) ? notas : [];
+    return {
+      quantidadeNotas: items.length,
+      quantidadeVolumes: items.reduce((acc, nota) => acc + (Number(nota.volumes) || 0), 0),
+      pesoTotalKg: Number(items.reduce((acc, nota) => acc + (Number(nota.peso) || 0), 0).toFixed(3)),
+      valorTotalNf: Number(items.reduce((acc, nota) => acc + (Number(nota.valorNf) || 0), 0).toFixed(2))
+    };
+  }
+
+  function updateAutomaticTotals(formId, notas = null) {
+    const form = byId(formId);
+    if (!form) return;
+    const resumo = summarizeNotas(notas ?? collectNotas());
+    const setValue = (name, value) => {
+      const input = form.querySelector(`[name="${name}"]`);
+      if (input) input.value = value;
+    };
+    setValue("quantidadeNotas", resumo.quantidadeNotas);
+    setValue("quantidadeVolumes", resumo.quantidadeVolumes);
+    setValue("pesoTotalKg", resumo.pesoTotalKg);
+    setValue("valorTotalNf", resumo.valorTotalNf);
+  }
+
+  function fillFormFromImport(formId, item) {
+    const form = byId(formId);
+    if (!form || !item) return;
+    const fields = ["fornecedor", "transportadora", "motorista", "cpfMotorista", "placa", "quantidadeNotas", "quantidadeVolumes", "pesoTotalKg", "valorTotalNf"];
+    fields.forEach((name) => {
+      const input = form.querySelector(`[name="${name}"]`);
+      if (input) input.value = item[name] ?? "";
+    });
+  }
+
+  async function loadFornecedoresPendentes() {
+    try {
+      const items = await api('/api/public/fornecedores-pendentes');
+      state.fornecedoresPendentes = Array.isArray(items) ? items : [];
+      [byId('publicFornecedorPendente'), byId('internalFornecedorPendente')].forEach((select) => {
+        if (!select) return;
+        select.innerHTML = `<option value="">Selecionar manualmente</option>` + state.fornecedoresPendentes.map((item) => `<option value="${item.id}">${escapeHtml(item.fornecedor)} · NF ${item.quantidadeNotas} · Vol ${item.quantidadeVolumes}</option>`).join('');
+      });
+    } catch {}
   }
 
   function renderPublicSlots(dataSelecionada) {
@@ -374,7 +432,10 @@
       doca: a.doca?.codigo || "",
       janela: a.janela?.codigo || "",
       data: a.dataAgendada,
-      hora: a.horaAgendada
+      hora: a.horaAgendada,
+      volumes: a.quantidadeVolumes ?? 0,
+      pesoKg: a.pesoTotalKg ?? 0,
+      valorNf: a.valorTotalNf ?? 0
     })));
   }
 
@@ -407,7 +468,7 @@
         <div class="mt12">
           <strong>Fila (${d.fila.length})</strong>
           ${d.fila.length ? d.fila.map((f) => {
-            const needsDoca = d.codigo === "A DEFINIR" && !["FINALIZADO", "CANCELADO", "REPROVADO", "NO_SHOW"].includes(f.status);
+            const needsDoca = d.codigo === "A DEFINIR" && f.status === "CHEGOU";
             return `
               <div class="fila-item">
                 <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
@@ -555,8 +616,18 @@
       janela: i.janela?.codigo || "",
       data: i.dataAgendada,
       hora: i.horaAgendada,
+      volumes: i.quantidadeVolumes ?? 0,
+      pesoKg: i.pesoTotalKg ?? 0,
+      valorNf: i.valorTotalNf ?? 0,
+      cpfMotorista: i.cpfMotorista || "",
       semaforo: i.semaforo || ""
     })));
+    bindAgendamentoSelection(items);
+    if (state.currentAgendamento) {
+      const refreshed = items.find((item) => Number(item.id) === Number(state.currentAgendamento.id));
+      state.currentAgendamento = refreshed || null;
+    }
+    updateWorkflowButtons();
   }
 
   function currentId() {
@@ -579,11 +650,122 @@
     }
   }
 
+  function updateWorkflowButtons() {
+    const status = state.currentAgendamento?.status || "";
+    const allowed = {
+      PENDENTE_APROVACAO: ["btnAprovar", "btnReprovar", "btnReagendar", "btnCancelar", "btnNoShow"],
+      APROVADO: ["btnCancelar", "btnIniciar", "btnNoShow", "btnQr", "btnQrCheckout"],
+      CHEGOU: ["btnIniciar", "btnCancelar", "btnQr", "btnQrCheckout"],
+      EM_DESCARGA: ["btnFinalizar", "btnQrCheckout"],
+      FINALIZADO: ["btnVoucher", "btnQrCheckout"],
+      CANCELADO: ["btnVoucher"],
+      REPROVADO: ["btnVoucher"],
+      NO_SHOW: ["btnVoucher"]
+    };
+    const enabled = new Set([...(allowed[status] || []), "loadAgendamentos", "btnVoucher"]);
+    ["btnAprovar","btnReprovar","btnReagendar","btnCancelar","btnIniciar","btnFinalizar","btnNoShow","btnQr","btnQrCheckout","btnEnviarInfos"].forEach((id) => {
+      const el = byId(id);
+      if (el) el.disabled = !enabled.has(id);
+    });
+    const msg = byId("operacaoMsg");
+    if (msg && state.currentAgendamento) {
+      msg.textContent = `Agendamento selecionado: ${state.currentAgendamento.protocolo} | Status atual: ${state.currentAgendamento.status}`;
+    }
+  }
+
+  function bindAgendamentoSelection(items = []) {
+    const table = byId("agendamentosList");
+    table?.querySelectorAll("tbody tr").forEach((tr, index) => {
+      const item = items[index];
+      if (!item) return;
+      tr.style.cursor = "pointer";
+      tr.addEventListener("click", () => {
+        state.currentAgendamento = item;
+        const idInput = byId("agendamentoId");
+        if (idInput) idInput.value = item.id;
+        table.querySelectorAll("tbody tr").forEach((row) => row.classList.remove("selected-row"));
+        tr.classList.add("selected-row");
+        updateWorkflowButtons();
+      });
+    });
+  }
+
+  async function startCamera() {
+    const video = byId("qrVideo");
+    if (!video) throw new Error("Elemento de vídeo não encontrado.");
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("Este navegador não suporta acesso à câmera.");
+
+    stopCamera();
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+    state.qrStream = stream;
+    video.srcObject = stream;
+    await video.play();
+    byId("checkinMsg").textContent = "Câmera ativada. Aponte para o QR Code.";
+
+    if ("BarcodeDetector" in window) {
+      const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+      const tick = async () => {
+        if (!state.qrStream) return;
+        try {
+          const codes = await detector.detect(video);
+          const raw = codes?.[0]?.rawValue || "";
+          if (raw && raw !== state.qrLastValue) {
+            state.qrLastValue = raw;
+            try {
+              const parsed = new URL(raw, window.location.origin);
+              const token = parsed.searchParams.get("token") || raw;
+              const id = parsed.searchParams.get("id");
+              const view = parsed.searchParams.get("view") || "checkin";
+              if (id && byId("agendamentoId")) byId("agendamentoId").value = id;
+              const input = byId("checkinForm")?.querySelector('input[name="token"]');
+              if (input) input.value = token;
+              byId("checkinMsg").textContent = `QR Code lido. Validando ${view === "checkout" ? "check-out" : "check-in"}...`;
+              if (view === "checkout") await validateCheckout(token);
+              else await validateCheckin(token);
+            } catch {
+              const input = byId("checkinForm")?.querySelector('input[name="token"]');
+              if (input) input.value = raw;
+            }
+          }
+        } catch (err) {
+          byId("checkinMsg").textContent = err.message || "Falha ao ler o QR Code.";
+        }
+      };
+      state.qrScanTimer = window.setInterval(tick, 1200);
+    } else {
+      byId("checkinMsg").textContent = "Câmera ativada. Seu navegador não lê QR automaticamente; informe o token manualmente.";
+    }
+  }
+
+  function stopCamera() {
+    if (state.qrScanTimer) {
+      window.clearInterval(state.qrScanTimer);
+      state.qrScanTimer = null;
+    }
+    if (state.qrStream) {
+      state.qrStream.getTracks().forEach((track) => track.stop());
+      state.qrStream = null;
+    }
+    const video = byId("qrVideo");
+    if (video) video.srcObject = null;
+  }
+
   async function validateCheckin(token) {
     try {
       const id = byId("agendamentoId")?.value || new URLSearchParams(location.search).get("id");
       if (!id) throw new Error("Informe o ID do agendamento para validar o QR no recebimento.");
       const data = await api(`/api/agendamentos/${id}/checkin`, { method: "POST", body: JSON.stringify({ token }) });
+      byId("checkinMsg").textContent = data.message;
+      byId("checkinResult").textContent = JSON.stringify(data.agendamento, null, 2);
+      await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas()]);
+    } catch (err) {
+      byId("checkinMsg").textContent = err.message;
+    }
+  }
+
+  async function validateCheckout(token) {
+    try {
+      const data = await api(`/api/public/checkout/${encodeURIComponent(token)}`, { method: "POST", body: JSON.stringify({}) });
       byId("checkinMsg").textContent = data.message;
       byId("checkinResult").textContent = JSON.stringify(data.agendamento, null, 2);
       await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas()]);
@@ -627,8 +809,9 @@
         updateNav();
         await fillSelects();
         showView("dashboard");
-        await loadDashboard();
+        await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas(), loadFornecedoresPendentes()]);
         byId("loginMsg").textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
+        updateWorkflowButtons();
       } catch (err) {
         byId("loginMsg").textContent = err.message;
       }
@@ -660,6 +843,8 @@
       e.preventDefault();
       try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
+        const selected = state.fornecedoresPendentes.find((item) => String(item.id) === String(payload.relatorioTerceirizadoId || ""));
+        if (selected) fillFormFromImport("agendamentoForm", selected);
         const data = await api("/api/agendamentos", { method: "POST", body: JSON.stringify(payload) });
         byId("agendamentoId").value = data.id || "";
         byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo} | ID: ${data.id}`;
@@ -681,6 +866,7 @@
     byId("btnNoShow")?.addEventListener("click", async () => handleOp(() => postStatus("no-show"), "Agendamento marcado como no-show."));
     byId("btnVoucher")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/voucher`, "_blank"); } catch (err) { alert(err.message); } });
     byId("btnQr")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/qrcode.svg`, "_blank"); } catch (err) { alert(err.message); } });
+    byId("btnQrCheckout")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/checkout-qrcode.svg`, "_blank"); } catch (err) { alert(err.message); } });
     byId("btnEnviarInfos")?.addEventListener("click", async () => handleOp(() => api(`/api/agendamentos/${currentId()}/enviar-informacoes`, { method: "POST", body: JSON.stringify({}) }), "Informações enviadas."));
 
     byId("btnUploadDoc")?.addEventListener("click", async () => {
@@ -730,10 +916,11 @@
     byId("fornecedorForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
+        updateAutomaticTotals("fornecedorForm");
         const payload = Object.fromEntries(new FormData(e.target).entries());
         payload.lgpdConsent = !!e.target.querySelector('[name="lgpdConsent"]')?.checked;
         payload.notas = collectNotas();
-        payload.quantidadeNotas = payload.notas.length;
+        Object.assign(payload, summarizeNotas(payload.notas));
         const data = await api("/api/public/solicitacao", { method: "POST", body: JSON.stringify(payload) });
         byId("fornecedorMsg").innerHTML = `Solicitação enviada. Protocolo: <strong>${data.protocolo}</strong>. Horário: <strong>${data.horaAgendada}</strong>. Doca: <strong>${data.doca}</strong>.<br><a href="${data.linkFornecedor}">Consulta da transportadora/fornecedor</a> • <a href="${data.linkMotorista}">Acompanhamento do motorista</a> • <a href="${data.voucher}" target="_blank" rel="noreferrer">Voucher PDF</a><br>Token do motorista: <strong>${data.tokenMotorista}</strong>`;
         e.target.reset();
@@ -783,10 +970,32 @@
 
     byId("checkinForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await validateCheckin(new FormData(e.target).get("token"));
+      const token = new FormData(e.target).get("token");
+      const view = new URLSearchParams(location.search).get("view");
+      if (view === "checkout") await validateCheckout(token);
+      else await validateCheckin(token);
+    });
+
+    byId("startCamera")?.addEventListener("click", async () => {
+      try { await startCamera(); } catch (err) { byId("checkinMsg").textContent = err.message; }
+    });
+
+    byId("stopCamera")?.addEventListener("click", () => {
+      stopCamera();
+      byId("checkinMsg").textContent = "Câmera desligada.";
     });
 
     byId("publicDataSelect")?.addEventListener("change", (e) => renderPublicSlots(e.target.value));
+
+    [
+      ["publicFornecedorPendente", "fornecedorForm"],
+      ["internalFornecedorPendente", "agendamentoForm"]
+    ].forEach(([selectId, formId]) => {
+      byId(selectId)?.addEventListener("change", (e) => {
+        const item = state.fornecedoresPendentes.find((row) => String(row.id) === String(e.target.value));
+        if (item) fillFormFromImport(formId, item);
+      });
+    });
 
     if (state.token && !isTokenExpired(state.token)) {
       await fillSelects();
@@ -794,7 +1003,7 @@
     }
 
     try {
-      await loadPublicDisponibilidade();
+      await Promise.allSettled([loadPublicDisponibilidade(), loadFornecedoresPendentes()]);
     } catch (err) {
       const fornecedorMsg = byId("fornecedorMsg");
       if (fornecedorMsg) fornecedorMsg.textContent = err.message;
@@ -803,9 +1012,11 @@
     const params = new URLSearchParams(location.search);
     const view = params.get("view");
     const token = params.get("token");
-    if (view === "checkin") {
+    if (view === "checkin" || view === "checkout") {
       showView(state.token && !isTokenExpired(state.token) ? "checkin" : "login");
-      if (token) byId("checkinForm")?.querySelector('input[name="token"]').setAttribute("value", token);
+      const input = byId("checkinForm")?.querySelector('input[name="token"]');
+      if (input && token) input.value = token;
+      byId("checkinMsg").textContent = view === "checkout" ? "Modo de validação de check-out." : "Modo de validação de check-in.";
     } else if (view === "motorista" && token) {
       showView("motorista");
       const input = byId("motoristaConsultaForm")?.querySelector('input[name="token"]');

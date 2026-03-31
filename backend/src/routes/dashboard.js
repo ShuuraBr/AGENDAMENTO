@@ -28,6 +28,7 @@ router.get("/operacional", async (req, res) => {
     docaPainel(q.dataAgendada || null)
   ]);
 
+  const sum = (items, pick) => items.reduce((acc, item) => acc + (Number(pick(item)) || 0), 0);
   const kpis = {
     total: all.length,
     pendentes: all.filter(x => x.status === "PENDENTE_APROVACAO").length,
@@ -37,7 +38,10 @@ router.get("/operacional", async (req, res) => {
     finalizados: all.filter(x => x.status === "FINALIZADO").length,
     cancelados: all.filter(x => x.status === "CANCELADO").length,
     noShow: all.filter(x => x.status === "NO_SHOW").length,
-    documentos: docs
+    documentos: docs,
+    volumes: sum(agendamentos, (x) => x.quantidadeVolumes),
+    pesoKg: Number(sum(agendamentos, (x) => x.pesoTotalKg).toFixed(3)),
+    valorNf: Number(sum(agendamentos, (x) => x.valorTotalNf).toFixed(2))
   };
 
   res.json({ kpis, agendamentos, painelDocas });

@@ -4,10 +4,11 @@ import fs from "fs";
 import path from "path";
 import { authRequired, requireProfiles } from "../middlewares/auth.js";
 import { prisma } from "../utils/prisma.js";
-import { generateProtocol, generatePublicToken } from "../utils/security.js";
+import { generateProtocol, generatePublicToken, generateDriverToken } from "../utils/security.js";
 import { qrSvg } from "../utils/qrcode.js";
 import { sendMail } from "../utils/email.js";
-import { validateAgendamentoPayload, validateNf, validateStatusTransition, normalizeChaveAcesso } from "../utils/validators.js";
+import { sendWhatsApp } from "../services/whatsapp.js";
+import { validateAgendamentoPayload, validateNf, validateStatusTransition, normalizeChaveAcesso, normalizeCpf } from "../utils/validators.js";
 import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js";
 import { auditLog } from "../utils/audit.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
@@ -34,7 +35,8 @@ function buildPublicLinks(req, item) {
     consulta: `${base}/?view=consulta&token=${encodeURIComponent(item.publicTokenFornecedor)}`,
     motorista: `${base}/?view=motorista&token=${encodeURIComponent(item.publicTokenMotorista)}`,
     voucher: `${base}/api/public/voucher/${encodeURIComponent(item.publicTokenFornecedor)}`,
-    checkin: `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`
+    checkin: `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`,
+    checkout: `${base}/?view=checkout&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`
   };
 }
 
@@ -47,6 +49,98 @@ async function full(id) {
 
 async function mustExist(id) {
   return prisma.agendamento.findUnique({ where: { id: Number(id) } });
+}
+
+function normalizeNotas(notas = []) {
+  return Array.isArray(notas) ? notas.map((nota) => ({
+    numeroNf: String(nota?.numeroNf || "").trim(),
+    serie: String(nota?.serie || "").trim(),
+    chaveAcesso: normalizeChaveAcesso(nota?.chaveAcesso || ""),
+    volumes: Number(nota?.volumes || 0),
+    peso: Number(nota?.peso || 0),
+    valorNf: Number(nota?.valorNf || 0),
+    observacao: String(nota?.observacao || "").trim()
+  })).filter((nota) => nota.numeroNf || nota.chaveAcesso) : [];
+}
+
+function summarizeNotas(notas = []) {
+  return {
+    quantidadeNotas: notas.length,
+    quantidadeVolumes: notas.reduce((acc, nota) => acc + (Number(nota.volumes) || 0), 0),
+    pesoTotalKg: Number(notas.reduce((acc, nota) => acc + (Number(nota.peso) || 0), 0).toFixed(3)),
+    valorTotalNf: Number(notas.reduce((acc, nota) => acc + (Number(nota.valorNf) || 0), 0).toFixed(2))
+  };
+}
+
+async function recalcAgendamentoTotals(agendamentoId) {
+  const notas = await prisma.notaFiscal.findMany({ where: { agendamentoId: Number(agendamentoId) } });
+  const resumo = summarizeNotas(notas);
+  return prisma.agendamento.update({
+    where: { id: Number(agendamentoId) },
+    data: resumo
+  });
+}
+
+async function resolveRelatorioTerceirizado(relatorioTerceirizadoId) {
+  if (!relatorioTerceirizadoId) return null;
+  return prisma.relatorioTerceirizado.findUnique({ where: { id: Number(relatorioTerceirizadoId) } });
+}
+
+async function sendCreationNotifications(item, req) {
+  const links = buildPublicLinks(req, item);
+  const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
+  const textoBase = [
+    `Agendamento criado com sucesso.`,
+    `Protocolo: ${item.protocolo}`,
+    `Data: ${item.dataAgendada} às ${item.horaAgendada}`,
+    `Doca: ${item.doca?.codigo || "A DEFINIR"}`,
+    `Consulta: ${links.consulta}`,
+    `Motorista: ${links.motorista}`,
+    `Voucher: ${links.voucher}`,
+    `Check-in: ${links.checkin}`,
+    `Check-out: ${links.checkout}`
+  ].join("\n");
+
+  const htmlBase = `<p><strong>Agendamento criado com sucesso.</strong></p>
+    <p><strong>Protocolo:</strong> ${item.protocolo}</p>
+    <p><strong>Data:</strong> ${item.dataAgendada} às ${item.horaAgendada}</p>
+    <p><strong>Doca:</strong> ${item.doca?.codigo || "A DEFINIR"}</p>
+    <p><a href="${links.consulta}">Consulta da transportadora/fornecedor</a></p>
+    <p><a href="${links.motorista}">Acompanhamento do motorista</a></p>
+    <p><a href="${links.voucher}">Voucher em PDF</a></p>
+    <p><a href="${links.checkin}">Check-in</a></p>
+    <p><a href="${links.checkout}">Check-out</a></p>`;
+
+  const results = [];
+
+  if (item.emailMotorista) {
+    results.push({ canal: "email", destino: item.emailMotorista, publico: "motorista", ...(await sendMail({
+      to: item.emailMotorista,
+      subject: `Agendamento ${item.protocolo} criado`,
+      text: textoBase,
+      html: htmlBase,
+      attachments: [{ filename: `voucher-${item.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
+    })) });
+  }
+
+  if (item.emailTransportadora) {
+    results.push({ canal: "email", destino: item.emailTransportadora, publico: "transportadora/fornecedor", ...(await sendMail({
+      to: item.emailTransportadora,
+      subject: `Agendamento ${item.protocolo} criado`,
+      text: textoBase,
+      html: htmlBase,
+      attachments: [{ filename: `voucher-${item.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
+    })) });
+  }
+
+  if (item.telefoneMotorista) {
+    results.push({ canal: "whatsapp", destino: item.telefoneMotorista, publico: "motorista", ...(await sendWhatsApp({
+      to: item.telefoneMotorista,
+      message: textoBase
+    })) });
+  }
+
+  return { results, links };
 }
 
 async function notificationSummary(agendamentoId) {
@@ -74,7 +168,7 @@ async function notificationSummary(agendamentoId) {
 
 async function sendApprovalNotifications(item, req) {
   const links = buildPublicLinks(req, item);
-  const pdf = generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
+  const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
   const results = [];
   const targets = [];
 
@@ -179,35 +273,70 @@ router.get("/:id", async (req, res) => {
 router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
   try {
     const payload = req.body || {};
-    validateAgendamentoPayload(payload, false);
-    await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada });
+    const relatorio = await resolveRelatorioTerceirizado(payload.relatorioTerceirizadoId);
+    const notasPayload = normalizeNotas(payload.notas || (relatorio?.notasJson ? JSON.parse(relatorio.notasJson) : []));
+    const resumo = summarizeNotas(notasPayload);
+
+    const merged = {
+      ...payload,
+      fornecedor: String(relatorio?.fornecedor || payload.fornecedor || "").trim(),
+      transportadora: String(relatorio?.transportadora || payload.transportadora || "").trim(),
+      motorista: String(relatorio?.motorista || payload.motorista || "").trim(),
+      cpfMotorista: normalizeCpf(relatorio?.cpfMotorista || payload.cpfMotorista || ""),
+      placa: String(relatorio?.placa || payload.placa || "").trim().toUpperCase(),
+      quantidadeNotas: Number(relatorio?.quantidadeNotas || payload.quantidadeNotas || resumo.quantidadeNotas || 0),
+      quantidadeVolumes: Number(relatorio?.quantidadeVolumes || payload.quantidadeVolumes || resumo.quantidadeVolumes || 0),
+      pesoTotalKg: Number(relatorio?.pesoTotalKg || payload.pesoTotalKg || resumo.pesoTotalKg || 0),
+      valorTotalNf: Number(relatorio?.valorTotalNf || payload.valorTotalNf || resumo.valorTotalNf || 0)
+    };
+
+    validateAgendamentoPayload(merged, false);
+    await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada });
 
     const item = await prisma.agendamento.create({
       data: {
         protocolo: generateProtocol(),
-        publicTokenMotorista: generatePublicToken("MOT"),
+        publicTokenMotorista: generateDriverToken(merged.cpfMotorista),
         publicTokenFornecedor: generatePublicToken("FOR"),
         checkinToken: generatePublicToken("CHK"),
-        fornecedor: payload.fornecedor,
-        transportadora: payload.transportadora,
-        motorista: payload.motorista,
-        telefoneMotorista: payload.telefoneMotorista || "",
-        emailMotorista: payload.emailMotorista || "",
-        emailTransportadora: payload.emailTransportadora || "",
-        placa: payload.placa,
-        docaId: Number(payload.docaId),
-        janelaId: Number(payload.janelaId),
-        dataAgendada: payload.dataAgendada,
-        horaAgendada: payload.horaAgendada,
-        quantidadeNotas: Number(payload.quantidadeNotas || 0),
-        quantidadeVolumes: Number(payload.quantidadeVolumes || 0),
+        fornecedor: merged.fornecedor,
+        transportadora: merged.transportadora,
+        motorista: merged.motorista,
+        cpfMotorista: merged.cpfMotorista || null,
+        telefoneMotorista: merged.telefoneMotorista || "",
+        emailMotorista: merged.emailMotorista || "",
+        emailTransportadora: merged.emailTransportadora || "",
+        placa: merged.placa,
+        docaId: Number(merged.docaId),
+        janelaId: Number(merged.janelaId),
+        dataAgendada: merged.dataAgendada,
+        horaAgendada: merged.horaAgendada,
+        quantidadeNotas: Number(merged.quantidadeNotas || 0),
+        quantidadeVolumes: Number(merged.quantidadeVolumes || 0),
+        pesoTotalKg: Number(merged.pesoTotalKg || 0),
+        valorTotalNf: Number(merged.valorTotalNf || 0),
         status: "PENDENTE_APROVACAO",
-        observacoes: payload.observacoes || ""
+        observacoes: merged.observacoes || ""
       }
     });
 
-    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CREATE", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: payload, ip: req.ip });
-    res.status(201).json(item);
+    if (notasPayload.length) {
+      await prisma.notaFiscal.createMany({
+        data: notasPayload.map((nota) => ({ ...nota, agendamentoId: item.id }))
+      });
+    }
+
+    if (relatorio) {
+      await prisma.relatorioTerceirizado.update({
+        where: { id: relatorio.id },
+        data: { agendamentoId: item.id, status: "AGENDADO" }
+      });
+    }
+
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CREATE", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: merged, ip: req.ip });
+    const detailed = await full(item.id);
+    const notificacoes = await sendCreationNotifications(detailed, req);
+    res.status(201).json({ ...detailed, notificacoes });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -229,6 +358,7 @@ router.post("/:id/definir-doca", requireProfiles("ADMIN", "OPERADOR", "GESTOR"),
   try {
     const found = await full(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
+    if (found.status !== "CHEGOU") throw new Error("A doca só pode ser definida quando o agendamento estiver com status CHEGOU.");
     const docaId = Number(req.body?.docaId);
     if (!docaId) throw new Error("Doca é obrigatória.");
 
@@ -371,6 +501,7 @@ router.post("/:id/notas", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async 
         observacao: payload.observacao || ""
       }
     });
+    await recalcAgendamentoTotals(ag.id);
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "ADD_NF", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: payload, ip: req.ip });
     res.status(201).json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
@@ -393,7 +524,7 @@ router.post("/:id/enviar-confirmacao", requireProfiles("ADMIN", "OPERADOR", "GES
     if (!ag.emailTransportadora) return res.status(400).json({ message: "Não há e-mail da transportadora/fornecedor cadastrado." });
 
     const links = buildPublicLinks(req, ag);
-    const pdf = generateVoucherPdf(ag, { baseUrl: getBaseUrl(req) });
+    const pdf = await generateVoucherPdf(ag, { baseUrl: getBaseUrl(req) });
     const textoDoca = ag.doca?.codigo || "A DEFINIR";
     const sent = await sendMail({
       to: ag.emailTransportadora,
@@ -419,10 +550,19 @@ router.get("/:id/qrcode.svg", async (req, res) => {
   res.send(svg);
 });
 
+router.get("/:id/checkout-qrcode.svg", async (req, res) => {
+  const item = await mustExist(req.params.id);
+  if (!item) return res.status(404).send("Agendamento não encontrado.");
+  const url = `${getBaseUrl(req)}/?view=checkout&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`;
+  const svg = await qrSvg(url);
+  res.setHeader("Content-Type", "image/svg+xml");
+  res.send(svg);
+});
+
 router.get("/:id/voucher", async (req, res) => {
   const item = await full(req.params.id);
   if (!item) return res.status(404).send("Agendamento não encontrado.");
-  const pdf = generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
+  const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename=voucher-${item.protocolo}.pdf`);
   res.send(pdf);
