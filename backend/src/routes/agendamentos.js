@@ -14,6 +14,7 @@ import { validateAgendamentoPayload, validateNf, validateStatusTransition, norma
 import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js";
 import { auditLog } from "../utils/audit.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
+import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
 
 const router = Router();
 router.use(authRequired);
@@ -177,6 +178,10 @@ router.get("/", async (req, res) => {
     const payload = await Promise.all(items.map(async (i) => ({ ...calculateTotals(i.notasFiscais || [], i), ...i, semaforo: trafficColor(i.status), notificacoes: await notificationSummary(i.id) })));
     return res.json(payload);
   } catch {
+    try {
+      const items = await fetchAgendamentosRaw(q);
+      return res.json(items.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { voucherMotorista:false,voucherTransportadoraFornecedor:false,confirmacaoTransportadoraFornecedor:false } })));
+    } catch {}
     const items = readAgendamentos().filter((i) => (!q.status || i.status===String(q.status)) && (!q.fornecedor || String(i.fornecedor||'').toLowerCase().includes(String(q.fornecedor).toLowerCase())) && (!q.transportadora || String(i.transportadora||'').toLowerCase().includes(String(q.transportadora).toLowerCase())) && (!q.motorista || String(i.motorista||'').toLowerCase().includes(String(q.motorista).toLowerCase())) && (!q.placa || String(i.placa||'').toLowerCase().includes(String(q.placa).toLowerCase())) && (!q.dataAgendada || String(i.dataAgendada)===String(q.dataAgendada)));
     return res.json(items.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { voucherMotorista:false,voucherTransportadoraFornecedor:false,confirmacaoTransportadoraFornecedor:false } })));
   }
@@ -195,6 +200,17 @@ router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res
     const totals = calculateTotals(Array.isArray(payload.notasFiscais) ? payload.notasFiscais : [], payload);
     Object.assign(payload, totals);
     validateAgendamentoPayload(payload, false);
+
+    let defaultDoca;
+    try {
+      defaultDoca = await prisma.doca.findFirst({ where: { codigo: "A DEFINIR" }, orderBy: { id: "asc" } }) || await prisma.doca.findFirst({ orderBy: { id: "asc" } });
+    } catch {}
+    if (!defaultDoca) {
+      const items = readAgendamentos();
+      defaultDoca = items.find((i) => i.docaId)?.doca ? null : null;
+    }
+    payload.docaId = Number(payload.docaId || defaultDoca?.id || 1);
+
     try { await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada }); } catch {}
 
     let item;
@@ -252,7 +268,7 @@ router.post("/:id/definir-doca", requireProfiles("ADMIN", "OPERADOR", "GESTOR"),
     if (!found) throw new Error("Agendamento não encontrado.");
     const docaId = Number(req.body?.docaId);
     if (!docaId) throw new Error("Doca é obrigatória.");
-    if (found.status !== "CHEGOU") throw new Error("A doca só pode ser definida quando o status estiver CHEGOU.");
+    if (!["APROVADO", "CHEGOU"].includes(found.status)) throw new Error("A doca só pode ser definida quando o status estiver APROVADO ou CHEGOU.");
 
     try { await assertJanelaDocaDisponivel({
       docaId,

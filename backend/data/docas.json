@@ -1,5 +1,10 @@
 [
   {
+    "id": 2,
+    "codigo": "A DEFINIR",
+    "descricao": "Doca provisória até definição pelo operador"
+  },
+  {
     "id": 1,
     "codigo": "DOCA-01",
     "descricao": "Doca principal"

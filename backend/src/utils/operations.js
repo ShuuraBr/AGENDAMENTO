@@ -15,6 +15,9 @@ export function queuePriority(status) {
 }
 
 export async function assertJanelaDocaDisponivel({ docaId, janelaId, dataAgendada, ignoreAgendamentoId = null }) {
+  const doca = await prisma.doca.findUnique({ where: { id: Number(docaId) } }).catch(() => null);
+  if (String(doca?.codigo || '').toUpperCase() === 'A DEFINIR') return;
+
   const conflict = await prisma.agendamento.findFirst({
     where: {
       id: ignoreAgendamentoId ? { not: Number(ignoreAgendamentoId) } : undefined,
