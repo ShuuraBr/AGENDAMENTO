@@ -28,7 +28,6 @@ router.get("/operacional", async (req, res) => {
     docaPainel(q.dataAgendada || null)
   ]);
 
-  const sum = (items, pick) => items.reduce((acc, item) => acc + (Number(pick(item)) || 0), 0);
   const kpis = {
     total: all.length,
     pendentes: all.filter(x => x.status === "PENDENTE_APROVACAO").length,
