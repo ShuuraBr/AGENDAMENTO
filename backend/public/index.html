@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agendamento de Descarga V3.1</title>
-  <link rel="stylesheet" href="/assets/styles9.css" />
+  <link rel="stylesheet" href="/assets/styles12.css" />
   <link rel="icon" href="assets/Favicon.png" type="image">
 </head>
 <body>
@@ -240,21 +240,38 @@
                     <option value="">Selecione o fornecedor pendente</option>
                   </select>
                 </label>
+<<<<<<< HEAD
                 <label>Transportadora<input name="transportadora" value="" required /></label>
                 <label>Placa<input name="placa" value="" required /></label>
                 <label>Janela<select name="janelaId" id="internalJanelaSelect" required></select></label>
                 <label>Data<input name="dataAgendada" type="date" required /></label>
                 <label>Hora<input name="horaAgendada" value="" placeholder="08:00" required /></label>
+=======
+                <label>Fornecedor<input name="fornecedor" /></label>
+                <label>Transportadora<input name="transportadora" /></label>
+                <label>Placa<input name="placa" /></label>
+                <label>Janela<select name="janelaId" id="internalJanelaSelect"></select></label>
+                <label>Data<input name="dataAgendada" type="date" /></label>
+                <label>Hora<input name="horaAgendada" placeholder="08:00" /></label>
+>>>>>>> cd1401edc281acd07877d888c6de553a60b505c6
               </div>
             </div>
             <div class="card inner mt16">
               <h3>Dados do motorista</h3>
               <div class="form-grid operator-grid mt12">
+<<<<<<< HEAD
                 <label>Motorista<input name="motorista" value="" required /></label>
                 <label>CPF do motorista<input name="cpfMotorista" value="" placeholder="Somente números" required /></label>
                 <label>Telefone do motorista<input name="telefoneMotorista" value="" required /></label>
                 <label>E-mail do motorista<input name="emailMotorista" value="" required /></label>
                 <label>E-mail da transportadora<input name="emailTransportadora" value="" required /></label>
+=======
+                <label>Motorista<input name="motorista" /></label>
+                <label>CPF do motorista<input name="cpfMotorista" placeholder="Somente números" /></label>
+                <label>Telefone do motorista<input name="telefoneMotorista" /></label>
+                <label>E-mail do motorista<input name="emailMotorista" /></label>
+                <label>E-mail da transportadora<input name="emailTransportadora" /></label>
+>>>>>>> cd1401edc281acd07877d888c6de553a60b505c6
               </div>
             </div>
             <div class="card inner mt16">
@@ -265,12 +282,21 @@
             <div class="card inner mt16">
               <h3>Totais do agendamento</h3>
               <div class="form-grid operator-grid mt12">
+<<<<<<< HEAD
                 <label>Quantidade de notas<input name="quantidadeNotas" id="internalQuantidadeNotas" type="number" value="0" readonly required /></label>
                 <label>Quantidade de volumes<input name="quantidadeVolumes" id="internalQuantidadeVolumes" type="number" value="0" step="0.001" readonly required /></label>
                 <label>Peso total (kg)<input name="pesoTotalKg" id="internalPesoTotalKg" type="number" value="0" step="0.001" readonly required /></label>
                 <label>Valor total (R$)<input name="valorTotalNf" id="internalValorTotalNf" type="number" value="0" step="0.01" readonly required /></label>
                 <input type="hidden" name="fornecedor" id="internalFornecedorNome" value="" />
                 <label class="form-group-full">Observações<textarea name="observacoes" required></textarea></label>
+=======
+                <label>NF(s)<textarea name="notasTexto" id="internalNotasTexto" placeholder="Uma NF por linha"></textarea></label>
+                <label>Quantidade de notas<input name="quantidadeNotas" id="internalQuantidadeNotas" type="number" value="0" /></label>
+                <label>Quantidade de volumes<input name="quantidadeVolumes" id="internalQuantidadeVolumes" type="number" value="0" step="0.001" /></label>
+                <label>Peso total (kg)<input name="pesoTotalKg" id="internalPesoTotalKg" type="number" value="0" step="0.001" /></label>
+                <label>Valor total (R$)<input name="valorTotalNf" id="internalValorTotalNf" type="number" value="0" step="0.01" /></label>
+                <label class="form-group-full">Observações<textarea name="observacoes"></textarea></label>
+>>>>>>> cd1401edc281acd07877d888c6de553a60b505c6
               </div>
             </div>
             <button type="submit">Salvar agendamento</button>
