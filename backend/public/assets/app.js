@@ -10,6 +10,7 @@
     cameraStream: null,
     barcodeDetector: null,
     scanning: false,
+    fornecedoresPendentesPublico: [],
     fornecedoresPendentesInterno: []
   };
 
@@ -308,21 +309,24 @@
   async function loadFornecedoresPendentes() {
     try {
       const items = await api('/api/public/fornecedores-pendentes');
+      state.fornecedoresPendentesPublico = Array.isArray(items) ? items : [];
       const select = byId('fornecedorPendenteSelect');
       if (!select) return;
-      select.innerHTML = `<option value="">Selecionar manualmente</option>` + (Array.isArray(items) ? items.map((item) => `<option value="${escapeHtml(JSON.stringify(item).replaceAll('"','&quot;'))}">${escapeHtml(item.fornecedor || item.nome || '-')}</option>`).join('') : '');
-      select.addEventListener('change', () => {
-        if (!select.value) return;
-        const data = JSON.parse(select.value);
+      select.innerHTML = `<option value="">Selecionar manualmente</option>` + state.fornecedoresPendentesPublico.map((item, index) => `<option value="${index}">${escapeHtml(item.fornecedor || item.nome || '-')}</option>`).join('');
+      select.onchange = () => {
+        if (select.value === '') return;
+        const data = state.fornecedoresPendentesPublico[Number(select.value)];
+        if (!data) return;
         const form = byId('fornecedorForm');
         ['fornecedor','transportadora','placa'].forEach((field) => { if (data[field] && form.querySelector(`[name="${field}"]`)) form.querySelector(`[name="${field}"]`).value = data[field]; });
-        if (Array.isArray(data.notasFiscais) && data.notasFiscais.length) {
-          state.nfRows = data.notasFiscais.length;
-          state.nfDrafts = data.notasFiscais.map((n) => ({ numeroNf: n.numeroNf || '', serie: n.serie || '', chaveAcesso: n.chaveAcesso || '', volumes: String(n.volumes || 0), peso: String(n.peso || 0), valorNf: String(n.valorNf || 0), observacao: n.observacao || '' }));
+        const notas = Array.isArray(data.notasFiscais) && data.notasFiscais.length ? data.notasFiscais : (Array.isArray(data.notas) ? data.notas : []);
+        if (notas.length) {
+          state.nfRows = notas.length;
+          state.nfDrafts = notas.map((n) => ({ numeroNf: n.numeroNf || '', serie: n.serie || '', chaveAcesso: n.chaveAcesso || '', volumes: String(n.volumes || 0), peso: String(n.peso || 0), valorNf: String(n.valorNf || 0), observacao: n.observacao || '' }));
           renderNfRows();
           updateTotalsFromNotas();
         }
-      });
+      };
     } catch {}
   }
 
@@ -408,44 +412,24 @@
       const el = form.querySelector(`[name="${name}"]`);
       if (el != null && value != null) el.value = value;
     };
-    const notas = Array.isArray(item.notas)
-      ? item.notas
-      : (Array.isArray(item.notasFiscais) ? item.notasFiscais : []);
-
-    set('fornecedor', item.fornecedor || item.nome || '');
-    set('transportadora', item.transportadora || '');
-    set('placa', item.placa || '');
-    set('quantidadeNotas', item.quantidadeNotas ?? notas.length ?? 0);
+    set('fornecedor', item.fornecedor || '');
+    set('quantidadeNotas', item.quantidadeNotas ?? 0);
     set('quantidadeVolumes', item.quantidadeVolumes ?? 0);
     set('pesoTotalKg', item.pesoTotalKg ?? 0);
     set('valorTotalNf', item.valorTotalNf ?? 0);
-    set('notasTexto', notas.map((nota) => nota.numeroNf || '').filter(Boolean).join('\n'));
-
-    state.nfRows = Math.max(notas.length, 1);
-    state.nfDrafts = (notas.length ? notas : [{}]).map((nota) => ({
-      numeroNf: nota.numeroNf || '',
-      serie: nota.serie || '',
-      chaveAcesso: nota.chaveAcesso || '',
-      volumes: String(nota.volumes ?? 0),
-      peso: String(nota.peso ?? 0),
-      valorNf: String(nota.valorNf ?? 0),
-      observacao: nota.observacao || ''
-    }));
-    renderNfRows();
-    updateTotalsFromNotas();
+    set('notasTexto', Array.isArray(item.notas) ? item.notas.map((nota) => nota.numeroNf).filter(Boolean).join('\n') : '');
   }
 
   async function loadFornecedoresPendentesInterno() {
     try {
       const items = await api('/api/public/fornecedores-pendentes');
+      state.fornecedoresPendentesInterno = Array.isArray(items) ? items : [];
       const select = byId('internalFornecedorPendenteSelect');
       if (!select) return;
-      state.fornecedoresPendentesInterno = Array.isArray(items) ? items : [];
-      select.innerHTML = `<option value="">Selecionar manualmente</option>` + state.fornecedoresPendentesInterno.map((item, index) => `<option value="${index}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? (Array.isArray(item.notas) ? item.notas.length : 0))} NF)</option>`).join('');
+      select.innerHTML = `<option value="">Selecionar manualmente</option>` + state.fornecedoresPendentesInterno.map((item, index) => `<option value="${index}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('');
       select.onchange = () => {
         if (select.value === '') return;
-        const idx = Number(select.value);
-        const item = state.fornecedoresPendentesInterno[idx];
+        const item = state.fornecedoresPendentesInterno[Number(select.value)];
         if (!item) {
           byId('agendamentoMsg').textContent = 'Fornecedor pendente inválido.';
           return;
@@ -565,14 +549,12 @@
         <div class="mt12">
           <strong>Fila (${d.fila.length})</strong>
           ${d.fila.length ? d.fila.map((f) => {
-            const isAguardandoDoca = d.codigo === "A DEFINIR";
-            const canDefineDoca = isAguardandoDoca && f.status === "CHEGOU";
-            const showDefineDoca = isAguardandoDoca;
+            const needsDoca = d.codigo === "A DEFINIR" && ["CHEGOU", "APROVADO"].includes(f.status);
             return `
               <div class="fila-item">
                 <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
                 <div>${escapeHtml(f.placa)} • ${escapeHtml(f.horaAgendada)} • ${escapeHtml(f.status)}</div>
-                ${showDefineDoca ? `<div class="row gap8 wrap mt12"><select data-define-doca-select="${f.id}" ${canDefineDoca ? '' : 'disabled'}>${assignOptions}</select><button type="button" data-define-doca="${f.id}" ${canDefineDoca ? '' : 'disabled'}>Definir doca</button>${canDefineDoca ? '' : '<span class="hint">A doca será liberada após o check-in (status CHEGOU).</span>'}</div>` : ""}
+                ${needsDoca ? `<div class="row gap8 wrap mt12"><select data-define-doca-select="${f.id}">${assignOptions}</select><button type="button" data-define-doca="${f.id}">Definir doca</button></div>` : ""}
               </div>
             `;
           }).join("") : "<div class='fila-item'>Sem fila</div>"}
@@ -830,6 +812,9 @@
         delete payload.notasTexto;
         delete payload.fornecedorPendenteInterno;
         delete payload.docaId;
+        if (!payload.fornecedor || !payload.transportadora || !payload.motorista || !payload.placa || !payload.dataAgendada || !payload.horaAgendada || !payload.janelaId || !payload.cpfMotorista || payload.notasFiscais.length === 0) {
+          throw new Error('Preencha todas as informações obrigatórias do agendamento interno, incluindo ao menos uma NF e o CPF do motorista.');
+        }
         const data = await api("/api/agendamentos", { method: "POST", body: JSON.stringify(payload) });
         byId("agendamentoId").value = data.id || "";
         byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo} | ID: ${data.id}`;

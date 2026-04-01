@@ -26,7 +26,9 @@ async function getOrCreateDocaPadrao() {
   try {
     const existing = await prisma.doca.findFirst({ where: { codigo: "A DEFINIR" }, orderBy: { id: "asc" } });
     if (existing) return existing;
-    return await prisma.doca.create({ data: { codigo: "A DEFINIR", descricao: "Doca definida pelo operador do recebimento" } });
+    const first = await prisma.doca.findFirst({ orderBy: { id: "asc" } });
+    if (first) return first;
+    return prisma.doca.create({ data: { codigo: "A DEFINIR", descricao: "Doca definida pelo operador do recebimento" } });
   } catch {
     return ensureDocaPadraoFile();
   }
