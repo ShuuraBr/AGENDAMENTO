@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agendamento de Descarga V3.1</title>
-  <link rel="stylesheet" href="/assets/styles8.css" />
+  <link rel="stylesheet" href="/assets/styles9.css" />
   <link rel="icon" href="assets/Favicon.png" type="image">
 </head>
 <body>
@@ -231,21 +231,45 @@
       <div class="grid2">
         <div class="card">
           <h2>Novo agendamento interno</h2>
-          <form id="agendamentoForm">
-            <label>Fornecedor<input name="fornecedor" value="Fornecedor Exemplo LTDA" /></label>
-            <label>Transportadora<input name="transportadora" value="Transportadora Exemplo" /></label>
-            <label>Motorista<input name="motorista" value="Motorista Exemplo" /></label>
-            <label>Telefone do motorista<input name="telefoneMotorista" value="61999999999" /></label>
-            <label>E-mail do motorista<input name="emailMotorista" value="motorista@test.com" /></label>
-            <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@test.com" /></label>
-            <label>Placa<input name="placa" value="ABC1D23" /></label>
-            <label>Doca<select name="docaId" id="internalDocaSelect"></select></label>
-            <label>Janela<select name="janelaId" id="internalJanelaSelect"></select></label>
-            <label>Data<input name="dataAgendada" type="date" /></label>
-            <label>Hora<input name="horaAgendada" value="08:00" /></label>
-            <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" /></label>
-            <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="10" /></label>
-            <label>Observações<textarea name="observacoes"></textarea></label>
+          <form id="agendamentoForm" class="operator-form">
+            <div class="card inner">
+              <h3>Dados da operação</h3>
+              <div class="form-grid operator-grid mt12">
+                <label>Fornecedor pendente
+                  <select name="fornecedorPendenteInterno" id="internalFornecedorPendenteSelect">
+                    <option value="">Selecionar manualmente</option>
+                  </select>
+                </label>
+                <label>Fornecedor<input name="fornecedor" value="Fornecedor Exemplo LTDA" /></label>
+                <label>Transportadora<input name="transportadora" value="Transportadora Exemplo" /></label>
+                <label>Placa<input name="placa" value="ABC1D23" /></label>
+                <label>Doca<select name="docaId" id="internalDocaSelect"></select></label>
+                <label>Janela<select name="janelaId" id="internalJanelaSelect"></select></label>
+                <label>Data<input name="dataAgendada" type="date" /></label>
+                <label>Hora<input name="horaAgendada" value="08:00" /></label>
+              </div>
+            </div>
+            <div class="card inner mt16">
+              <h3>Dados do motorista</h3>
+              <div class="form-grid operator-grid mt12">
+                <label>Motorista<input name="motorista" value="Motorista Exemplo" /></label>
+                <label>CPF do motorista<input name="cpfMotorista" placeholder="Somente números" /></label>
+                <label>Telefone do motorista<input name="telefoneMotorista" value="61999999999" /></label>
+                <label>E-mail do motorista<input name="emailMotorista" value="motorista@test.com" /></label>
+                <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@test.com" /></label>
+              </div>
+            </div>
+            <div class="card inner mt16">
+              <h3>Notas e totais</h3>
+              <div class="form-grid operator-grid mt12">
+                <label>NF(s)<textarea name="notasTexto" id="internalNotasTexto" placeholder="Uma NF por linha"></textarea></label>
+                <label>Quantidade de notas<input name="quantidadeNotas" id="internalQuantidadeNotas" type="number" value="1" /></label>
+                <label>Quantidade de volumes<input name="quantidadeVolumes" id="internalQuantidadeVolumes" type="number" value="10" step="0.001" /></label>
+                <label>Peso total (kg)<input name="pesoTotalKg" id="internalPesoTotalKg" type="number" value="0" step="0.001" /></label>
+                <label>Valor total (R$)<input name="valorTotalNf" id="internalValorTotalNf" type="number" value="0" step="0.01" /></label>
+                <label class="form-group-full">Observações<textarea name="observacoes"></textarea></label>
+              </div>
+            </div>
             <button type="submit">Salvar agendamento</button>
           </form>
           <p id="agendamentoMsg" class="msg"></p>

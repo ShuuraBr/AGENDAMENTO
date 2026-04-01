@@ -387,6 +387,47 @@
     `).join("");
   }
 
+  function parseDecimalInput(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw) return 0;
+    const normalized = raw.replace(/\./g, '').replace(',', '.');
+    const num = Number(normalized);
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  function buildNotasFromLines(text) {
+    return String(text || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => ({ numeroNf: line, serie: '', chaveAcesso: '', volumes: 0, peso: 0, valorNf: 0, observacao: '' }));
+  }
+
+  function applyFornecedorPendenteInterno(item) {
+    if (!item) return;
+    const form = byId('agendamentoForm');
+    if (!form) return;
+    const set = (name, value) => {
+      const el = form.querySelector(`[name="${name}"]`);
+      if (el != null && value != null) el.value = value;
+    };
+    set('fornecedor', item.fornecedor || '');
+    set('quantidadeNotas', item.quantidadeNotas ?? 0);
+    set('quantidadeVolumes', item.quantidadeVolumes ?? 0);
+    set('pesoTotalKg', item.pesoTotalKg ?? 0);
+    set('valorTotalNf', item.valorTotalNf ?? 0);
+    set('notasTexto', Array.isArray(item.notas) ? item.notas.map((nota) => nota.numeroNf).filter(Boolean).join('\n') : '');
+  }
+
+  async function loadFornecedoresPendentesInterno() {
+    try {
+      const items = await api('/api/public/fornecedores-pendentes');
+      const select = byId('internalFornecedorPendenteSelect');
+      if (!select) return;
+      select.innerHTML = `<option value="">Selecionar manualmente</option>` + (Array.isArray(items) ? items.map((item) => `<option value="${escapeHtml(JSON.stringify(item).replaceAll('"','&quot;'))}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('') : '');
+      select.onchange = () => {
+        if (!select.value) return;
+        try { applyFornecedorPendenteInterno(JSON.parse(select.value)); } catch {}
+      };
+    } catch {}
+  }
+
   function renderPublicDates() {
     const dataSelect = byId("publicDataSelect");
     if (!dataSelect) return;
@@ -750,6 +791,14 @@
       e.preventDefault();
       try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
+        payload.cpfMotorista = String(payload.cpfMotorista || '').replace(/\D/g, '');
+        payload.quantidadeNotas = Number(payload.quantidadeNotas || 0);
+        payload.quantidadeVolumes = Number(payload.quantidadeVolumes || 0);
+        payload.pesoTotalKg = Number(payload.pesoTotalKg || 0);
+        payload.valorTotalNf = Number(payload.valorTotalNf || 0);
+        payload.notasFiscais = buildNotasFromLines(payload.notasTexto);
+        delete payload.notasTexto;
+        delete payload.fornecedorPendenteInterno;
         const data = await api("/api/agendamentos", { method: "POST", body: JSON.stringify(payload) });
         byId("agendamentoId").value = data.id || "";
         byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo} | ID: ${data.id}`;
@@ -890,6 +939,7 @@
     try {
       await loadPublicDisponibilidade();
       await loadFornecedoresPendentes();
+      await loadFornecedoresPendentesInterno();
     } catch (err) {
       const fornecedorMsg = byId("fornecedorMsg");
       if (fornecedorMsg) fornecedorMsg.textContent = err.message;

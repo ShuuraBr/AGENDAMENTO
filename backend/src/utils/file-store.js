@@ -137,3 +137,41 @@ export function buildDocaPainelFromFiles(dataAgendada = null) {
     };
   });
 }
+
+
+function cadastroFileName(tipo = '') {
+  const map = {
+    fornecedores: 'fornecedores.json',
+    transportadoras: 'transportadoras.json',
+    motoristas: 'motoristas.json',
+    veiculos: 'veiculos.json',
+    docas: 'docas.json',
+    janelas: 'janelas.json',
+    regras: 'regras.json',
+    usuarios: 'usuarios.json'
+  };
+  return map[String(tipo)] || null;
+}
+
+export function readCadastroFile(tipo) {
+  const name = cadastroFileName(tipo);
+  if (!name) return [];
+  return readJsonFile(name, []);
+}
+
+export function upsertCadastroFile(tipo, payload = {}, id = null) {
+  const name = cadastroFileName(tipo);
+  if (!name) throw new Error('Tipo inválido.');
+  const items = readJsonFile(name, []);
+  if (id != null) {
+    const index = items.findIndex((item) => Number(item.id) == Number(id));
+    if (index < 0) throw new Error('Registro não encontrado.');
+    items[index] = { ...items[index], ...payload, id: Number(id), updatedAt: new Date().toISOString() };
+    writeJsonFile(name, items);
+    return items[index];
+  }
+  const item = { id: nextId(items), ...payload, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  items.unshift(item);
+  writeJsonFile(name, items);
+  return item;
+}

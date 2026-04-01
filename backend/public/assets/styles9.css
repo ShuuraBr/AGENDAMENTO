@@ -55,3 +55,8 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 .btn-link{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:10px;background:#2563eb;color:#fff;text-decoration:none}
 .btn-link:hover{opacity:.94}
 @media (max-width:900px){.result-grid,.kv-grid{grid-template-columns:1fr}}
+
+.operator-form .inner h3 { margin-bottom: 0; }
+.operator-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.operator-grid textarea { min-height: 110px; }
+.operator-grid .form-group-full, .operator-grid label:has(textarea) { grid-column: 1 / -1; }
