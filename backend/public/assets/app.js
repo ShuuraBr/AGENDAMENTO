@@ -176,11 +176,14 @@
             <div><span>Transportadora</span><strong>${escapeHtml(data.transportadora || "-")}</strong></div>
             <div><span>Motorista</span><strong>${escapeHtml(data.motorista || "-")}</strong></div>
             <div><span>Placa</span><strong>${escapeHtml(data.placa || "-")}</strong></div>
+            <div><span>CPF motorista</span><strong>${escapeHtml(data.cpfMotorista || "-")}</strong></div>
             <div><span>Data</span><strong>${escapeHtml(formatDateBR(data.dataAgendada) || "-")}</strong></div>
             <div><span>Hora</span><strong>${escapeHtml(data.horaAgendada || "-")}</strong></div>
             <div><span>Doca</span><strong>${escapeHtml(data.doca || "A DEFINIR")}</strong></div>
             <div><span>Janela</span><strong>${escapeHtml(data.janela || "-")}</strong></div>
             <div><span>Volumes</span><strong>${escapeHtml(data.quantidadeVolumes ?? 0)}</strong></div>
+            <div><span>Peso total</span><strong>${escapeHtml(data.pesoTotalKg ?? 0)} kg</strong></div>
+            <div><span>Valor total</span><strong>R$ ${escapeHtml(Number(data.valorTotalNf || 0).toFixed(2))}</strong></div>
             <div><span>Notas</span><strong>${escapeHtml(data.quantidadeNotas ?? 0)}</strong></div>
             <div><span>CPF do motorista</span><strong>${escapeHtml(data.motoristaCpf || "-")}</strong></div>
             ${mode === "motorista" ? `<div><span>Token do motorista</span><strong>${escapeHtml(data.publicTokenMotorista || "-")}</strong></div>` : `<div><span>Token de consulta</span><strong>${escapeHtml(data.publicTokenFornecedor || "-")}</strong></div>`}
@@ -307,6 +310,7 @@
       el.addEventListener("input", () => { syncNfDraftsFromDom(); updateCalculatedTotals(); });
       el.addEventListener("change", () => { syncNfDraftsFromDom(); updateCalculatedTotals(); });
     });
+    updateAutomaticTotals("fornecedorForm");
   }
 
   function collectNotas() {
@@ -322,6 +326,51 @@
         observacao: String(nota.observacao || "").trim()
       }))
       .filter((item) => item.numeroNf || item.chaveAcesso);
+  }
+
+  function summarizeNotas(notas) {
+    const items = Array.isArray(notas) ? notas : [];
+    return {
+      quantidadeNotas: items.length,
+      quantidadeVolumes: items.reduce((acc, nota) => acc + (Number(nota.volumes) || 0), 0),
+      pesoTotalKg: Number(items.reduce((acc, nota) => acc + (Number(nota.peso) || 0), 0).toFixed(3)),
+      valorTotalNf: Number(items.reduce((acc, nota) => acc + (Number(nota.valorNf) || 0), 0).toFixed(2))
+    };
+  }
+
+  function updateAutomaticTotals(formId, notas = null) {
+    const form = byId(formId);
+    if (!form) return;
+    const resumo = summarizeNotas(notas ?? collectNotas());
+    const setValue = (name, value) => {
+      const input = form.querySelector(`[name="${name}"]`);
+      if (input) input.value = value;
+    };
+    setValue("quantidadeNotas", resumo.quantidadeNotas);
+    setValue("quantidadeVolumes", resumo.quantidadeVolumes);
+    setValue("pesoTotalKg", resumo.pesoTotalKg);
+    setValue("valorTotalNf", resumo.valorTotalNf);
+  }
+
+  function fillFormFromImport(formId, item) {
+    const form = byId(formId);
+    if (!form || !item) return;
+    const fields = ["fornecedor", "transportadora", "motorista", "cpfMotorista", "placa", "quantidadeNotas", "quantidadeVolumes", "pesoTotalKg", "valorTotalNf"];
+    fields.forEach((name) => {
+      const input = form.querySelector(`[name="${name}"]`);
+      if (input) input.value = item[name] ?? "";
+    });
+  }
+
+  async function loadFornecedoresPendentes() {
+    try {
+      const items = await api('/api/public/fornecedores-pendentes');
+      state.fornecedoresPendentes = Array.isArray(items) ? items : [];
+      [byId('publicFornecedorPendente'), byId('internalFornecedorPendente')].forEach((select) => {
+        if (!select) return;
+        select.innerHTML = `<option value="">Selecionar manualmente</option>` + state.fornecedoresPendentes.map((item) => `<option value="${item.id}">${escapeHtml(item.fornecedor)} · NF ${item.quantidadeNotas} · Vol ${item.quantidadeVolumes}</option>`).join('');
+      });
+    } catch {}
   }
 
   function renderPublicSlots(dataSelecionada) {
@@ -610,6 +659,216 @@
       valor: formatCurrencyBRL(i.valorTotal || 0),
       semaforo: i.semaforo || ""
     })));
+    bindAgendamentoSelection(items);
+    if (state.currentAgendamento) {
+      const refreshed = items.find((item) => Number(item.id) === Number(state.currentAgendamento.id));
+      state.currentAgendamento = refreshed || null;
+    }
+    updateWorkflowButtons();
+  }
+
+
+  const STATUS_FLOW = {
+    PENDENTE_APROVACAO: ["APROVADO", "REPROVADO", "CANCELADO", "NO_SHOW"],
+    APROVADO: ["CHEGOU", "EM_DESCARGA", "CANCELADO", "NO_SHOW"],
+    CHEGOU: ["EM_DESCARGA", "FINALIZADO", "CANCELADO"],
+    EM_DESCARGA: ["FINALIZADO"],
+    FINALIZADO: [],
+    CANCELADO: [],
+    REPROVADO: [],
+    NO_SHOW: []
+  };
+
+  function renderStatusHelper(item) {
+    const el = byId("statusHelper");
+    if (!el) return;
+    if (!item) {
+      el.innerHTML = "Informe o ID do agendamento para validar a transição de status antes de executar a operação.";
+      return;
+    }
+    const allowed = STATUS_FLOW[item.status] || [];
+    const next = allowed.length ? allowed.join(", ") : "Nenhuma transição permitida";
+    el.innerHTML = `<strong>Protocolo:</strong> ${escapeHtml(item.protocolo || "-")}<br><strong>Status atual:</strong> ${escapeHtml(statusLabel(item.status))}<br><strong>Próximas transições válidas:</strong> ${escapeHtml(next)}`;
+  }
+
+  async function refreshStatusHelper() {
+    const id = byId("agendamentoId")?.value?.trim();
+    if (!id) {
+      renderStatusHelper(null);
+      return null;
+    }
+    try {
+      const item = await api(`/api/agendamentos/${encodeURIComponent(id)}`);
+      renderStatusHelper(item);
+      return item;
+    } catch (err) {
+      const el = byId("statusHelper");
+      if (el) el.textContent = err.message;
+      return null;
+    }
+  }
+
+  function extractTokenFromQrText(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (/^(CHK|OUT)-/i.test(raw)) return raw;
+    try {
+      const url = new URL(raw);
+      const token = url.searchParams.get("token");
+      if (token) return token;
+      const match = url.pathname.match(/\/(checkin|checkout)\/([^/?#]+)/i);
+      if (match?.[2]) return decodeURIComponent(match[2]);
+    } catch {}
+    return raw;
+  }
+
+  async function stopCamera() {
+    if (state.cameraTimer) {
+      clearInterval(state.cameraTimer);
+      state.cameraTimer = null;
+    }
+    if (state.cameraStream) {
+      state.cameraStream.getTracks().forEach((track) => track.stop());
+      state.cameraStream = null;
+    }
+    const video = byId("qrVideo");
+    if (video) video.srcObject = null;
+  }
+
+  async function scanCurrentFrame() {
+    const video = byId("qrVideo");
+    if (!video || !state.barcodeDetector || video.readyState < 2) return;
+    try {
+      const codes = await state.barcodeDetector.detect(video);
+      const code = codes?.[0]?.rawValue;
+      if (!code || code === state.lastScannedCode) return;
+      state.lastScannedCode = code;
+      const token = extractTokenFromQrText(code);
+      if (!token) return;
+      const input = byId("checkinForm")?.querySelector('input[name="token"]');
+      if (input) input.value = token;
+      await validateCheckin(token);
+      await stopCamera();
+    } catch (err) {
+      byId("checkinMsg").textContent = err.message || "Falha ao ler QR Code.";
+    }
+  }
+
+  async function startCamera() {
+    const video = byId("qrVideo");
+    if (!video) return;
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("Navegador sem suporte à câmera.");
+    if (!("BarcodeDetector" in window)) throw new Error("Leitura automática de QR não suportada neste navegador. Use Chrome/Edge atualizados ou valide o token manualmente.");
+    state.barcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    await stopCamera();
+    state.lastScannedCode = "";
+    state.cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+    video.srcObject = state.cameraStream;
+    await video.play();
+    byId("checkinMsg").textContent = "Câmera ativa. Posicione o QR Code à frente da lente.";
+    state.cameraTimer = window.setInterval(scanCurrentFrame, 700);
+  }
+
+
+  const STATUS_FLOW = {
+    PENDENTE_APROVACAO: ["APROVADO", "REPROVADO", "CANCELADO", "NO_SHOW"],
+    APROVADO: ["CHEGOU", "EM_DESCARGA", "CANCELADO", "NO_SHOW"],
+    CHEGOU: ["EM_DESCARGA", "FINALIZADO", "CANCELADO"],
+    EM_DESCARGA: ["FINALIZADO"],
+    FINALIZADO: [],
+    CANCELADO: [],
+    REPROVADO: [],
+    NO_SHOW: []
+  };
+
+  function renderStatusHelper(item) {
+    const el = byId("statusHelper");
+    if (!el) return;
+    if (!item) {
+      el.innerHTML = "Informe o ID do agendamento para validar a transição de status antes de executar a operação.";
+      return;
+    }
+    const allowed = STATUS_FLOW[item.status] || [];
+    const next = allowed.length ? allowed.join(", ") : "Nenhuma transição permitida";
+    el.innerHTML = `<strong>Protocolo:</strong> ${escapeHtml(item.protocolo || "-")}<br><strong>Status atual:</strong> ${escapeHtml(statusLabel(item.status))}<br><strong>Próximas transições válidas:</strong> ${escapeHtml(next)}`;
+  }
+
+  async function refreshStatusHelper() {
+    const id = byId("agendamentoId")?.value?.trim();
+    if (!id) {
+      renderStatusHelper(null);
+      return null;
+    }
+    try {
+      const item = await api(`/api/agendamentos/${encodeURIComponent(id)}`);
+      renderStatusHelper(item);
+      return item;
+    } catch (err) {
+      const el = byId("statusHelper");
+      if (el) el.textContent = err.message;
+      return null;
+    }
+  }
+
+  function extractTokenFromQrText(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (/^(CHK|OUT)-/i.test(raw)) return raw;
+    try {
+      const url = new URL(raw);
+      const token = url.searchParams.get("token");
+      if (token) return token;
+      const match = url.pathname.match(/\/(checkin|checkout)\/([^/?#]+)/i);
+      if (match?.[2]) return decodeURIComponent(match[2]);
+    } catch {}
+    return raw;
+  }
+
+  async function stopCamera() {
+    if (state.cameraTimer) {
+      clearInterval(state.cameraTimer);
+      state.cameraTimer = null;
+    }
+    if (state.cameraStream) {
+      state.cameraStream.getTracks().forEach((track) => track.stop());
+      state.cameraStream = null;
+    }
+    const video = byId("qrVideo");
+    if (video) video.srcObject = null;
+  }
+
+  async function scanCurrentFrame() {
+    const video = byId("qrVideo");
+    if (!video || !state.barcodeDetector || video.readyState < 2) return;
+    try {
+      const codes = await state.barcodeDetector.detect(video);
+      const code = codes?.[0]?.rawValue;
+      if (!code || code === state.lastScannedCode) return;
+      state.lastScannedCode = code;
+      const token = extractTokenFromQrText(code);
+      if (!token) return;
+      const input = byId("checkinForm")?.querySelector('input[name="token"]');
+      if (input) input.value = token;
+      await validateCheckin(token);
+      await stopCamera();
+    } catch (err) {
+      byId("checkinMsg").textContent = err.message || "Falha ao ler QR Code.";
+    }
+  }
+
+  async function startCamera() {
+    const video = byId("qrVideo");
+    if (!video) return;
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("Navegador sem suporte à câmera.");
+    if (!("BarcodeDetector" in window)) throw new Error("Leitura automática de QR não suportada neste navegador. Use Chrome/Edge atualizados ou valide o token manualmente.");
+    state.barcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    await stopCamera();
+    state.lastScannedCode = "";
+    state.cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+    video.srcObject = state.cameraStream;
+    await video.play();
+    byId("checkinMsg").textContent = "Câmera ativa. Posicione o QR Code à frente da lente.";
+    state.cameraTimer = window.setInterval(scanCurrentFrame, 700);
   }
 
 
@@ -734,6 +993,106 @@
     }
   }
 
+  function updateWorkflowButtons() {
+    const status = state.currentAgendamento?.status || "";
+    const allowed = {
+      PENDENTE_APROVACAO: ["btnAprovar", "btnReprovar", "btnReagendar", "btnCancelar", "btnNoShow"],
+      APROVADO: ["btnCancelar", "btnIniciar", "btnNoShow", "btnQr", "btnQrCheckout"],
+      CHEGOU: ["btnIniciar", "btnCancelar", "btnQr", "btnQrCheckout"],
+      EM_DESCARGA: ["btnFinalizar", "btnQrCheckout"],
+      FINALIZADO: ["btnVoucher", "btnQrCheckout"],
+      CANCELADO: ["btnVoucher"],
+      REPROVADO: ["btnVoucher"],
+      NO_SHOW: ["btnVoucher"]
+    };
+    const enabled = new Set([...(allowed[status] || []), "loadAgendamentos", "btnVoucher"]);
+    ["btnAprovar","btnReprovar","btnReagendar","btnCancelar","btnIniciar","btnFinalizar","btnNoShow","btnQr","btnQrCheckout","btnEnviarInfos"].forEach((id) => {
+      const el = byId(id);
+      if (el) el.disabled = !enabled.has(id);
+    });
+    const msg = byId("operacaoMsg");
+    if (msg && state.currentAgendamento) {
+      msg.textContent = `Agendamento selecionado: ${state.currentAgendamento.protocolo} | Status atual: ${state.currentAgendamento.status}`;
+    }
+  }
+
+  function bindAgendamentoSelection(items = []) {
+    const table = byId("agendamentosList");
+    table?.querySelectorAll("tbody tr").forEach((tr, index) => {
+      const item = items[index];
+      if (!item) return;
+      tr.style.cursor = "pointer";
+      tr.addEventListener("click", () => {
+        state.currentAgendamento = item;
+        const idInput = byId("agendamentoId");
+        if (idInput) idInput.value = item.id;
+        table.querySelectorAll("tbody tr").forEach((row) => row.classList.remove("selected-row"));
+        tr.classList.add("selected-row");
+        updateWorkflowButtons();
+      });
+    });
+  }
+
+  async function startCamera() {
+    const video = byId("qrVideo");
+    if (!video) throw new Error("Elemento de vídeo não encontrado.");
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("Este navegador não suporta acesso à câmera.");
+
+    stopCamera();
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+    state.qrStream = stream;
+    video.srcObject = stream;
+    await video.play();
+    byId("checkinMsg").textContent = "Câmera ativada. Aponte para o QR Code.";
+
+    if ("BarcodeDetector" in window) {
+      const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+      const tick = async () => {
+        if (!state.qrStream) return;
+        try {
+          const codes = await detector.detect(video);
+          const raw = codes?.[0]?.rawValue || "";
+          if (raw && raw !== state.qrLastValue) {
+            state.qrLastValue = raw;
+            try {
+              const parsed = new URL(raw, window.location.origin);
+              const token = parsed.searchParams.get("token") || raw;
+              const id = parsed.searchParams.get("id");
+              const view = parsed.searchParams.get("view") || "checkin";
+              if (id && byId("agendamentoId")) byId("agendamentoId").value = id;
+              const input = byId("checkinForm")?.querySelector('input[name="token"]');
+              if (input) input.value = token;
+              byId("checkinMsg").textContent = `QR Code lido. Validando ${view === "checkout" ? "check-out" : "check-in"}...`;
+              if (view === "checkout") await validateCheckout(token);
+              else await validateCheckin(token);
+            } catch {
+              const input = byId("checkinForm")?.querySelector('input[name="token"]');
+              if (input) input.value = raw;
+            }
+          }
+        } catch (err) {
+          byId("checkinMsg").textContent = err.message || "Falha ao ler o QR Code.";
+        }
+      };
+      state.qrScanTimer = window.setInterval(tick, 1200);
+    } else {
+      byId("checkinMsg").textContent = "Câmera ativada. Seu navegador não lê QR automaticamente; informe o token manualmente.";
+    }
+  }
+
+  function stopCamera() {
+    if (state.qrScanTimer) {
+      window.clearInterval(state.qrScanTimer);
+      state.qrScanTimer = null;
+    }
+    if (state.qrStream) {
+      state.qrStream.getTracks().forEach((track) => track.stop());
+      state.qrStream = null;
+    }
+    const video = byId("qrVideo");
+    if (video) video.srcObject = null;
+  }
+
   async function validateCheckin(token) {
     try {
       const params = new URLSearchParams(location.search);
@@ -753,6 +1112,20 @@
       byId("checkinMsg").textContent = data.message;
       byId("checkinResult").textContent = JSON.stringify(data.agendamento, null, 2);
       await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas(), refreshStatusHelper()]);
+<<<<<<< HEAD
+=======
+    } catch (err) {
+      byId("checkinMsg").textContent = err.message;
+    }
+  }
+
+  async function validateCheckout(token) {
+    try {
+      const data = await api(`/api/public/checkout/${encodeURIComponent(token)}`, { method: "POST", body: JSON.stringify({}) });
+      byId("checkinMsg").textContent = data.message;
+      byId("checkinResult").textContent = JSON.stringify(data.agendamento, null, 2);
+      await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas(), refreshStatusHelper()]);
+>>>>>>> a4a3038f95bb66ba18786ae2350f8262d6a7ef3d
     } catch (err) {
       byId("checkinMsg").textContent = err.message;
     }
@@ -795,8 +1168,9 @@
         updateNav();
         await fillSelects();
         showView("dashboard");
-        await loadDashboard();
+        await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas(), loadFornecedoresPendentes()]);
         byId("loginMsg").textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
+        updateWorkflowButtons();
       } catch (err) {
         byId("loginMsg").textContent = err.message;
       }
@@ -910,11 +1284,12 @@
     byId("fornecedorForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
+        updateAutomaticTotals("fornecedorForm");
         const payload = Object.fromEntries(new FormData(e.target).entries());
         payload.motoristaCpf = String(payload.motoristaCpf || "").replace(/\D/g, "");
         payload.lgpdConsent = !!e.target.querySelector('[name="lgpdConsent"]')?.checked;
         payload.notas = collectNotas();
-        payload.quantidadeNotas = payload.notas.length;
+        Object.assign(payload, summarizeNotas(payload.notas));
         const data = await api("/api/public/solicitacao", { method: "POST", body: JSON.stringify(payload) });
         byId("fornecedorMsg").innerHTML = `Solicitação enviada. Protocolo: <strong>${data.protocolo}</strong>. Horário: <strong>${data.horaAgendada}</strong>. Doca: <strong>${data.doca}</strong>.<br><a href="${data.linkFornecedor}">Consulta da transportadora/fornecedor</a> • <a href="${data.linkMotorista}">Acompanhamento do motorista</a> • <a href="${data.voucher}" target="_blank" rel="noreferrer">Voucher PDF</a><br>Token do motorista: <strong>${data.tokenMotorista}</strong>`;
         e.target.reset();
@@ -978,6 +1353,16 @@
 
     byId("publicDataSelect")?.addEventListener("change", (e) => renderPublicSlots(e.target.value));
 
+    [
+      ["publicFornecedorPendente", "fornecedorForm"],
+      ["internalFornecedorPendente", "agendamentoForm"]
+    ].forEach(([selectId, formId]) => {
+      byId(selectId)?.addEventListener("change", (e) => {
+        const item = state.fornecedoresPendentes.find((row) => String(row.id) === String(e.target.value));
+        if (item) fillFormFromImport(formId, item);
+      });
+    });
+
     if (state.token && !isTokenExpired(state.token)) {
       await fillSelects();
       try { await loadCadastro(); } catch {}
@@ -985,7 +1370,7 @@
     }
 
     try {
-      await loadPublicDisponibilidade();
+      await Promise.allSettled([loadPublicDisponibilidade(), loadFornecedoresPendentes()]);
     } catch (err) {
       const fornecedorMsg = byId("fornecedorMsg");
       if (fornecedorMsg) fornecedorMsg.textContent = err.message;
@@ -994,9 +1379,11 @@
     const params = new URLSearchParams(location.search);
     const view = params.get("view");
     const token = params.get("token");
-    if (view === "checkin") {
+    if (view === "checkin" || view === "checkout") {
       showView(state.token && !isTokenExpired(state.token) ? "checkin" : "login");
-      if (token) byId("checkinForm")?.querySelector('input[name="token"]').setAttribute("value", token);
+      const input = byId("checkinForm")?.querySelector('input[name="token"]');
+      if (input && token) input.value = token;
+      byId("checkinMsg").textContent = view === "checkout" ? "Modo de validação de check-out." : "Modo de validação de check-in.";
     } else if (view === "motorista" && token) {
       showView("motorista");
       const input = byId("motoristaConsultaForm")?.querySelector('input[name="token"]');
