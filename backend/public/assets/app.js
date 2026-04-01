@@ -10,9 +10,19 @@
     cameraStream: null,
     barcodeDetector: null,
     scanning: false,
+<<<<<<< HEAD
     internalPendingFornecedor: null,
     internalPendingFornecedores: [],
     internalSelectedNotas: []
+=======
+<<<<<<< HEAD
+    internalPendingFornecedor: null,
+    internalSelectedNotas: []
+=======
+    fornecedoresPendentesPublico: [],
+    fornecedoresPendentesInterno: []
+>>>>>>> cd1401edc281acd07877d888c6de553a60b505c6
+>>>>>>> c35d64fc9dfe4fba42b5b01cc82a3c73ddcf6e94
   };
 
   const CADASTRO_CONFIG = {
@@ -310,21 +320,24 @@
   async function loadFornecedoresPendentes() {
     try {
       const items = await api('/api/public/fornecedores-pendentes');
+      state.fornecedoresPendentesPublico = Array.isArray(items) ? items : [];
       const select = byId('fornecedorPendenteSelect');
       if (!select) return;
-      select.innerHTML = `<option value="">Selecionar manualmente</option>` + (Array.isArray(items) ? items.map((item) => `<option value="${escapeHtml(JSON.stringify(item).replaceAll('"','&quot;'))}">${escapeHtml(item.fornecedor || item.nome || '-')}</option>`).join('') : '');
-      select.addEventListener('change', () => {
-        if (!select.value) return;
-        const data = JSON.parse(select.value);
+      select.innerHTML = `<option value="">Selecionar manualmente</option>` + state.fornecedoresPendentesPublico.map((item, index) => `<option value="${index}">${escapeHtml(item.fornecedor || item.nome || '-')}</option>`).join('');
+      select.onchange = () => {
+        if (select.value === '') return;
+        const data = state.fornecedoresPendentesPublico[Number(select.value)];
+        if (!data) return;
         const form = byId('fornecedorForm');
         ['fornecedor','transportadora','placa'].forEach((field) => { if (data[field] && form.querySelector(`[name="${field}"]`)) form.querySelector(`[name="${field}"]`).value = data[field]; });
-        if (Array.isArray(data.notasFiscais) && data.notasFiscais.length) {
-          state.nfRows = data.notasFiscais.length;
-          state.nfDrafts = data.notasFiscais.map((n) => ({ numeroNf: n.numeroNf || '', serie: n.serie || '', chaveAcesso: n.chaveAcesso || '', volumes: String(n.volumes || 0), peso: String(n.peso || 0), valorNf: String(n.valorNf || 0), observacao: n.observacao || '' }));
+        const notas = Array.isArray(data.notasFiscais) && data.notasFiscais.length ? data.notasFiscais : (Array.isArray(data.notas) ? data.notas : []);
+        if (notas.length) {
+          state.nfRows = notas.length;
+          state.nfDrafts = notas.map((n) => ({ numeroNf: n.numeroNf || '', serie: n.serie || '', chaveAcesso: n.chaveAcesso || '', volumes: String(n.volumes || 0), peso: String(n.peso || 0), valorNf: String(n.valorNf || 0), observacao: n.observacao || '' }));
           renderNfRows();
           updateTotalsFromNotas();
         }
-      });
+      };
     } catch {}
   }
 
@@ -467,6 +480,7 @@
   async function loadFornecedoresPendentesInterno() {
     try {
       const items = await api('/api/public/fornecedores-pendentes');
+<<<<<<< HEAD
       state.internalPendingFornecedores = Array.isArray(items) ? items : [];
       const select = byId('internalFornecedorPendenteSelect');
       if (!select) return;
@@ -477,6 +491,13 @@
       }).join('');
       const hasCurrentValue = state.internalPendingFornecedores.some((item, index) => String(item?.id ?? index + 1) === currentValue);
       select.value = hasCurrentValue ? currentValue : '';
+=======
+      state.fornecedoresPendentesInterno = Array.isArray(items) ? items : [];
+      const select = byId('internalFornecedorPendenteSelect');
+      if (!select) return;
+<<<<<<< HEAD
+      select.innerHTML = `<option value="">Selecione o fornecedor pendente</option>` + (Array.isArray(items) ? items.map((item) => `<option value="${escapeHtml(JSON.stringify(item).replaceAll('"','&quot;'))}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('') : '');
+>>>>>>> c35d64fc9dfe4fba42b5b01cc82a3c73ddcf6e94
       select.onchange = () => {
         if (!select.value) {
           state.internalPendingFornecedor = null;
@@ -486,8 +507,24 @@
           renderPendingNotasInterno();
           return;
         }
+<<<<<<< HEAD
         const selected = state.internalPendingFornecedores.find((item, index) => String(item?.id ?? index + 1) === String(select.value));
         applyFornecedorPendenteInterno(selected || null);
+=======
+        try { applyFornecedorPendenteInterno(JSON.parse(select.value)); } catch {}
+=======
+      select.innerHTML = `<option value="">Selecionar manualmente</option>` + state.fornecedoresPendentesInterno.map((item, index) => `<option value="${index}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('');
+      select.onchange = () => {
+        if (select.value === '') return;
+        const item = state.fornecedoresPendentesInterno[Number(select.value)];
+        if (!item) {
+          byId('agendamentoMsg').textContent = 'Fornecedor pendente inválido.';
+          return;
+        }
+        byId('agendamentoMsg').textContent = '';
+        applyFornecedorPendenteInterno(item);
+>>>>>>> cd1401edc281acd07877d888c6de553a60b505c6
+>>>>>>> c35d64fc9dfe4fba42b5b01cc82a3c73ddcf6e94
       };
       if (select.value) {
         const selected = state.internalPendingFornecedores.find((item, index) => String(item?.id ?? index + 1) === String(select.value));
@@ -609,19 +646,28 @@
         <div class="mt12">
           <strong>Fila (${d.fila.length})</strong>
           ${d.fila.length ? d.fila.map((f) => {
+<<<<<<< HEAD
             const canDefineDoca = ['APROVADO', 'CHEGOU'].includes(String(f.status || ''));
             const buttonLabel = String(d.codigo || '').toUpperCase() === 'A DEFINIR' ? 'Definir doca' : 'Alterar doca';
+=======
+            const needsDoca = d.codigo === "A DEFINIR" && ["CHEGOU", "APROVADO"].includes(f.status);
+>>>>>>> c35d64fc9dfe4fba42b5b01cc82a3c73ddcf6e94
             return `
               <div class="fila-item">
                 <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
                 <div>${escapeHtml(f.placa)} • ${escapeHtml(f.horaAgendada)} • ${escapeHtml(f.status)}</div>
+<<<<<<< HEAD
                 ${canDefineDoca ? `<div class="mt12"><button type="button" class="btn-secondary" data-definir-doca="${escapeHtml(f.id)}">${buttonLabel}</button></div>` : ""}
+=======
+                ${needsDoca ? `<div class="warning-box">A doca deve ser definida exclusivamente na aba de controle de docas.</div>` : ""}
+>>>>>>> c35d64fc9dfe4fba42b5b01cc82a3c73ddcf6e94
               </div>
             `;
           }).join("") : "<div class='fila-item'>Sem fila</div>"}
         </div>
       </div>
     `).join("");
+<<<<<<< HEAD
 
     wrap.querySelectorAll('[data-definir-doca]').forEach((button) => {
       button.addEventListener('click', async () => {
@@ -635,6 +681,8 @@
         }
       });
     });
+=======
+>>>>>>> c35d64fc9dfe4fba42b5b01cc82a3c73ddcf6e94
   }
 
   function normalizeValueByField(field, value) {
@@ -885,6 +933,10 @@ Deseja liberar manualmente a descarga deste veículo?`);
         if (!payload.fornecedor) throw new Error('Fornecedor pendente inválido.');
         if (!payload.notasFiscais.length) throw new Error('Selecione ao menos uma NF pendente para o agendamento.');
         delete payload.fornecedorPendenteInterno;
+        delete payload.docaId;
+        if (!payload.fornecedor || !payload.transportadora || !payload.motorista || !payload.placa || !payload.dataAgendada || !payload.horaAgendada || !payload.janelaId || !payload.cpfMotorista || payload.notasFiscais.length === 0) {
+          throw new Error('Preencha todas as informações obrigatórias do agendamento interno, incluindo ao menos uma NF e o CPF do motorista.');
+        }
         const data = await api("/api/agendamentos", { method: "POST", body: JSON.stringify(payload) });
         byId("agendamentoId").value = data.id || "";
         byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo} | ID: ${data.id}`;

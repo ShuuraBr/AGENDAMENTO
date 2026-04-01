@@ -2,7 +2,11 @@
   {
     "id": 2,
     "codigo": "A DEFINIR",
+<<<<<<< HEAD
     "descricao": "Doca provisória até definição pelo operador"
+=======
+    "descricao": "Doca definida posteriormente no painel de docas"
+>>>>>>> c35d64fc9dfe4fba42b5b01cc82a3c73ddcf6e94
   },
   {
     "id": 1,
