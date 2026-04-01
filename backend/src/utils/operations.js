@@ -15,9 +15,6 @@ export function queuePriority(status) {
 }
 
 export async function assertJanelaDocaDisponivel({ docaId, janelaId, dataAgendada, ignoreAgendamentoId = null }) {
-  const doca = await prisma.doca.findUnique({ where: { id: Number(docaId) } }).catch(() => null);
-  if (String(doca?.codigo || '').toUpperCase() === 'A DEFINIR') return;
-
   const conflict = await prisma.agendamento.findFirst({
     where: {
       id: ignoreAgendamentoId ? { not: Number(ignoreAgendamentoId) } : undefined,
@@ -55,7 +52,8 @@ export async function docaPainel(dataAgendada = null) {
         return String(a.horaAgendada).localeCompare(String(b.horaAgendada));
       });
 
-    const ativo = fila.find(a => ["CHEGOU", "EM_DESCARGA"].includes(a.status)) || fila[0] || null;
+    const filaVisivel = fila.filter(a => a.status === "CHEGOU" || a.status === "EM_DESCARGA");
+    const ativo = filaVisivel.find(a => ["EM_DESCARGA", "CHEGOU"].includes(a.status)) || null;
 
     return {
       docaId: doca.id,
@@ -63,7 +61,7 @@ export async function docaPainel(dataAgendada = null) {
       descricao: doca.descricao,
       ocupacaoAtual: ativo ? ativo.status : "LIVRE",
       semaforo: ativo ? trafficColor(ativo.status) : "VERDE",
-      fila
+      fila: filaVisivel
     };
   });
 }
