@@ -9,12 +9,11 @@ import { qrSvg } from "../utils/qrcode.js";
 import { sendMail } from "../utils/email.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
 import { calculateTotals, normalizeCpf } from "../utils/agendamento-helpers.js";
-import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile } from "../utils/file-store.js";
+import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile, ensureDocaPadraoFile } from "../utils/file-store.js";
 import { validateAgendamentoPayload, validateNf, validateStatusTransition, normalizeChaveAcesso } from "../utils/validators.js";
 import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js";
 import { auditLog } from "../utils/audit.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
-import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
 
 const router = Router();
 router.use(authRequired);
@@ -53,6 +52,16 @@ async function full(id) {
 
 async function mustExist(id) {
   try { return await prisma.agendamento.findUnique({ where: { id: Number(id) } }); } catch { return findAgendamentoFile(id); }
+}
+
+async function getOrCreateDocaPadrao() {
+  try {
+    const existing = await prisma.doca.findFirst({ where: { codigo: "A DEFINIR" }, orderBy: { id: "asc" } });
+    if (existing) return existing;
+    return await prisma.doca.create({ data: { codigo: "A DEFINIR", descricao: "Doca definida pelo operador do recebimento" } });
+  } catch {
+    return ensureDocaPadraoFile();
+  }
 }
 
 async function notificationSummary(agendamentoId) {
@@ -178,10 +187,6 @@ router.get("/", async (req, res) => {
     const payload = await Promise.all(items.map(async (i) => ({ ...calculateTotals(i.notasFiscais || [], i), ...i, semaforo: trafficColor(i.status), notificacoes: await notificationSummary(i.id) })));
     return res.json(payload);
   } catch {
-    try {
-      const items = await fetchAgendamentosRaw(q);
-      return res.json(items.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { voucherMotorista:false,voucherTransportadoraFornecedor:false,confirmacaoTransportadoraFornecedor:false } })));
-    } catch {}
     const items = readAgendamentos().filter((i) => (!q.status || i.status===String(q.status)) && (!q.fornecedor || String(i.fornecedor||'').toLowerCase().includes(String(q.fornecedor).toLowerCase())) && (!q.transportadora || String(i.transportadora||'').toLowerCase().includes(String(q.transportadora).toLowerCase())) && (!q.motorista || String(i.motorista||'').toLowerCase().includes(String(q.motorista).toLowerCase())) && (!q.placa || String(i.placa||'').toLowerCase().includes(String(q.placa).toLowerCase())) && (!q.dataAgendada || String(i.dataAgendada)===String(q.dataAgendada)));
     return res.json(items.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { voucherMotorista:false,voucherTransportadoraFornecedor:false,confirmacaoTransportadoraFornecedor:false } })));
   }
@@ -199,18 +204,13 @@ router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res
     payload.cpfMotorista = normalizeCpf(payload.cpfMotorista || payload.cpf || '');
     const totals = calculateTotals(Array.isArray(payload.notasFiscais) ? payload.notasFiscais : [], payload);
     Object.assign(payload, totals);
-    validateAgendamentoPayload(payload, false);
 
-    let defaultDoca;
-    try {
-      defaultDoca = await prisma.doca.findFirst({ where: { codigo: "A DEFINIR" }, orderBy: { id: "asc" } }) || await prisma.doca.findFirst({ orderBy: { id: "asc" } });
-    } catch {}
-    if (!defaultDoca) {
-      const items = readAgendamentos();
-      defaultDoca = items.find((i) => i.docaId)?.doca ? null : null;
+    if (!payload.docaId || String(payload.docaId).trim() === "") {
+      const docaPadrao = await getOrCreateDocaPadrao();
+      payload.docaId = Number(docaPadrao.id);
     }
-    payload.docaId = Number(payload.docaId || defaultDoca?.id || 1);
 
+    validateAgendamentoPayload(payload, false);
     try { await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada }); } catch {}
 
     let item;

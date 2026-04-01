@@ -31,6 +31,7 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
     ["placa", "Placa"],
     ["dataAgendada", "Data agendada"],
     ["horaAgendada", "Hora agendada"],
+    ...(!isPublic ? [["docaId", "Doca"]] : []),
     ["janelaId", "Janela"]
   ];
 
@@ -46,22 +47,6 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
 
   if (!/^\d{2}:\d{2}$/.test(String(payload.horaAgendada))) {
     throw new Error("A hora deve estar no formato HH:MM.");
-  }
-
-  if (!isPublic) {
-    const internalRequired = [
-      ["cpfMotorista", "CPF do motorista"],
-      ["telefoneMotorista", "Telefone do motorista"],
-      ["emailMotorista", "E-mail do motorista"],
-      ["emailTransportadora", "E-mail da transportadora"],
-      ["observacoes", "Observações"]
-    ];
-    for (const [field, label] of internalRequired) {
-      if (!String(payload[field] ?? "").trim()) throw new Error(`${label} é obrigatório.`);
-    }
-    if (!Array.isArray(payload.notasFiscais) || !payload.notasFiscais.length) {
-      throw new Error("Selecione ao menos uma NF para o agendamento interno.");
-    }
   }
 
   if (payload.emailMotorista && !String(payload.emailMotorista).includes("@")) {

@@ -8,7 +8,7 @@ import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { calculateTotals, normalizeCpf } from "../utils/agendamento-helpers.js";
 import {
   readJanelas, readDocas, readAgendamentos, readFornecedoresPendentes,
-  createAgendamentoFile, findAgendamentoByTokenFile, findAgendamentoFile, updateAgendamentoFile
+  createAgendamentoFile, findAgendamentoByTokenFile, findAgendamentoFile, updateAgendamentoFile, ensureDocaPadraoFile
 } from "../utils/file-store.js";
 
 const router = express.Router();
@@ -26,12 +26,9 @@ async function getOrCreateDocaPadrao() {
   try {
     const existing = await prisma.doca.findFirst({ where: { codigo: "A DEFINIR" }, orderBy: { id: "asc" } });
     if (existing) return existing;
-    const first = await prisma.doca.findFirst({ orderBy: { id: "asc" } });
-    if (first) return first;
-    return prisma.doca.create({ data: { codigo: "A DEFINIR", descricao: "Doca definida pelo operador do recebimento" } });
+    return await prisma.doca.create({ data: { codigo: "A DEFINIR", descricao: "Doca definida pelo operador do recebimento" } });
   } catch {
-    const docas = readDocas();
-    return docas.find((d) => d.codigo === 'A DEFINIR') || docas[0] || { id: 1, codigo: 'A DEFINIR', descricao: 'Doca definida pelo operador do recebimento' };
+    return ensureDocaPadraoFile();
   }
 }
 
@@ -106,7 +103,7 @@ router.post("/motorista/:token/cancelar", async (req, res) => { const item = awa
 router.get("/consulta/:token", async (req, res) => { const item = await resolveByToken(req.params.token); if (!item) return res.status(404).json({ message: 'Token inválido.' }); res.json(formatItem(item, req)); });
 router.get("/fornecedor/:token", async (req, res) => { const item = await resolveByToken(req.params.token); if (!item) return res.status(404).json({ message: 'Token inválido.' }); res.json(formatItem(item, req)); });
 router.get("/voucher/:token", async (req, res) => { const item = await resolveByToken(req.params.token); if (!item) return res.status(404).json({ message: 'Token inválido.' }); const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) }); res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', `inline; filename=voucher-${item.protocolo}.pdf`); res.send(pdf); });
-router.post("/checkin/:token", async (req, res) => { const item = await resolveByToken(req.params.token); if (!item) return res.status(404).json({ message: 'Token de check-in inválido.' }); if (!["APROVADO", "CHEGOU"].includes(item.status)) return res.status(400).json({ message: 'Check-in só permitido para agendamentos aprovados.' }); const hoje = formatDate(new Date()); if (String(item.dataAgendada || '') !== hoje && !req.body?.overrideDateMismatch) { return res.status(409).json({ message: `Data agendada divergente do dia atual. Agendamento: ${item.dataAgendada}. Hoje: ${hoje}. Avalie a situação e confirme manualmente para liberar a descarga.` }); } try { const updated = await prisma.agendamento.update({ where: { id: item.id }, data: { status: 'CHEGOU', checkinEm: item.checkinEm || new Date() } }); return res.json({ ok: true, message: String(item.dataAgendada || '') === hoje ? 'Check-in realizado com sucesso.' : 'Check-in realizado com liberação manual do operador.', agendamento: updated }); } catch { const updated = updateAgendamentoFile(item.id, { status: 'CHEGOU', checkinEm: item.checkinEm || new Date().toISOString() }); return res.json({ ok: true, message: String(item.dataAgendada || '') === hoje ? 'Check-in realizado com sucesso.' : 'Check-in realizado com liberação manual do operador.', agendamento: updated }); } });
+router.post("/checkin/:token", async (req, res) => { const item = await resolveByToken(req.params.token); if (!item) return res.status(404).json({ message: 'Token de check-in inválido.' }); if (!["APROVADO", "CHEGOU"].includes(item.status)) return res.status(400).json({ message: 'Check-in só permitido para agendamentos aprovados.' }); try { const updated = await prisma.agendamento.update({ where: { id: item.id }, data: { status: 'CHEGOU', checkinEm: item.checkinEm || new Date() } }); return res.json({ ok: true, message: 'Check-in realizado com sucesso.', agendamento: updated }); } catch { const updated = updateAgendamentoFile(item.id, { status: 'CHEGOU', checkinEm: item.checkinEm || new Date().toISOString() }); return res.json({ ok: true, message: 'Check-in realizado com sucesso.', agendamento: updated }); } });
 router.post("/checkout/:token", async (req, res) => { const item = await resolveByToken(req.params.token); if (!item) return res.status(404).json({ message: 'Token de check-out inválido.' }); if (!["CHEGOU", "EM_DESCARGA"].includes(item.status)) return res.status(400).json({ message: 'Check-out só permitido após a chegada.' }); try { const updated = await prisma.agendamento.update({ where: { id: item.id }, data: { status: 'FINALIZADO', fimDescargaEm: new Date() } }); return res.json({ ok: true, message: 'Check-out realizado com sucesso.', agendamento: updated }); } catch { const updated = updateAgendamentoFile(item.id, { status: 'FINALIZADO', fimDescargaEm: new Date().toISOString() }); return res.json({ ok: true, message: 'Check-out realizado com sucesso.', agendamento: updated }); } });
 
 export default router;

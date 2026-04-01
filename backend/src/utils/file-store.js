@@ -48,6 +48,22 @@ export function readMotoristas() { return readJsonFile('motoristas.json', []); }
 export function readVeiculos() { return readJsonFile('veiculos.json', []); }
 export function readRegras() { return readJsonFile('regras.json', []); }
 export function readFornecedoresPendentes() { return readJsonFile('fornecedores-pendentes.json', []); }
+export function ensureDocaPadraoFile() {
+  const docas = readDocas();
+  const existing = docas.find((item) => String(item.codigo || '').toUpperCase() === 'A DEFINIR');
+  if (existing) return existing;
+  const item = {
+    id: nextId(docas),
+    codigo: 'A DEFINIR',
+    descricao: 'Doca definida pelo operador do recebimento',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  docas.unshift(item);
+  writeJsonFile('docas.json', docas);
+  return item;
+}
+
 
 export function enrichAgendamentoRecord(item = {}) {
   const notas = Array.isArray(item.notasFiscais) ? item.notasFiscais : [];
