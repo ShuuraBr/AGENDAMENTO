@@ -1,13 +1,23 @@
 import express from "express";
 import { prisma } from "../utils/prisma.js";
-import { generateProtocol, generatePublicToken } from "../utils/security.js";
-import { validateAgendamentoPayload, validateNf, normalizeChaveAcesso } from "../utils/validators.js";
+import { generateProtocol, generatePublicToken, generateCpfBasedMotoristaToken } from "../utils/security.js";
+import { validateAgendamentoPayload, validateNf, normalizeChaveAcesso, normalizeCpf } from "../utils/validators.js";
 import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js";
 import { fetchJanelasDocas, fetchAgendamentosByDatasStatuses } from "../utils/db-fallback.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 
 const router = express.Router();
 const ACTIVE_STATUSES = ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"];
+
+function calculateNotasTotals(notas = []) {
+  return notas.reduce((acc, nota) => {
+    acc.quantidadeNotas += 1;
+    acc.quantidadeVolumes += Number(nota?.volumes || 0);
+    acc.pesoTotal += Number(nota?.peso || 0);
+    acc.valorTotal += Number(nota?.valorNf || 0);
+    return acc;
+  }, { quantidadeNotas: 0, quantidadeVolumes: 0, pesoTotal: 0, valorTotal: 0 });
+}
 
 function validateNfBatch(notas = []) {
   for (const nota of notas) validateNf(nota || {});
@@ -34,7 +44,8 @@ function buildPublicLinks(req, item) {
     consulta: `${base}/?view=consulta&token=${encodeURIComponent(item.publicTokenFornecedor)}`,
     motorista: `${base}/?view=motorista&token=${encodeURIComponent(item.publicTokenMotorista)}`,
     voucher: `${base}/api/public/voucher/${encodeURIComponent(item.publicTokenFornecedor)}`,
-    checkin: `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`
+    checkin: `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`,
+    checkout: `${base}/api/public/checkout/${encodeURIComponent(item.checkinToken)}`
   };
 }
 
@@ -49,6 +60,7 @@ function formatPublicAgendamento(item, req) {
     transportadora: item.transportadora,
     motorista: item.motorista,
     telefoneMotorista: item.telefoneMotorista,
+    motoristaCpf: item.motoristaCpf,
     emailMotorista: item.emailMotorista,
     emailTransportadora: item.emailTransportadora,
     placa: item.placa,
@@ -59,6 +71,8 @@ function formatPublicAgendamento(item, req) {
     observacoes: item.observacoes || "",
     quantidadeNotas: item.quantidadeNotas,
     quantidadeVolumes: item.quantidadeVolumes,
+    pesoTotal: item.pesoTotal || 0,
+    valorTotal: item.valorTotal || 0,
     motivoReprovacao: item.motivoReprovacao,
     motivoCancelamento: item.motivoCancelamento,
     checkinEm: item.checkinEm,
@@ -222,10 +236,13 @@ router.post("/solicitacao", async (req, res) => {
       observacao: String(nota?.observacao || "").trim()
     })) : [];
 
+    const totaisNotas = calculateNotasTotals(notas);
+
     const agendamentoPayload = {
       fornecedor: String(payload.fornecedor || "").trim(),
       transportadora: String(payload.transportadora || "").trim(),
       motorista: String(payload.motorista || "").trim(),
+      motoristaCpf: normalizeCpf(payload.motoristaCpf || ""),
       telefoneMotorista: String(payload.telefoneMotorista || "").trim(),
       emailMotorista: String(payload.emailMotorista || "").trim(),
       emailTransportadora: String(payload.emailTransportadora || "").trim(),
@@ -234,8 +251,10 @@ router.post("/solicitacao", async (req, res) => {
       horaAgendada,
       janelaId,
       docaId: doca.id,
-      quantidadeNotas: notas.length,
-      quantidadeVolumes: Number(payload.quantidadeVolumes || 0),
+      quantidadeNotas: totaisNotas.quantidadeNotas,
+      quantidadeVolumes: totaisNotas.quantidadeVolumes,
+      pesoTotal: totaisNotas.pesoTotal,
+      valorTotal: totaisNotas.valorTotal,
       observacoes: String(payload.observacoes || "").trim(),
       lgpdConsent: Boolean(payload.lgpdConsent)
     };
@@ -248,12 +267,13 @@ router.post("/solicitacao", async (req, res) => {
     const created = await prisma.agendamento.create({
       data: {
         protocolo: generateProtocol(),
-        publicTokenMotorista: generatePublicToken("MOT"),
+        publicTokenMotorista: generateCpfBasedMotoristaToken(agendamentoPayload.motoristaCpf),
         publicTokenFornecedor: generatePublicToken("FOR"),
         checkinToken: generatePublicToken("CHK"),
         fornecedor: agendamentoPayload.fornecedor,
         transportadora: agendamentoPayload.transportadora,
         motorista: agendamentoPayload.motorista,
+        motoristaCpf: agendamentoPayload.motoristaCpf,
         telefoneMotorista: agendamentoPayload.telefoneMotorista,
         emailMotorista: agendamentoPayload.emailMotorista,
         emailTransportadora: agendamentoPayload.emailTransportadora,
@@ -264,6 +284,8 @@ router.post("/solicitacao", async (req, res) => {
         horaAgendada,
         quantidadeNotas: agendamentoPayload.quantidadeNotas,
         quantidadeVolumes: agendamentoPayload.quantidadeVolumes,
+        pesoTotal: agendamentoPayload.pesoTotal,
+        valorTotal: agendamentoPayload.valorTotal,
         status: "PENDENTE_APROVACAO",
         observacoes: agendamentoPayload.observacoes,
         lgpdConsentAt: new Date()
@@ -389,6 +411,20 @@ router.post("/fornecedor/:token/notas", async (req, res) => {
   }
 });
 
+router.get("/fornecedores-pendentes", async (_req, res) => {
+  try {
+    const itens = await prisma.agendamento.findMany({
+      where: { status: { in: ["PENDENTE_APROVACAO", "APROVADO"] } },
+      select: { fornecedor: true },
+      distinct: ["fornecedor"],
+      orderBy: { fornecedor: "asc" }
+    });
+    res.json({ fornecedores: itens.map((item) => item.fornecedor).filter(Boolean) });
+  } catch (err) {
+    res.status(500).json({ message: err?.message || "Falha ao carregar fornecedores pendentes." });
+  }
+});
+
 router.get("/voucher/:token", async (req, res) => {
   try {
     const item = await resolveAgendamentoByAnyToken(req.params.token);
@@ -419,6 +455,25 @@ router.post("/checkin/:token", async (req, res) => {
   } catch (err) {
     console.error("Erro em /public/checkin:", err);
     res.status(500).json({ message: err?.message || "Falha ao realizar check-in." });
+  }
+});
+router.post("/checkout/:token", async (req, res) => {
+  try {
+    const item = await prisma.agendamento.findUnique({ where: { checkinToken: req.params.token } });
+    if (!item) return res.status(404).json({ message: "Token de check-out inválido." });
+    if (!["CHEGOU", "EM_DESCARGA"].includes(item.status)) {
+      return res.status(400).json({ message: "Check-out só permitido para cargas que já chegaram." });
+    }
+
+    const updated = await prisma.agendamento.update({
+      where: { id: item.id },
+      data: { status: "FINALIZADO", inicioDescargaEm: item.inicioDescargaEm || item.checkinEm || new Date(), fimDescargaEm: new Date() }
+    });
+
+    res.json({ ok: true, message: "Check-out realizado com sucesso.", agendamento: updated });
+  } catch (err) {
+    console.error("Erro em /public/checkout:", err);
+    res.status(500).json({ message: err?.message || "Falha ao realizar check-out." });
   }
 });
 
