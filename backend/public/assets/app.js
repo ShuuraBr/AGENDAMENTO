@@ -2,16 +2,16 @@
   const state = {
     token: localStorage.getItem("token") || "",
     cadastroTipo: "fornecedores",
-    fornecedoresPendentes: [],
     cadastroEditId: null,
     cadastroCache: [],
     nfRows: 1,
     nfDrafts: [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }],
     disponibilidadePublica: [],
     cameraStream: null,
-    cameraTimer: null,
     barcodeDetector: null,
-    lastScannedCode: ""
+    scanning: false,
+    internalPendingFornecedor: null,
+    internalSelectedNotas: []
   };
 
   const CADASTRO_CONFIG = {
@@ -114,39 +114,6 @@
     return `${d}/${m}/${y}`;
   }
 
-  function formatCurrencyBRL(value) {
-    return Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  }
-
-  function updateCalculatedTotals() {
-    const notas = collectNotas();
-    const totais = notas.reduce((acc, nota) => {
-      acc.quantidadeNotas += 1;
-      acc.quantidadeVolumes += Number(nota.volumes || 0);
-      acc.pesoTotal += Number(nota.peso || 0);
-      acc.valorTotal += Number(nota.valorNf || 0);
-      return acc;
-    }, { quantidadeNotas: 0, quantidadeVolumes: 0, pesoTotal: 0, valorTotal: 0 });
-
-    const mappings = {
-      quantidadeNotas: totais.quantidadeNotas,
-      quantidadeVolumes: totais.quantidadeVolumes,
-      pesoTotal: totais.pesoTotal.toFixed(3),
-      valorTotal: totais.valorTotal.toFixed(2)
-    };
-
-    Object.entries(mappings).forEach(([name, value]) => {
-      document.querySelectorAll(`[name="${name}"]`).forEach((el) => {
-        el.value = value;
-      });
-    });
-
-    if (byId("totalNotasLabel")) byId("totalNotasLabel").textContent = String(totais.quantidadeNotas);
-    if (byId("totalVolumesLabel")) byId("totalVolumesLabel").textContent = String(totais.quantidadeVolumes);
-    if (byId("totalPesoLabel")) byId("totalPesoLabel").textContent = totais.pesoTotal.toFixed(3);
-    if (byId("totalValorLabel")) byId("totalValorLabel").textContent = formatCurrencyBRL(totais.valorTotal);
-  }
-
   function statusLabel(status) {
     return String(status || "").replaceAll("_", " ");
   }
@@ -157,7 +124,7 @@
 
   function renderNotasTable(notas) {
     if (!Array.isArray(notas) || !notas.length) return '<p class="hint">Sem notas fiscais cadastradas.</p>';
-    return `<table class="table"><thead><tr><th>Número NF</th><th>Série</th><th>Chave</th><th>Volumes</th><th>Peso</th><th>Valor</th></tr></thead><tbody>${notas.map((nota) => `<tr><td>${escapeHtml(nota.numeroNf || "-")}</td><td>${escapeHtml(nota.serie || "-")}</td><td>${escapeHtml(nota.chaveAcesso || "-")}</td><td>${escapeHtml(nota.volumes ?? 0)}</td><td>${escapeHtml(nota.peso ?? 0)}</td><td>${escapeHtml(formatCurrencyBRL(nota.valorNf ?? 0))}</td></tr>`).join("")}</tbody></table>`;
+    return `<table class="table"><thead><tr><th>Número NF</th><th>Série</th><th>Chave</th><th>Volumes</th></tr></thead><tbody>${notas.map((nota) => `<tr><td>${escapeHtml(nota.numeroNf || "-")}</td><td>${escapeHtml(nota.serie || "-")}</td><td>${escapeHtml(nota.chaveAcesso || "-")}</td><td>${escapeHtml(nota.volumes ?? 0)}</td></tr>`).join("")}</tbody></table>`;
   }
 
   function renderPublicResult(data, mode = "consulta") {
@@ -182,11 +149,8 @@
             <div><span>Janela</span><strong>${escapeHtml(data.janela || "-")}</strong></div>
             <div><span>Volumes</span><strong>${escapeHtml(data.quantidadeVolumes ?? 0)}</strong></div>
             <div><span>Notas</span><strong>${escapeHtml(data.quantidadeNotas ?? 0)}</strong></div>
-            <div><span>CPF do motorista</span><strong>${escapeHtml(data.motoristaCpf || "-")}</strong></div>
             ${mode === "motorista" ? `<div><span>Token do motorista</span><strong>${escapeHtml(data.publicTokenMotorista || "-")}</strong></div>` : `<div><span>Token de consulta</span><strong>${escapeHtml(data.publicTokenFornecedor || "-")}</strong></div>`}
             <div><span>Check-in</span><strong>${escapeHtml(data.checkinToken || "-")}</strong></div>
-            <div><span>Peso total</span><strong>${escapeHtml(data.pesoTotal ?? 0)} kg</strong></div>
-            <div><span>Valor total</span><strong>${escapeHtml(formatCurrencyBRL(data.valorTotal ?? 0))}</strong></div>
           </div>
           ${data.observacoes ? `<div class="mt12"><span class="field-label">Observações</span><div class="info-box mt12">${escapeHtml(data.observacoes)}</div></div>` : ""}
         </div>
@@ -239,7 +203,12 @@
     if (state.token && !isTokenExpired(state.token)) {
       headers.Authorization = `Bearer ${state.token}`;
     }
-    const res = await fetch(url, { ...options, headers });
+    let res;
+    try {
+      res = await fetch(url, { ...options, headers });
+    } catch {
+      throw new Error("A API não respondeu. Verifique se o backend está iniciado.");
+    }
     const ct = res.headers.get("content-type") || "";
     const data = ct.includes("application/json") ? await res.json() : await res.text();
     if (res.status === 401) logout();
@@ -258,7 +227,6 @@
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.view === id);
     });
-    updateCalculatedTotals();
   }
 
   function tableFromObjects(items) {
@@ -304,8 +272,8 @@
       wrap.appendChild(div);
     }
     wrap.querySelectorAll("[data-nf]").forEach((el) => {
-      el.addEventListener("input", () => { syncNfDraftsFromDom(); updateCalculatedTotals(); });
-      el.addEventListener("change", () => { syncNfDraftsFromDom(); updateCalculatedTotals(); });
+      el.addEventListener("input", () => { syncNfDraftsFromDom(); updateTotalsFromNotas(); });
+      el.addEventListener("change", () => { syncNfDraftsFromDom(); updateTotalsFromNotas(); });
     });
   }
 
@@ -322,6 +290,84 @@
         observacao: String(nota.observacao || "").trim()
       }))
       .filter((item) => item.numeroNf || item.chaveAcesso);
+  }
+
+  function updateTotalsFromNotas() {
+    const notas = collectNotas();
+    const totalNotas = notas.length;
+    const totalVolumes = notas.reduce((acc, item) => acc + Number(item.volumes || 0), 0);
+    const totalPeso = notas.reduce((acc, item) => acc + Number(item.peso || 0), 0);
+    const totalValor = notas.reduce((acc, item) => acc + Number(item.valorNf || 0), 0);
+    const form = byId("fornecedorForm");
+    if (!form) return;
+    form.querySelector('[name="quantidadeNotas"]').value = totalNotas;
+    form.querySelector('[name="quantidadeVolumes"]').value = totalVolumes;
+    form.querySelector('[name="pesoTotalKg"]').value = totalPeso.toFixed(3);
+    form.querySelector('[name="valorTotalNf"]').value = totalValor.toFixed(2);
+  }
+
+  async function loadFornecedoresPendentes() {
+    try {
+      const items = await api('/api/public/fornecedores-pendentes');
+      const select = byId('fornecedorPendenteSelect');
+      if (!select) return;
+      select.innerHTML = `<option value="">Selecionar manualmente</option>` + (Array.isArray(items) ? items.map((item) => `<option value="${escapeHtml(JSON.stringify(item).replaceAll('"','&quot;'))}">${escapeHtml(item.fornecedor || item.nome || '-')}</option>`).join('') : '');
+      select.addEventListener('change', () => {
+        if (!select.value) return;
+        const data = JSON.parse(select.value);
+        const form = byId('fornecedorForm');
+        ['fornecedor','transportadora','placa'].forEach((field) => { if (data[field] && form.querySelector(`[name="${field}"]`)) form.querySelector(`[name="${field}"]`).value = data[field]; });
+        if (Array.isArray(data.notasFiscais) && data.notasFiscais.length) {
+          state.nfRows = data.notasFiscais.length;
+          state.nfDrafts = data.notasFiscais.map((n) => ({ numeroNf: n.numeroNf || '', serie: n.serie || '', chaveAcesso: n.chaveAcesso || '', volumes: String(n.volumes || 0), peso: String(n.peso || 0), valorNf: String(n.valorNf || 0), observacao: n.observacao || '' }));
+          renderNfRows();
+          updateTotalsFromNotas();
+        }
+      });
+    } catch {}
+  }
+
+  async function startCameraScan() {
+    const video = byId('qrVideo');
+    if (!video || state.scanning) return;
+    try {
+      state.cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      video.srcObject = state.cameraStream;
+      await video.play();
+      state.barcodeDetector = 'BarcodeDetector' in window ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+      state.scanning = true;
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const loop = async () => {
+        if (!state.scanning) return;
+        try {
+          if (state.barcodeDetector) {
+            const codes = await state.barcodeDetector.detect(video);
+            if (codes[0]?.rawValue) {
+              const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
+              if (tokenInput) tokenInput.value = codes[0].rawValue;
+              await validateCheckin(codes[0].rawValue);
+              state.scanning = false;
+              return;
+            }
+          } else if (video.readyState >= 2) {
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight; ctx.drawImage(video, 0, 0);
+          }
+        } catch {}
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+      byId('checkinMsg').textContent = 'Câmera ativada.';
+    } catch (err) {
+      byId('checkinMsg').textContent = err.message || 'Não foi possível acessar a câmera.';
+    }
+  }
+
+  function stopCameraScan() {
+    state.scanning = false;
+    if (state.cameraStream) state.cameraStream.getTracks().forEach((track) => track.stop());
+    state.cameraStream = null;
+    const video = byId('qrVideo'); if (video) video.srcObject = null;
   }
 
   function renderPublicSlots(dataSelecionada) {
@@ -341,6 +387,100 @@
         ${escapeHtml(slot.hora)}${slot.horaFim ? ` até ${escapeHtml(slot.horaFim)}` : ""}${slot.descricao ? ` - ${escapeHtml(slot.descricao)}` : ""} (${slot.disponivel} vaga(s))
       </option>
     `).join("");
+  }
+
+  function parseDecimalInput(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw) return 0;
+    const normalized = raw.replace(/\./g, '').replace(',', '.');
+    const num = Number(normalized);
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  function buildNotasFromLines(text) {
+    return String(text || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => ({ numeroNf: line, serie: '', chaveAcesso: '', volumes: 0, peso: 0, valorNf: 0, observacao: '' }));
+  }
+
+  function selectedInternalNotas() {
+    return (state.internalSelectedNotas || []).map((nota) => ({
+      numeroNf: String(nota?.numeroNf || '').trim(),
+      serie: String(nota?.serie || '').trim(),
+      chaveAcesso: String(nota?.chaveAcesso || '').trim(),
+      volumes: Number(nota?.volumes || 0),
+      peso: Number(nota?.peso || 0),
+      valorNf: Number(nota?.valorNf || 0),
+      observacao: String(nota?.observacao || '').trim()
+    }));
+  }
+
+  function updateInternalTotals() {
+    const notas = selectedInternalNotas();
+    const totalVolumes = notas.reduce((acc, nota) => acc + Number(nota.volumes || 0), 0);
+    const totalPeso = notas.reduce((acc, nota) => acc + Number(nota.peso || 0), 0);
+    const totalValor = notas.reduce((acc, nota) => acc + Number(nota.valorNf || 0), 0);
+    const setValue = (id, value) => { const el = byId(id); if (el) el.value = value; };
+    setValue('internalQuantidadeNotas', notas.length);
+    setValue('internalQuantidadeVolumes', totalVolumes.toFixed(3));
+    setValue('internalPesoTotalKg', totalPeso.toFixed(3));
+    setValue('internalValorTotalNf', totalValor.toFixed(2));
+  }
+
+  function renderPendingNotasInterno() {
+    const wrap = byId('internalPendingNotas');
+    if (!wrap) return;
+    const notas = Array.isArray(state.internalPendingFornecedor?.notas) ? state.internalPendingFornecedor.notas : [];
+    if (!notas.length) {
+      wrap.innerHTML = '<div class="warning-box">Selecione um fornecedor pendente para carregar as NF disponíveis.</div>';
+      state.internalSelectedNotas = [];
+      updateInternalTotals();
+      return;
+    }
+    wrap.innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
+      <div class="pending-nota-item">
+        <label>
+          <input type="checkbox" data-internal-nf="${idx}" checked />
+          <span class="pending-nota-meta">
+            <strong>NF ${escapeHtml(nota.numeroNf || '-')}</strong>
+            <span>Volumes: ${escapeHtml(Number(nota.volumes || 0).toFixed(3))}</span>
+            <span>Peso: ${escapeHtml(Number(nota.peso || 0).toFixed(3))} kg</span>
+            <span>Valor: ${escapeHtml(Number(nota.valorNf || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))}</span>
+          </span>
+        </label>
+      </div>`).join('')}</div>`;
+    const sync = () => {
+      state.internalSelectedNotas = notas.filter((_nota, index) => wrap.querySelector(`[data-internal-nf="${index}"]`)?.checked);
+      updateInternalTotals();
+    };
+    wrap.querySelectorAll('[data-internal-nf]').forEach((el) => el.addEventListener('change', sync));
+    state.internalSelectedNotas = [...notas];
+    updateInternalTotals();
+  }
+
+  function applyFornecedorPendenteInterno(item) {
+    state.internalPendingFornecedor = item || null;
+    const fornecedorField = byId('internalFornecedorNome');
+    if (fornecedorField) fornecedorField.value = String(item?.fornecedor || item?.nome || '').trim();
+    renderPendingNotasInterno();
+  }
+
+  async function loadFornecedoresPendentesInterno() {
+    try {
+      const items = await api('/api/public/fornecedores-pendentes');
+      const select = byId('internalFornecedorPendenteSelect');
+      if (!select) return;
+      select.innerHTML = `<option value="">Selecione o fornecedor pendente</option>` + (Array.isArray(items) ? items.map((item) => `<option value="${escapeHtml(JSON.stringify(item).replaceAll('"','&quot;'))}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('') : '');
+      select.onchange = () => {
+        if (!select.value) {
+          state.internalPendingFornecedor = null;
+          state.internalSelectedNotas = [];
+          const fornecedorField = byId('internalFornecedorNome');
+          if (fornecedorField) fornecedorField.value = '';
+          renderPendingNotasInterno();
+          return;
+        }
+        try { applyFornecedorPendenteInterno(JSON.parse(select.value)); } catch {}
+      };
+    } catch {}
   }
 
   function renderPublicDates() {
@@ -378,19 +518,9 @@
   async function fillSelects() {
     if (!state.token || isTokenExpired(state.token)) return;
     try {
-      const [docas, janelas, fornecedoresPendentes] = await Promise.all([
-        api("/api/cadastros/docas"),
-        api("/api/cadastros/janelas"),
-        api("/api/public/fornecedores-pendentes").catch(() => ({ fornecedores: [] }))
-      ]);
-      const docaOptions = docas.map((d) => `<option value="${d.id}">${escapeHtml(d.codigo)}</option>`).join("");
+      const janelas = await api("/api/cadastros/janelas");
       const janelaOptions = janelas.map((j) => `<option value="${j.id}">${escapeHtml(j.codigo)}</option>`).join("");
-      state.fornecedoresPendentes = Array.isArray(fornecedoresPendentes.fornecedores) ? fornecedoresPendentes.fornecedores : [];
-      const fornecedorDataList = byId("fornecedorPendenteList");
-      if (fornecedorDataList) fornecedorDataList.innerHTML = state.fornecedoresPendentes.map((nome) => `<option value="${escapeHtml(nome)}"></option>`).join("");
-      const docaSelect = byId("internalDocaSelect");
       const janelaSelect = byId("internalJanelaSelect");
-      if (docaSelect) docaSelect.innerHTML = docaOptions;
       if (janelaSelect) janelaSelect.innerHTML = janelaOptions;
     } catch {}
   }
@@ -405,8 +535,7 @@
       Object.entries(data.kpis || {}).forEach(([k, v]) => {
         const div = document.createElement("div");
         div.className = "kpi";
-        const formatted = k.toLowerCase().includes("valor") ? formatCurrencyBRL(v) : v;
-        div.innerHTML = `<strong>${escapeHtml(k)}</strong><span>${escapeHtml(formatted)}</span>`;
+        div.innerHTML = `<strong>${escapeHtml(k)}</strong><span>${escapeHtml(v)}</span>`;
         kpis.appendChild(div);
       });
     }
@@ -423,8 +552,8 @@
       data: a.dataAgendada,
       hora: a.horaAgendada,
       volumes: a.quantidadeVolumes || 0,
-      peso: a.pesoTotal || 0,
-      valor: formatCurrencyBRL(a.valorTotal || 0)
+      pesoKg: a.pesoTotalKg || 0,
+      valorTotal: a.valorTotalNf || 0
     })));
   }
 
@@ -437,16 +566,9 @@
 
   async function loadDocas() {
     const date = byId("docaData")?.value || "";
-    const [data, docas] = await Promise.all([
-      api(`/api/dashboard/docas${date ? `?dataAgendada=${encodeURIComponent(date)}` : ""}`),
-      api("/api/cadastros/docas")
-    ]);
+    const data = await api(`/api/dashboard/docas${date ? `?dataAgendada=${encodeURIComponent(date)}` : ""}`);
     const wrap = byId("docaPainel");
     if (!wrap) return;
-
-    const assignOptions = docas
-      .filter((doca) => doca.codigo !== "A DEFINIR")
-      .map((doca) => `<option value="${doca.id}">${escapeHtml(doca.codigo)}</option>`).join("");
 
     wrap.innerHTML = data.map((d) => `
       <div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
@@ -462,30 +584,13 @@
               <div class="fila-item">
                 <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
                 <div>${escapeHtml(f.placa)} • ${escapeHtml(f.horaAgendada)} • ${escapeHtml(f.status)}</div>
-                ${needsDoca ? `<div class="row gap8 wrap mt12"><select data-define-doca-select="${f.id}">${assignOptions}</select><button type="button" data-define-doca="${f.id}">Definir doca</button></div>` : ""}
+                ${needsDoca ? `<div class="warning-box">A doca deve ser definida exclusivamente na aba de controle de docas.</div>` : ""}
               </div>
             `;
           }).join("") : "<div class='fila-item'>Sem fila</div>"}
         </div>
       </div>
     `).join("");
-
-    wrap.querySelectorAll("[data-define-doca]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const agendamentoId = btn.dataset.defineDoca;
-        const select = wrap.querySelector(`[data-define-doca-select="${agendamentoId}"]`);
-        try {
-          await api(`/api/agendamentos/${agendamentoId}/definir-doca`, {
-            method: "POST",
-            body: JSON.stringify({ docaId: select?.value })
-          });
-          byId("operacaoMsg").textContent = "Doca definida com sucesso.";
-          await Promise.allSettled([loadDocas(), loadAgendamentos(), loadDashboard()]);
-        } catch (err) {
-          byId("operacaoMsg").textContent = err.message;
-        }
-      });
-    });
   }
 
   function normalizeValueByField(field, value) {
@@ -605,113 +710,8 @@
       janela: i.janela?.codigo || "",
       data: i.dataAgendada,
       hora: i.horaAgendada,
-      volumes: i.quantidadeVolumes || 0,
-      peso: i.pesoTotal || 0,
-      valor: formatCurrencyBRL(i.valorTotal || 0),
       semaforo: i.semaforo || ""
     })));
-  }
-
-
-  const STATUS_FLOW = {
-    PENDENTE_APROVACAO: ["APROVADO", "REPROVADO", "CANCELADO", "NO_SHOW"],
-    APROVADO: ["CHEGOU", "EM_DESCARGA", "CANCELADO", "NO_SHOW"],
-    CHEGOU: ["EM_DESCARGA", "FINALIZADO", "CANCELADO"],
-    EM_DESCARGA: ["FINALIZADO"],
-    FINALIZADO: [],
-    CANCELADO: [],
-    REPROVADO: [],
-    NO_SHOW: []
-  };
-
-  function renderStatusHelper(item) {
-    const el = byId("statusHelper");
-    if (!el) return;
-    if (!item) {
-      el.innerHTML = "Informe o ID do agendamento para validar a transição de status antes de executar a operação.";
-      return;
-    }
-    const allowed = STATUS_FLOW[item.status] || [];
-    const next = allowed.length ? allowed.join(", ") : "Nenhuma transição permitida";
-    el.innerHTML = `<strong>Protocolo:</strong> ${escapeHtml(item.protocolo || "-")}<br><strong>Status atual:</strong> ${escapeHtml(statusLabel(item.status))}<br><strong>Próximas transições válidas:</strong> ${escapeHtml(next)}`;
-  }
-
-  async function refreshStatusHelper() {
-    const id = byId("agendamentoId")?.value?.trim();
-    if (!id) {
-      renderStatusHelper(null);
-      return null;
-    }
-    try {
-      const item = await api(`/api/agendamentos/${encodeURIComponent(id)}`);
-      renderStatusHelper(item);
-      return item;
-    } catch (err) {
-      const el = byId("statusHelper");
-      if (el) el.textContent = err.message;
-      return null;
-    }
-  }
-
-  function extractTokenFromQrText(value) {
-    const raw = String(value || "").trim();
-    if (!raw) return "";
-    if (/^(CHK|OUT)-/i.test(raw)) return raw;
-    try {
-      const url = new URL(raw);
-      const token = url.searchParams.get("token");
-      if (token) return token;
-      const match = url.pathname.match(/\/(checkin|checkout)\/([^/?#]+)/i);
-      if (match?.[2]) return decodeURIComponent(match[2]);
-    } catch {}
-    return raw;
-  }
-
-  async function stopCamera() {
-    if (state.cameraTimer) {
-      clearInterval(state.cameraTimer);
-      state.cameraTimer = null;
-    }
-    if (state.cameraStream) {
-      state.cameraStream.getTracks().forEach((track) => track.stop());
-      state.cameraStream = null;
-    }
-    const video = byId("qrVideo");
-    if (video) video.srcObject = null;
-  }
-
-  async function scanCurrentFrame() {
-    const video = byId("qrVideo");
-    if (!video || !state.barcodeDetector || video.readyState < 2) return;
-    try {
-      const codes = await state.barcodeDetector.detect(video);
-      const code = codes?.[0]?.rawValue;
-      if (!code || code === state.lastScannedCode) return;
-      state.lastScannedCode = code;
-      const token = extractTokenFromQrText(code);
-      if (!token) return;
-      const input = byId("checkinForm")?.querySelector('input[name="token"]');
-      if (input) input.value = token;
-      await validateCheckin(token);
-      await stopCamera();
-    } catch (err) {
-      byId("checkinMsg").textContent = err.message || "Falha ao ler QR Code.";
-    }
-  }
-
-  async function startCamera() {
-    const video = byId("qrVideo");
-    if (!video) return;
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error("Navegador sem suporte à câmera.");
-    if (!("BarcodeDetector" in window)) throw new Error("Leitura automática de QR não suportada neste navegador. Use Chrome/Edge atualizados ou valide o token manualmente.");
-    state.barcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
-    await stopCamera();
-    state.lastScannedCode = "";
-    state.cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
-    video.srcObject = state.cameraStream;
-    await video.play();
-    byId("checkinMsg").textContent = "Câmera ativa. Posicione o QR Code à frente da lente.";
-    state.cameraTimer = window.setInterval(scanCurrentFrame, 700);
   }
 
   function currentId() {
@@ -736,23 +736,26 @@
 
   async function validateCheckin(token) {
     try {
-      const params = new URLSearchParams(location.search);
-      let id = byId("agendamentoId")?.value || params.get("id");
-      let endpoint = "checkin";
-      let normalizedToken = String(token || "").trim();
+      const modo = byId("checkinForm")?.querySelector("[name=modo]")?.value || "checkin";
+      const endpoint = modo === "checkout" ? `/api/public/checkout/${encodeURIComponent(token)}` : `/api/public/checkin/${encodeURIComponent(token)}`;
+      let data;
+      try {
+        data = await api(endpoint, { method: "POST", body: JSON.stringify({}) });
+      } catch (err) {
+        if (modo === 'checkin' && /divergente/i.test(String(err.message || ''))) {
+          const liberar = window.confirm(`${err.message}
 
-      const checkoutMatch = normalizedToken.match(/^OUT-(\d+)-(.+)$/i);
-      if (checkoutMatch) {
-        id = checkoutMatch[1];
-        normalizedToken = checkoutMatch[2];
-        endpoint = "checkout";
+Deseja liberar manualmente a descarga deste veículo?`);
+          if (!liberar) throw err;
+          data = await api(endpoint, { method: "POST", body: JSON.stringify({ overrideDateMismatch: true }) });
+        } else {
+          throw err;
+        }
       }
-
-      if (!id) throw new Error("Informe o ID do agendamento para validar o QR no recebimento.");
-      const data = await api(`/api/agendamentos/${id}/${endpoint}`, { method: "POST", body: JSON.stringify({ token: normalizedToken }) });
       byId("checkinMsg").textContent = data.message;
       byId("checkinResult").textContent = JSON.stringify(data.agendamento, null, 2);
-      await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas(), refreshStatusHelper()]);
+      stopCameraScan();
+      await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas()]);
     } catch (err) {
       byId("checkinMsg").textContent = err.message;
     }
@@ -762,8 +765,8 @@
     updateNav();
     renderNfRows();
     renderCadastroForm();
-    document.querySelectorAll('#agendamentoForm input[type="date"]').forEach((el) => { if (!el.value) el.value = new Date().toISOString().slice(0, 10); });
-    updateCalculatedTotals();
+    renderPendingNotasInterno();
+    byId("loginForm")?.reset();
 
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.setAttribute("type", "button");
@@ -798,7 +801,7 @@
         await loadDashboard();
         byId("loginMsg").textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
       } catch (err) {
-        byId("loginMsg").textContent = err.message;
+        byId("loginMsg").textContent = err.message || "Falha no login.";
       }
     });
 
@@ -828,74 +831,50 @@
       e.preventDefault();
       try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
-        payload.motoristaCpf = String(payload.motoristaCpf || "").replace(/\D/g, "");
-        payload.pesoTotal = Number(payload.pesoTotal || 0);
-        payload.valorTotal = Number(payload.valorTotal || 0);
-        payload.quantidadeNotas = Number(payload.quantidadeNotas || 0);
-        payload.quantidadeVolumes = Number(payload.quantidadeVolumes || 0);
+        payload.cpfMotorista = String(payload.cpfMotorista || '').replace(/\D/g, '');
+        payload.notasFiscais = selectedInternalNotas();
+        payload.quantidadeNotas = Number(payload.notasFiscais.length || 0);
+        payload.quantidadeVolumes = Number(byId('internalQuantidadeVolumes')?.value || 0);
+        payload.pesoTotalKg = Number(byId('internalPesoTotalKg')?.value || 0);
+        payload.valorTotalNf = Number(byId('internalValorTotalNf')?.value || 0);
+        if (!payload.fornecedorPendenteInterno) throw new Error('Selecione o fornecedor pendente.');
+        if (!payload.fornecedor) throw new Error('Fornecedor pendente inválido.');
+        if (!payload.notasFiscais.length) throw new Error('Selecione ao menos uma NF pendente para o agendamento.');
+        delete payload.fornecedorPendenteInterno;
         const data = await api("/api/agendamentos", { method: "POST", body: JSON.stringify(payload) });
         byId("agendamentoId").value = data.id || "";
-        const notificacoes = Array.isArray(data.notificacoesEnviadas) ? data.notificacoesEnviadas.length : 0;
-        byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo} | ID: ${data.id}${notificacoes ? ` | comunicações processadas: ${notificacoes}` : ""}`;
+        byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo} | ID: ${data.id}`;
         e.target.reset();
+        state.internalPendingFornecedor = null;
+        state.internalSelectedNotas = [];
+        const fornecedorField = byId('internalFornecedorNome');
+        if (fornecedorField) fornecedorField.value = '';
+        renderPendingNotasInterno();
         document.querySelectorAll('#agendamentoForm input[type="date"]').forEach((el) => { el.value = new Date().toISOString().slice(0, 10); });
-        updateCalculatedTotals();
-        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), refreshStatusHelper()]);
+        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno()]);
       } catch (err) {
         byId("agendamentoMsg").textContent = err.message;
       }
     });
 
-    byId("loadAgendamentos")?.addEventListener("click", async () => { try { await loadAgendamentos(); await refreshStatusHelper(); } catch (err) { byId("operacaoMsg").textContent = err.message; } });
-    byId("agendamentoId")?.addEventListener("change", refreshStatusHelper);
-    byId("agendamentoId")?.addEventListener("blur", refreshStatusHelper);
-    byId("btnAprovar")?.addEventListener("click", async () => handleOp(() => postStatus("aprovar", { docaId: byId("internalDocaSelect")?.value, janelaId: byId("internalJanelaSelect")?.value }), "Agendamento aprovado."));
+    byId("loadAgendamentos")?.addEventListener("click", async () => { try { await loadAgendamentos(); } catch (err) { byId("operacaoMsg").textContent = err.message; } });
+    byId("btnAprovar")?.addEventListener("click", async () => handleOp(() => postStatus("aprovar", { janelaId: byId("internalJanelaSelect")?.value }), "Agendamento aprovado."));
     byId("btnReprovar")?.addEventListener("click", async () => handleOp(() => postStatus("reprovar", { motivo: "Reprovado via painel" }), "Agendamento reprovado."));
-    byId("btnReagendar")?.addEventListener("click", async () => handleOp(() => postStatus("reagendar", { dataAgendada: new Date().toISOString().slice(0, 10), horaAgendada: "10:00", docaId: byId("internalDocaSelect")?.value, janelaId: byId("internalJanelaSelect")?.value }), "Agendamento reagendado."));
+    byId("btnReagendar")?.addEventListener("click", async () => handleOp(() => postStatus("reagendar", { dataAgendada: new Date().toISOString().slice(0, 10), horaAgendada: "10:00", janelaId: byId("internalJanelaSelect")?.value }), "Agendamento reagendado."));
     byId("btnCancelar")?.addEventListener("click", async () => handleOp(() => postStatus("cancelar", { motivo: "Cancelado via painel" }), "Agendamento cancelado."));
     byId("btnIniciar")?.addEventListener("click", async () => handleOp(() => postStatus("iniciar"), "Descarga iniciada."));
     byId("btnFinalizar")?.addEventListener("click", async () => handleOp(() => postStatus("finalizar"), "Agendamento finalizado."));
     byId("btnNoShow")?.addEventListener("click", async () => handleOp(() => postStatus("no-show"), "Agendamento marcado como no-show."));
     byId("btnVoucher")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/voucher`, "_blank"); } catch (err) { alert(err.message); } });
     byId("btnQr")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/qrcode.svg`, "_blank"); } catch (err) { alert(err.message); } });
-    byId("btnQrCheckout")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/checkout-qrcode.svg`, "_blank"); } catch (err) { alert(err.message); } });
     byId("btnEnviarInfos")?.addEventListener("click", async () => handleOp(() => api(`/api/agendamentos/${currentId()}/enviar-informacoes`, { method: "POST", body: JSON.stringify({}) }), "Informações enviadas."));
 
-    byId("btnUploadDoc")?.addEventListener("click", async () => {
-      try {
-        const id = currentId();
-        const file = byId("docFile").files[0];
-        if (!file) throw new Error("Selecione um arquivo.");
-        const fd = new FormData();
-        fd.append("tipoDocumento", "ANEXO");
-        fd.append("arquivo", file);
-        await api(`/api/agendamentos/${id}/documentos`, { method: "POST", body: fd });
-        byId("operacaoMsg").textContent = "Documento enviado.";
-        await loadAgendamentos();
-      } catch (err) {
-        byId("operacaoMsg").textContent = err.message;
-      }
-    });
-
-    byId("notaForm")?.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      try {
-        const id = currentId();
-        const payload = Object.fromEntries(new FormData(e.target).entries());
-        await api(`/api/agendamentos/${id}/notas`, { method: "POST", body: JSON.stringify(payload) });
-        byId("operacaoMsg").textContent = "NF salva.";
-        await loadAgendamentos();
-      } catch (err) {
-        byId("operacaoMsg").textContent = err.message;
-      }
-    });
 
     byId("addNf")?.addEventListener("click", () => {
       syncNfDraftsFromDom();
       state.nfRows += 1;
       ensureNfDraftSize();
       renderNfRows();
-      updateCalculatedTotals();
     });
 
     byId("removeNf")?.addEventListener("click", () => {
@@ -904,20 +883,20 @@
       state.nfRows -= 1;
       ensureNfDraftSize();
       renderNfRows();
-      updateCalculatedTotals();
     });
 
     byId("fornecedorForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
-        payload.motoristaCpf = String(payload.motoristaCpf || "").replace(/\D/g, "");
         payload.lgpdConsent = !!e.target.querySelector('[name="lgpdConsent"]')?.checked;
         payload.notas = collectNotas();
-        payload.quantidadeNotas = payload.notas.length;
+        updateTotalsFromNotas();
+        payload.quantidadeNotas = Number(payload.quantidadeNotas || payload.notas.length);
         const data = await api("/api/public/solicitacao", { method: "POST", body: JSON.stringify(payload) });
         byId("fornecedorMsg").innerHTML = `Solicitação enviada. Protocolo: <strong>${data.protocolo}</strong>. Horário: <strong>${data.horaAgendada}</strong>. Doca: <strong>${data.doca}</strong>.<br><a href="${data.linkFornecedor}">Consulta da transportadora/fornecedor</a> • <a href="${data.linkMotorista}">Acompanhamento do motorista</a> • <a href="${data.voucher}" target="_blank" rel="noreferrer">Voucher PDF</a><br>Token do motorista: <strong>${data.tokenMotorista}</strong>`;
         e.target.reset();
+        stopCameraScan();
         state.nfRows = 1;
         state.nfDrafts = [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }];
         renderNfRows();
@@ -964,28 +943,22 @@
 
     byId("checkinForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await validateCheckin(extractTokenFromQrText(new FormData(e.target).get("token")));
+      await validateCheckin(new FormData(e.target).get("token"));
     });
-
-    byId("startCamera")?.addEventListener("click", async () => {
-      try { await startCamera(); } catch (err) { byId("checkinMsg").textContent = err.message; }
-    });
-
-    byId("stopCamera")?.addEventListener("click", async () => {
-      await stopCamera();
-      byId("checkinMsg").textContent = "Câmera desativada.";
-    });
+    byId("startCamera")?.addEventListener("click", startCameraScan);
+    byId("stopCamera")?.addEventListener("click", stopCameraScan);
 
     byId("publicDataSelect")?.addEventListener("change", (e) => renderPublicSlots(e.target.value));
 
     if (state.token && !isTokenExpired(state.token)) {
       await fillSelects();
       try { await loadCadastro(); } catch {}
-      await refreshStatusHelper();
     }
 
     try {
       await loadPublicDisponibilidade();
+      await loadFornecedoresPendentes();
+      await loadFornecedoresPendentesInterno();
     } catch (err) {
       const fornecedorMsg = byId("fornecedorMsg");
       if (fornecedorMsg) fornecedorMsg.textContent = err.message;

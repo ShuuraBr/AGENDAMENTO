@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agendamento de Descarga V3.1</title>
-  <link rel="stylesheet" href="/assets/styles6.css" />
+  <link rel="stylesheet" href="/assets/styles10.css" />
   <link rel="icon" href="assets/Favicon.png" type="image">
 </head>
 <body>
@@ -29,7 +29,7 @@
       <button type="button" class="nav-btn" data-view="docas">Painel de Docas</button>
       <button type="button" class="nav-btn" data-view="cadastros">Cadastros</button>
       <button type="button" class="nav-btn" data-view="agendamentos">Agendamentos</button>
-      <button type="button" class="nav-btn" data-view="checkin">Check-in QR</button>
+      <button type="button" class="nav-btn" data-view="checkin">Check-in / Check-out QR</button>
       <button type="button" id="btnLogout">Sair</button>
     </nav>
   </header>
@@ -49,9 +49,9 @@
     <section id="login" class="view">
       <div class="card narrow login-card">
         <h2>Login do colaborador</h2>
-        <form id="loginForm">
-          <label>Login / E-mail<input name="email" autocomplete="username" placeholder="Digite seu login" /></label>
-          <label>Senha<input name="senha" type="password" autocomplete="current-password" placeholder="Digite sua senha" /></label>
+        <form id="loginForm" autocomplete="off">
+          <label>Login / E-mail<input name="email" type="text" value="" placeholder="Digite seu login" autocomplete="off" /></label>
+          <label>Senha<input name="senha" type="password" value="" placeholder="Digite sua senha" autocomplete="new-password" /></label>
           <button type="submit">Entrar</button>
         </form>
         <p id="loginMsg" class="msg"></p>
@@ -67,7 +67,7 @@
               <label>Fornecedor<input name="fornecedor" value="Fornecedor Externo" /></label>
               <label>Transportadora<input name="transportadora" value="Transportadora Externa" /></label>
               <label>Motorista<input name="motorista" value="Motorista Externo" /></label>
-              <label>CPF do motorista<input name="motoristaCpf" value="12345678901" inputmode="numeric" /></label>
+              <label>CPF do motorista<input name="cpfMotorista" placeholder="Somente números" /></label>
               <label>Telefone do motorista<input name="telefoneMotorista" value="61999998888" /></label>
               <label>E-mail do motorista<input name="emailMotorista" value="motorista@teste.com" /></label>
               <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@teste.com" /></label>
@@ -75,12 +75,13 @@
             </div>
             <div>
               <div class="info-box"><strong>Doca:</strong> definida pelo operador do recebimento conforme disponibilidade operacional.</div>
+              <label>Fornecedor pendente<select name="fornecedorPendenteSelect"><option value="">Selecionar manualmente</option></select></label>
               <label>Data<select name="dataAgendada" id="publicDataSelect"></select></label>
               <label>Horário disponível<select name="janelaId" id="publicJanelaSelect"></select></label>
-              <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="0" readonly /></label>
-              <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="0" readonly /></label>
-              <label>Peso total (kg)<input name="pesoTotal" type="number" step="0.001" value="0" readonly /></label>
-              <label>Valor total (R$)<input name="valorTotal" type="number" step="0.01" value="0" readonly /></label>
+              <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" readonly /></label>
+              <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="8" readonly /></label>
+              <label>Peso total (kg)<input name="pesoTotalKg" type="number" step="0.001" value="0" readonly /></label>
+              <label>Valor total (R$)<input name="valorTotalNf" type="number" step="0.01" value="0" readonly /></label>
               <label>Observações<textarea name="observacoes"></textarea></label>
               <label class="check">
                 <input name="lgpdConsent" type="checkbox" />
@@ -125,7 +126,7 @@
 
     <section id="checkin" class="view">
       <div class="card">
-        <h2>Check-in por QR Code</h2>
+        <h2>Check-in e check-out por QR Code</h2>
         <div class="grid2">
           <div>
             <video id="qrVideo" autoplay muted playsinline class="video"></video>
@@ -136,8 +137,9 @@
           </div>
           <div>
             <form id="checkinForm">
-              <label>Token do check-in<input name="token" placeholder="CHK-..." /></label>
-              <button type="submit">Validar check-in</button>
+              <label>Operação<select name="modo"><option value="checkin">Check-in</option><option value="checkout">Check-out</option></select></label>
+              <label>Token da operação<input name="token" placeholder="CHK-... ou OUT-..." /></label>
+              <button type="submit">Validar operação</button>
             </form>
             <p id="checkinMsg" class="msg"></p>
             <pre id="checkinResult"></pre>
@@ -226,59 +228,62 @@
     </section>
 
     <section id="agendamentos" class="view">
-      <div class="grid2 agendamento-layout">
+      <div class="grid2">
         <div class="card">
-          <div class="section-head">
-            <div>
-              <span class="eyebrow">Área do colaborador</span>
-              <h2>Novo agendamento interno</h2>
-              <p class="section-copy">Preencha os dados operacionais e registre o agendamento com envio automático de comunicações.</p>
-            </div>
-          </div>
-          <form id="agendamentoForm" class="agendamento-form">
-            <div class="form-section">
+          <h2>Novo agendamento interno</h2>
+          <form id="agendamentoForm" class="operator-form" autocomplete="off">
+            <div class="card inner">
               <h3>Dados da operação</h3>
-              <div class="form-grid mt12">
-            <label>Fornecedor<input name="fornecedor" list="fornecedorPendenteList" value="Fornecedor Exemplo LTDA" /></label>
-                <datalist id="fornecedorPendenteList"></datalist>
-            <label>Transportadora<input name="transportadora" value="Transportadora Exemplo" /></label>
-            <label>Motorista<input name="motorista" value="Motorista Exemplo" /></label>
-            <label>CPF do motorista<input name="motoristaCpf" value="12345678901" inputmode="numeric" /></label>
-            <label>Telefone do motorista<input name="telefoneMotorista" value="61999999999" /></label>
-            <label>E-mail do motorista<input name="emailMotorista" value="motorista@test.com" /></label>
-            <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@test.com" /></label>
-            <label>Placa<input name="placa" value="ABC1D23" /></label>
-            <label class="form-group-full">Observações<textarea name="observacoes" placeholder="Informações adicionais para recebimento, conferência ou portaria"></textarea></label>
+              <div class="form-grid operator-grid mt12">
+                <label>Fornecedor pendente
+                  <select name="fornecedorPendenteInterno" id="internalFornecedorPendenteSelect" required>
+                    <option value="">Selecione o fornecedor pendente</option>
+                  </select>
+                </label>
+                <label>Transportadora<input name="transportadora" value="" required /></label>
+                <label>Placa<input name="placa" value="" required /></label>
+                <label>Janela<select name="janelaId" id="internalJanelaSelect" required></select></label>
+                <label>Data<input name="dataAgendada" type="date" required /></label>
+                <label>Hora<input name="horaAgendada" value="" placeholder="08:00" required /></label>
               </div>
             </div>
-            <div class="form-section">
-              <h3>Janela e capacidade</h3>
-              <div class="form-grid mt12">
-                <label>Data<input name="dataAgendada" type="date" /></label>
-                <label>Hora<input name="horaAgendada" value="08:00" /></label>
-                <label>Doca<select name="docaId" id="internalDocaSelect"></select></label>
-                <label>Janela<select name="janelaId" id="internalJanelaSelect"></select></label>
-                <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="0" readonly /></label>
-                <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="0" readonly /></label>
-                <label>Peso total (kg)<input name="pesoTotal" type="number" step="0.001" value="0" readonly /></label>
-                <label>Valor total (R$)<input name="valorTotal" type="number" step="0.01" value="0" readonly /></label>
+            <div class="card inner mt16">
+              <h3>Dados do motorista</h3>
+              <div class="form-grid operator-grid mt12">
+                <label>Motorista<input name="motorista" value="" required /></label>
+                <label>CPF do motorista<input name="cpfMotorista" value="" placeholder="Somente números" required /></label>
+                <label>Telefone do motorista<input name="telefoneMotorista" value="" required /></label>
+                <label>E-mail do motorista<input name="emailMotorista" value="" required /></label>
+                <label>E-mail da transportadora<input name="emailTransportadora" value="" required /></label>
               </div>
             </div>
-            <div class="totals-strip"><div><span>Notas</span><strong id="totalNotasLabel">0</strong></div><div><span>Volumes</span><strong id="totalVolumesLabel">0</strong></div><div><span>Peso total</span><strong id="totalPesoLabel">0.000</strong></div><div><span>Valor total</span><strong id="totalValorLabel">R$ 0,00</strong></div></div>
-            <div class="form-actions">
-              <button type="submit">Salvar agendamento</button>
+            <div class="card inner mt16">
+              <h3>Notas pendentes do fornecedor</h3>
+              <p class="hint">Após selecionar o fornecedor pendente, marque as NF que farão parte deste agendamento. O sistema recalcula os totais automaticamente.</p>
+              <div id="internalPendingNotas" class="mt12"></div>
             </div>
+            <div class="card inner mt16">
+              <h3>Totais do agendamento</h3>
+              <div class="form-grid operator-grid mt12">
+                <label>Quantidade de notas<input name="quantidadeNotas" id="internalQuantidadeNotas" type="number" value="0" readonly required /></label>
+                <label>Quantidade de volumes<input name="quantidadeVolumes" id="internalQuantidadeVolumes" type="number" value="0" step="0.001" readonly required /></label>
+                <label>Peso total (kg)<input name="pesoTotalKg" id="internalPesoTotalKg" type="number" value="0" step="0.001" readonly required /></label>
+                <label>Valor total (R$)<input name="valorTotalNf" id="internalValorTotalNf" type="number" value="0" step="0.01" readonly required /></label>
+                <input type="hidden" name="fornecedor" id="internalFornecedorNome" value="" />
+                <label class="form-group-full">Observações<textarea name="observacoes" required></textarea></label>
+              </div>
+            </div>
+            <button type="submit">Salvar agendamento</button>
           </form>
           <p id="agendamentoMsg" class="msg"></p>
         </div>
 
         <div class="card">
           <h2>Workflow operacional</h2>
-          <div class="row gap8 wrap">
+          <div class="row gap8">
             <button id="loadAgendamentos">Atualizar lista</button>
             <input id="agendamentoId" placeholder="ID do agendamento" />
           </div>
-          <div id="statusHelper" class="info-box mt12">Informe o ID do agendamento para validar a transição de status antes de executar a operação.</div>
           <div class="row gap8 wrap mt12">
             <button id="btnAprovar">Aprovar</button>
             <button id="btnReprovar">Reprovar</button>
@@ -288,30 +293,10 @@
             <button id="btnFinalizar">Finalizar</button>
             <button id="btnNoShow">No-show</button>
             <button id="btnVoucher">Voucher</button>
-            <button id="btnQr">QR check-in</button>
-            <button id="btnQrCheckout" class="btn-secondary">QR check-out</button>
+            <button id="btnQr">QR Code</button>
             <button id="btnEnviarInfos">Enviar informações</button>
           </div>
 
-          <div class="card inner mt16">
-            <h3>Anexar documento</h3>
-            <label>Arquivo<input id="docFile" type="file" /></label>
-            <button id="btnUploadDoc">Enviar documento</button>
-          </div>
-
-          <div class="card inner mt16">
-            <h3>Adicionar NF</h3>
-            <form id="notaForm">
-              <label>Número NF<input name="numeroNf" /></label>
-              <label>Série<input name="serie" /></label>
-              <label>Chave de acesso<input name="chaveAcesso" /></label>
-              <label>Volumes<input name="volumes" type="number" value="0" /></label>
-              <label>Peso<input name="peso" type="number" value="0" /></label>
-              <label>Valor NF<input name="valorNf" type="number" value="0" /></label>
-              <label>Observação<textarea name="observacao"></textarea></label>
-              <button type="submit">Salvar NF</button>
-            </form>
-          </div>
 
           <p id="operacaoMsg" class="msg"></p>
           <div id="agendamentosList" class="mt16"></div>

@@ -10,10 +10,6 @@ export function normalizeChaveAcesso(value) {
   return String(value || "").replace(/\D/g, "").trim();
 }
 
-export function normalizeCpf(value) {
-  return String(value || "").replace(/\D/g, "").trim();
-}
-
 export function validateNf(payload) {
   const numeroNf = String(payload?.numeroNf || "").trim();
   const chaveAcesso = normalizeChaveAcesso(payload?.chaveAcesso || "");
@@ -35,7 +31,6 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
     ["placa", "Placa"],
     ["dataAgendada", "Data agendada"],
     ["horaAgendada", "Hora agendada"],
-    ...(!isPublic ? [["docaId", "Doca"]] : []),
     ["janelaId", "Janela"]
   ];
 
@@ -53,10 +48,19 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
     throw new Error("A hora deve estar no formato HH:MM.");
   }
 
-  if (payload.motoristaCpf) {
-    const cpf = normalizeCpf(payload.motoristaCpf);
-    if (cpf.length !== 11) {
-      throw new Error("CPF do motorista inválido. Informe 11 dígitos.");
+  if (!isPublic) {
+    const internalRequired = [
+      ["cpfMotorista", "CPF do motorista"],
+      ["telefoneMotorista", "Telefone do motorista"],
+      ["emailMotorista", "E-mail do motorista"],
+      ["emailTransportadora", "E-mail da transportadora"],
+      ["observacoes", "Observações"]
+    ];
+    for (const [field, label] of internalRequired) {
+      if (!String(payload[field] ?? "").trim()) throw new Error(`${label} é obrigatório.`);
+    }
+    if (!Array.isArray(payload.notasFiscais) || !payload.notasFiscais.length) {
+      throw new Error("Selecione ao menos uma NF para o agendamento interno.");
     }
   }
 
@@ -66,6 +70,11 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
 
   if (payload.emailTransportadora && !String(payload.emailTransportadora).includes("@")) {
     throw new Error("E-mail da transportadora inválido.");
+  }
+
+  const cpf = String(payload.cpfMotorista || payload.cpf || "").replace(/\D/g, "");
+  if (cpf && cpf.length !== 11) {
+    throw new Error("CPF do motorista deve conter 11 dígitos.");
   }
 
   if (Number(payload.quantidadeNotas || 0) < 0) {

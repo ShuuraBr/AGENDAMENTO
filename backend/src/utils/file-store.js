@@ -49,16 +49,6 @@ export function readVeiculos() { return readJsonFile('veiculos.json', []); }
 export function readRegras() { return readJsonFile('regras.json', []); }
 export function readFornecedoresPendentes() { return readJsonFile('fornecedores-pendentes.json', []); }
 
-export function ensureDocaPadraoFile() {
-  const docas = readDocas();
-  const existing = docas.find((doca) => String(doca.codigo || '').toUpperCase() === 'A DEFINIR');
-  if (existing) return existing;
-  const item = { id: nextId(docas), codigo: 'A DEFINIR', descricao: 'Doca definida posteriormente no painel de docas' };
-  docas.unshift(item);
-  writeJsonFile('docas.json', docas);
-  return item;
-}
-
 export function enrichAgendamentoRecord(item = {}) {
   const notas = Array.isArray(item.notasFiscais) ? item.notasFiscais : [];
   return {

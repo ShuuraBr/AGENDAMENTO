@@ -110,7 +110,6 @@ model Agendamento {
   transportadora        String
   motorista             String
   telefoneMotorista     String?
-  motoristaCpf          String?
   emailMotorista        String?
   emailTransportadora   String?
   placa                 String
@@ -120,8 +119,6 @@ model Agendamento {
   horaAgendada          String
   quantidadeNotas       Int          @default(0)
   quantidadeVolumes     Int          @default(0)
-  pesoTotal             Float        @default(0)
-  valorTotal            Float        @default(0)
   status                String       @default("PENDENTE_APROVACAO")
   observacoes           String?
   motivoReprovacao      String?
