@@ -9,7 +9,10 @@
     disponibilidadePublica: [],
     cameraStream: null,
     barcodeDetector: null,
-    scanning: false
+    scanning: false,
+    internalPendingFornecedor: null,
+    internalPendingFornecedores: [],
+    internalSelectedNotas: []
   };
 
   const CADASTRO_CONFIG = {
@@ -225,6 +228,9 @@
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.view === id);
     });
+    if (typeof window !== "undefined") {
+      window.appShowView = showView;
+    }
   }
 
   function tableFromObjects(items) {
@@ -399,32 +405,99 @@
     return String(text || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => ({ numeroNf: line, serie: '', chaveAcesso: '', volumes: 0, peso: 0, valorNf: 0, observacao: '' }));
   }
 
-  function applyFornecedorPendenteInterno(item) {
-    if (!item) return;
-    const form = byId('agendamentoForm');
-    if (!form) return;
-    const set = (name, value) => {
-      const el = form.querySelector(`[name="${name}"]`);
-      if (el != null && value != null) el.value = value;
+  function selectedInternalNotas() {
+    return (state.internalSelectedNotas || []).map((nota) => ({
+      numeroNf: String(nota?.numeroNf || '').trim(),
+      serie: String(nota?.serie || '').trim(),
+      chaveAcesso: String(nota?.chaveAcesso || '').trim(),
+      volumes: Number(nota?.volumes || 0),
+      peso: Number(nota?.peso || 0),
+      valorNf: Number(nota?.valorNf || 0),
+      observacao: String(nota?.observacao || '').trim()
+    }));
+  }
+
+  function updateInternalTotals() {
+    const notas = selectedInternalNotas();
+    const totalVolumes = notas.reduce((acc, nota) => acc + Number(nota.volumes || 0), 0);
+    const totalPeso = notas.reduce((acc, nota) => acc + Number(nota.peso || 0), 0);
+    const totalValor = notas.reduce((acc, nota) => acc + Number(nota.valorNf || 0), 0);
+    const setValue = (id, value) => { const el = byId(id); if (el) el.value = value; };
+    setValue('internalQuantidadeNotas', notas.length);
+    setValue('internalQuantidadeVolumes', totalVolumes.toFixed(3));
+    setValue('internalPesoTotalKg', totalPeso.toFixed(3));
+    setValue('internalValorTotalNf', totalValor.toFixed(2));
+  }
+
+  function renderPendingNotasInterno() {
+    const wrap = byId('internalPendingNotas');
+    if (!wrap) return;
+    const notas = Array.isArray(state.internalPendingFornecedor?.notas) ? state.internalPendingFornecedor.notas : [];
+    if (!notas.length) {
+      wrap.innerHTML = '<div class="warning-box">Selecione um fornecedor pendente para carregar as NF disponíveis.</div>';
+      state.internalSelectedNotas = [];
+      updateInternalTotals();
+      return;
+    }
+    wrap.innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
+      <div class="pending-nota-item">
+        <label>
+          <input type="checkbox" data-internal-nf="${idx}" checked />
+          <span class="pending-nota-meta">
+            <strong>NF ${escapeHtml(nota.numeroNf || '-')}</strong>
+            <span>Volumes: ${escapeHtml(Number(nota.volumes || 0).toFixed(3))}</span>
+            <span>Peso: ${escapeHtml(Number(nota.peso || 0).toFixed(3))} kg</span>
+            <span>Valor: ${escapeHtml(Number(nota.valorNf || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))}</span>
+          </span>
+        </label>
+      </div>`).join('')}</div>`;
+    const sync = () => {
+      state.internalSelectedNotas = notas.filter((_nota, index) => wrap.querySelector(`[data-internal-nf="${index}"]`)?.checked);
+      updateInternalTotals();
     };
-    set('fornecedor', item.fornecedor || '');
-    set('quantidadeNotas', item.quantidadeNotas ?? 0);
-    set('quantidadeVolumes', item.quantidadeVolumes ?? 0);
-    set('pesoTotalKg', item.pesoTotalKg ?? 0);
-    set('valorTotalNf', item.valorTotalNf ?? 0);
-    set('notasTexto', Array.isArray(item.notas) ? item.notas.map((nota) => nota.numeroNf).filter(Boolean).join('\n') : '');
+    wrap.querySelectorAll('[data-internal-nf]').forEach((el) => el.addEventListener('change', sync));
+    state.internalSelectedNotas = [...notas];
+    updateInternalTotals();
+  }
+
+  function applyFornecedorPendenteInterno(item) {
+    state.internalPendingFornecedor = item || null;
+    const fornecedorField = byId('internalFornecedorNome');
+    if (fornecedorField) fornecedorField.value = String(item?.fornecedor || item?.nome || '').trim();
+    renderPendingNotasInterno();
   }
 
   async function loadFornecedoresPendentesInterno() {
     try {
       const items = await api('/api/public/fornecedores-pendentes');
+      state.internalPendingFornecedores = Array.isArray(items) ? items : [];
       const select = byId('internalFornecedorPendenteSelect');
       if (!select) return;
-      select.innerHTML = `<option value="">Selecionar manualmente</option>` + (Array.isArray(items) ? items.map((item) => `<option value="${escapeHtml(JSON.stringify(item).replaceAll('"','&quot;'))}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('') : '');
+      const currentValue = String(select.value || '');
+      select.innerHTML = `<option value="">Selecione o fornecedor pendente</option>` + state.internalPendingFornecedores.map((item, index) => {
+        const optionValue = String(item?.id ?? index + 1);
+        return `<option value="${escapeHtml(optionValue)}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`;
+      }).join('');
+      const hasCurrentValue = state.internalPendingFornecedores.some((item, index) => String(item?.id ?? index + 1) === currentValue);
+      select.value = hasCurrentValue ? currentValue : '';
       select.onchange = () => {
-        if (!select.value) return;
-        try { applyFornecedorPendenteInterno(JSON.parse(select.value)); } catch {}
+        if (!select.value) {
+          state.internalPendingFornecedor = null;
+          state.internalSelectedNotas = [];
+          const fornecedorField = byId('internalFornecedorNome');
+          if (fornecedorField) fornecedorField.value = '';
+          renderPendingNotasInterno();
+          return;
+        }
+        const selected = state.internalPendingFornecedores.find((item, index) => String(item?.id ?? index + 1) === String(select.value));
+        applyFornecedorPendenteInterno(selected || null);
       };
+      if (select.value) {
+        const selected = state.internalPendingFornecedores.find((item, index) => String(item?.id ?? index + 1) === String(select.value));
+        applyFornecedorPendenteInterno(selected || null);
+      } else {
+        renderPendingNotasInterno();
+      }
     } catch {}
   }
 
@@ -463,15 +536,9 @@
   async function fillSelects() {
     if (!state.token || isTokenExpired(state.token)) return;
     try {
-      const [docas, janelas] = await Promise.all([
-        api("/api/cadastros/docas"),
-        api("/api/cadastros/janelas")
-      ]);
-      const docaOptions = docas.map((d) => `<option value="${d.id}">${escapeHtml(d.codigo)}</option>`).join("");
+      const janelas = await api("/api/cadastros/janelas");
       const janelaOptions = janelas.map((j) => `<option value="${j.id}">${escapeHtml(j.codigo)}</option>`).join("");
-      const docaSelect = byId("internalDocaSelect");
       const janelaSelect = byId("internalJanelaSelect");
-      if (docaSelect) docaSelect.innerHTML = docaOptions;
       if (janelaSelect) janelaSelect.innerHTML = janelaOptions;
     } catch {}
   }
@@ -515,18 +582,26 @@
     return "vermelho";
   }
 
+  async function chooseDocaForAgendamento(agendamentoId) {
+    const docas = await api('/api/cadastros/docas');
+    const disponiveis = (Array.isArray(docas) ? docas : []).filter((doca) => String(doca.codigo || '').toUpperCase() !== 'A DEFINIR');
+    if (!disponiveis.length) throw new Error('Nenhuma doca cadastrada para seleção.');
+    const promptText = ['Informe o ID da doca para o agendamento:']
+      .concat(disponiveis.map((doca) => `${doca.id} - ${doca.codigo}${doca.descricao ? ` (${doca.descricao})` : ''}`))
+      .join('\n');
+    const resposta = window.prompt(promptText, String(disponiveis[0].id));
+    if (resposta == null) return false;
+    const escolhida = disponiveis.find((doca) => String(doca.id) === String(resposta).trim());
+    if (!escolhida) throw new Error('Doca inválida.');
+    await api(`/api/agendamentos/${agendamentoId}/definir-doca`, { method: 'POST', body: JSON.stringify({ docaId: escolhida.id }) });
+    return true;
+  }
+
   async function loadDocas() {
     const date = byId("docaData")?.value || "";
-    const [data, docas] = await Promise.all([
-      api(`/api/dashboard/docas${date ? `?dataAgendada=${encodeURIComponent(date)}` : ""}`),
-      api("/api/cadastros/docas")
-    ]);
+    const data = await api(`/api/dashboard/docas${date ? `?dataAgendada=${encodeURIComponent(date)}` : ""}`);
     const wrap = byId("docaPainel");
     if (!wrap) return;
-
-    const assignOptions = docas
-      .filter((doca) => doca.codigo !== "A DEFINIR")
-      .map((doca) => `<option value="${doca.id}">${escapeHtml(doca.codigo)}</option>`).join("");
 
     wrap.innerHTML = data.map((d) => `
       <div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
@@ -537,12 +612,13 @@
         <div class="mt12">
           <strong>Fila (${d.fila.length})</strong>
           ${d.fila.length ? d.fila.map((f) => {
-            const needsDoca = d.codigo === "A DEFINIR" && f.status === "CHEGOU";
+            const canDefineDoca = ['APROVADO', 'CHEGOU'].includes(String(f.status || ''));
+            const buttonLabel = String(d.codigo || '').toUpperCase() === 'A DEFINIR' ? 'Definir doca' : 'Alterar doca';
             return `
               <div class="fila-item">
                 <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
                 <div>${escapeHtml(f.placa)} • ${escapeHtml(f.horaAgendada)} • ${escapeHtml(f.status)}</div>
-                ${needsDoca ? `<div class="row gap8 wrap mt12"><select data-define-doca-select="${f.id}">${assignOptions}</select><button type="button" data-define-doca="${f.id}">Definir doca</button></div>` : ""}
+                ${canDefineDoca ? `<div class="mt12"><button type="button" class="btn-secondary" data-definir-doca="${escapeHtml(f.id)}">${buttonLabel}</button></div>` : ""}
               </div>
             `;
           }).join("") : "<div class='fila-item'>Sem fila</div>"}
@@ -550,19 +626,15 @@
       </div>
     `).join("");
 
-    wrap.querySelectorAll("[data-define-doca]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const agendamentoId = btn.dataset.defineDoca;
-        const select = wrap.querySelector(`[data-define-doca-select="${agendamentoId}"]`);
+    wrap.querySelectorAll('[data-definir-doca]').forEach((button) => {
+      button.addEventListener('click', async () => {
         try {
-          await api(`/api/agendamentos/${agendamentoId}/definir-doca`, {
-            method: "POST",
-            body: JSON.stringify({ docaId: select?.value })
-          });
-          byId("operacaoMsg").textContent = "Doca definida com sucesso.";
+          const changed = await chooseDocaForAgendamento(button.getAttribute('data-definir-doca'));
+          if (!changed) return;
           await Promise.allSettled([loadDocas(), loadAgendamentos(), loadDashboard()]);
+          byId('operacaoMsg').textContent = 'Doca definida com sucesso.';
         } catch (err) {
-          byId("operacaoMsg").textContent = err.message;
+          byId('operacaoMsg').textContent = err.message || 'Não foi possível definir a doca.';
         }
       });
     });
@@ -713,7 +785,20 @@
     try {
       const modo = byId("checkinForm")?.querySelector("[name=modo]")?.value || "checkin";
       const endpoint = modo === "checkout" ? `/api/public/checkout/${encodeURIComponent(token)}` : `/api/public/checkin/${encodeURIComponent(token)}`;
-      const data = await api(endpoint, { method: "POST", body: JSON.stringify({}) });
+      let data;
+      try {
+        data = await api(endpoint, { method: "POST", body: JSON.stringify({}) });
+      } catch (err) {
+        if (modo === 'checkin' && /divergente/i.test(String(err.message || ''))) {
+          const liberar = window.confirm(`${err.message}
+
+Deseja liberar manualmente a descarga deste veículo?`);
+          if (!liberar) throw err;
+          data = await api(endpoint, { method: "POST", body: JSON.stringify({ overrideDateMismatch: true }) });
+        } else {
+          throw err;
+        }
+      }
       byId("checkinMsg").textContent = data.message;
       byId("checkinResult").textContent = JSON.stringify(data.agendamento, null, 2);
       stopCameraScan();
@@ -727,14 +812,17 @@
     updateNav();
     renderNfRows();
     renderCadastroForm();
+    renderPendingNotasInterno();
+    byId("loginForm")?.reset();
 
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.setAttribute("type", "button");
+      btn.style.pointerEvents = "auto";
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
         showView(btn.dataset.view);
-      });
+      }, true);
     });
 
     byId("btnLogout")?.addEventListener("click", logout);
@@ -792,28 +880,35 @@
       try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
         payload.cpfMotorista = String(payload.cpfMotorista || '').replace(/\D/g, '');
-        payload.quantidadeNotas = Number(payload.quantidadeNotas || 0);
-        payload.quantidadeVolumes = Number(payload.quantidadeVolumes || 0);
-        payload.pesoTotalKg = Number(payload.pesoTotalKg || 0);
-        payload.valorTotalNf = Number(payload.valorTotalNf || 0);
-        payload.notasFiscais = buildNotasFromLines(payload.notasTexto);
-        delete payload.notasTexto;
+        payload.notasFiscais = selectedInternalNotas();
+        payload.quantidadeNotas = Number(payload.notasFiscais.length || 0);
+        payload.quantidadeVolumes = Number(byId('internalQuantidadeVolumes')?.value || 0);
+        payload.pesoTotalKg = Number(byId('internalPesoTotalKg')?.value || 0);
+        payload.valorTotalNf = Number(byId('internalValorTotalNf')?.value || 0);
+        if (!payload.fornecedorPendenteInterno) throw new Error('Selecione o fornecedor pendente.');
+        if (!payload.fornecedor) throw new Error('Fornecedor pendente inválido.');
+        if (!payload.notasFiscais.length) throw new Error('Selecione ao menos uma NF pendente para o agendamento.');
         delete payload.fornecedorPendenteInterno;
         const data = await api("/api/agendamentos", { method: "POST", body: JSON.stringify(payload) });
         byId("agendamentoId").value = data.id || "";
         byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo} | ID: ${data.id}`;
         e.target.reset();
+        state.internalPendingFornecedor = null;
+        state.internalSelectedNotas = [];
+        const fornecedorField = byId('internalFornecedorNome');
+        if (fornecedorField) fornecedorField.value = '';
+        renderPendingNotasInterno();
         document.querySelectorAll('#agendamentoForm input[type="date"]').forEach((el) => { el.value = new Date().toISOString().slice(0, 10); });
-        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas()]);
+        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno()]);
       } catch (err) {
         byId("agendamentoMsg").textContent = err.message;
       }
     });
 
     byId("loadAgendamentos")?.addEventListener("click", async () => { try { await loadAgendamentos(); } catch (err) { byId("operacaoMsg").textContent = err.message; } });
-    byId("btnAprovar")?.addEventListener("click", async () => handleOp(() => postStatus("aprovar", { docaId: byId("internalDocaSelect")?.value, janelaId: byId("internalJanelaSelect")?.value }), "Agendamento aprovado."));
+    byId("btnAprovar")?.addEventListener("click", async () => handleOp(() => postStatus("aprovar", { janelaId: byId("internalJanelaSelect")?.value }), "Agendamento aprovado."));
     byId("btnReprovar")?.addEventListener("click", async () => handleOp(() => postStatus("reprovar", { motivo: "Reprovado via painel" }), "Agendamento reprovado."));
-    byId("btnReagendar")?.addEventListener("click", async () => handleOp(() => postStatus("reagendar", { dataAgendada: new Date().toISOString().slice(0, 10), horaAgendada: "10:00", docaId: byId("internalDocaSelect")?.value, janelaId: byId("internalJanelaSelect")?.value }), "Agendamento reagendado."));
+    byId("btnReagendar")?.addEventListener("click", async () => handleOp(() => postStatus("reagendar", { dataAgendada: new Date().toISOString().slice(0, 10), horaAgendada: "10:00", janelaId: byId("internalJanelaSelect")?.value }), "Agendamento reagendado."));
     byId("btnCancelar")?.addEventListener("click", async () => handleOp(() => postStatus("cancelar", { motivo: "Cancelado via painel" }), "Agendamento cancelado."));
     byId("btnIniciar")?.addEventListener("click", async () => handleOp(() => postStatus("iniciar"), "Descarga iniciada."));
     byId("btnFinalizar")?.addEventListener("click", async () => handleOp(() => postStatus("finalizar"), "Agendamento finalizado."));
@@ -822,34 +917,6 @@
     byId("btnQr")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/qrcode.svg`, "_blank"); } catch (err) { alert(err.message); } });
     byId("btnEnviarInfos")?.addEventListener("click", async () => handleOp(() => api(`/api/agendamentos/${currentId()}/enviar-informacoes`, { method: "POST", body: JSON.stringify({}) }), "Informações enviadas."));
 
-    byId("btnUploadDoc")?.addEventListener("click", async () => {
-      try {
-        const id = currentId();
-        const file = byId("docFile").files[0];
-        if (!file) throw new Error("Selecione um arquivo.");
-        const fd = new FormData();
-        fd.append("tipoDocumento", "ANEXO");
-        fd.append("arquivo", file);
-        await api(`/api/agendamentos/${id}/documentos`, { method: "POST", body: fd });
-        byId("operacaoMsg").textContent = "Documento enviado.";
-        await loadAgendamentos();
-      } catch (err) {
-        byId("operacaoMsg").textContent = err.message;
-      }
-    });
-
-    byId("notaForm")?.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      try {
-        const id = currentId();
-        const payload = Object.fromEntries(new FormData(e.target).entries());
-        await api(`/api/agendamentos/${id}/notas`, { method: "POST", body: JSON.stringify(payload) });
-        byId("operacaoMsg").textContent = "NF salva.";
-        await loadAgendamentos();
-      } catch (err) {
-        byId("operacaoMsg").textContent = err.message;
-      }
-    });
 
     byId("addNf")?.addEventListener("click", () => {
       syncNfDraftsFromDom();
