@@ -10,10 +10,6 @@ export function normalizeChaveAcesso(value) {
   return String(value || "").replace(/\D/g, "").trim();
 }
 
-export function normalizeCpf(value) {
-  return String(value || "").replace(/\D/g, "").trim();
-}
-
 export function validateNf(payload) {
   const numeroNf = String(payload?.numeroNf || "").trim();
   const chaveAcesso = normalizeChaveAcesso(payload?.chaveAcesso || "");
@@ -53,13 +49,6 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
     throw new Error("A hora deve estar no formato HH:MM.");
   }
 
-  if (payload.motoristaCpf) {
-    const cpf = normalizeCpf(payload.motoristaCpf);
-    if (cpf.length !== 11) {
-      throw new Error("CPF do motorista inválido. Informe 11 dígitos.");
-    }
-  }
-
   if (payload.emailMotorista && !String(payload.emailMotorista).includes("@")) {
     throw new Error("E-mail do motorista inválido.");
   }
@@ -74,19 +63,6 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
 
   if (Number(payload.quantidadeVolumes || 0) < 0) {
     throw new Error("Quantidade de volumes inválida.");
-  }
-
-  if (Number(payload.pesoTotalKg || 0) < 0) {
-    throw new Error("Peso total inválido.");
-  }
-
-  if (Number(payload.valorTotalNf || 0) < 0) {
-    throw new Error("Valor total das notas inválido.");
-  }
-
-  const cpfMotorista = normalizeCpf(payload.cpfMotorista || "");
-  if (cpfMotorista && cpfMotorista.length !== 11) {
-    throw new Error("CPF do motorista deve ter 11 dígitos.");
   }
 
   if (isPublic && !payload.lgpdConsent) {

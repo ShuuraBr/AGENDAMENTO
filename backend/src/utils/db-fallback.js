@@ -5,7 +5,7 @@ function qid(name) {
 }
 
 async function resolveTableName(candidates = []) {
-  const client = getPrismaClient();
+  const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível para fallback SQL.");
 
   const normalized = [...new Set(candidates.map((v) => String(v).trim()).filter(Boolean))];
@@ -30,7 +30,7 @@ async function resolveTableName(candidates = []) {
 }
 
 export async function fetchUserByEmail(email) {
-  const client = getPrismaClient();
+  const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
   const table = await resolveTableName(["Usuario", "usuario", "usuarios"]);
   const sql = `
@@ -44,7 +44,7 @@ export async function fetchUserByEmail(email) {
 }
 
 export async function fetchJanelasDocas() {
-  const client = getPrismaClient();
+  const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
   const [janelaTable, docaTable] = await Promise.all([
     resolveTableName(["Janela", "janela", "janelas"]),
@@ -60,7 +60,7 @@ export async function fetchJanelasDocas() {
 }
 
 export async function fetchAgendamentosByDatasStatuses(datas = [], statuses = []) {
-  const client = getPrismaClient();
+  const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
   if (!datas.length || !statuses.length) return [];
   const table = await resolveTableName(["Agendamento", "agendamento", "agendamentos"]);
@@ -76,7 +76,7 @@ export async function fetchAgendamentosByDatasStatuses(datas = [], statuses = []
 }
 
 export async function pingDatabase() {
-  const client = getPrismaClient();
+  const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
   const rows = await client.$queryRawUnsafe("SELECT 1 AS ok, DATABASE() AS databaseName");
   return rows?.[0] || { ok: 1 };

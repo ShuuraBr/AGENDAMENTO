@@ -4,7 +4,6 @@ import dashboardRoutes from "./dashboard.js";
 import cadastrosRoutes from "./cadastros.js";
 import agendamentosRoutes from "./agendamentos.js";
 import publicRoutes from "./public.js";
-import relatorioTerceirizadoRoutes from "./relatorio-terceirizado.js";
 import { pingDatabase } from "../utils/db-fallback.js";
 
 const router = Router();
@@ -24,6 +23,5 @@ router.use("/dashboard", dashboardRoutes);
 router.use("/cadastros", cadastrosRoutes);
 router.use("/agendamentos", agendamentosRoutes);
 router.use("/public", publicRoutes);
-router.use("/relatorio-terceirizado", relatorioTerceirizadoRoutes);
 
 export default router;

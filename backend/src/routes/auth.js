@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../utils/prisma.js";
 import { fetchUserByEmail } from "../utils/db-fallback.js";
+import { readUsuarios } from "../utils/file-store.js";
 import { signInternalSession } from "../utils/security.js";
 import { auditLog } from "../utils/audit.js";
 import { loginRateLimit, registerLoginFailure, clearLoginFailures } from "../middlewares/rateLimit.js";
@@ -13,7 +14,22 @@ async function findUserByEmail(email) {
     return await prisma.usuario.findUnique({ where: { email } });
   } catch (ormError) {
     console.error("Prisma ORM falhou em /auth/login. Tentando fallback SQL:", ormError?.message || ormError);
-    return fetchUserByEmail(email);
+    try {
+      const dbUser = await fetchUserByEmail(email);
+      if (dbUser) return dbUser;
+    } catch (fallbackError) {
+      console.error("Fallback SQL falhou em /auth/login. Tentando arquivo JSON:", fallbackError?.message || fallbackError);
+    }
+    const fileUser = readUsuarios().find((item) => String(item.email || '').toLowerCase() === String(email || '').toLowerCase());
+    if (!fileUser) return null;
+    return {
+      id: fileUser.id,
+      nome: fileUser.nome,
+      email: fileUser.email,
+      perfil: fileUser.perfil || 'ADMIN',
+      senhaHash: fileUser.senhaHash || null,
+      senha: fileUser.senha || null,
+    };
   }
 }
 
@@ -31,7 +47,7 @@ router.post("/login", loginRateLimit, async (req, res) => {
       return res.status(401).json({ message: "Credenciais inválidas." });
     }
 
-    const ok = await bcrypt.compare(senha, user.senhaHash);
+    const ok = user.senhaHash ? await bcrypt.compare(senha, user.senhaHash) : String(senha) === String(user.senha || '');
     if (!ok) {
       await registerLoginFailure(req, email);
       return res.status(401).json({ message: "Credenciais inválidas." });
