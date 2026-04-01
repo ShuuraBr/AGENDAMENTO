@@ -109,6 +109,7 @@ model Agendamento {
   fornecedor            String
   transportadora        String
   motorista             String
+  cpfMotorista          String?
   telefoneMotorista     String?
   motoristaCpf          String?
   emailMotorista        String?
@@ -136,6 +137,7 @@ model Agendamento {
   janela                Janela       @relation(fields: [janelaId], references: [id])
   documentos            Documento[]
   notasFiscais          NotaFiscal[]
+  relatorioTerceirizado RelatorioTerceirizado?
 
   @@index([docaId])
   @@index([dataAgendada])
@@ -189,4 +191,28 @@ model LogAuditoria {
   @@index([entidade, entidadeId])
   @@index([usuarioId], map: "LogAuditoria_usuarioId_fkey")
   @@map("LogAuditoria")
+}
+
+
+model RelatorioTerceirizado {
+  id                Int         @id @default(autoincrement())
+  fornecedor        String
+  transportadora    String?
+  motorista         String?
+  cpfMotorista      String?
+  placa             String?
+  quantidadeNotas   Int         @default(0)
+  quantidadeVolumes Int         @default(0)
+  pesoTotalKg       Float       @default(0)
+  valorTotalNf      Float       @default(0)
+  notasJson         String?     @db.LongText
+  status            String      @default("AGUARDANDO_CHEGADA")
+  referenciaExterna String?     @unique
+  agendamentoId     Int?        @unique
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  agendamento       Agendamento? @relation(fields: [agendamentoId], references: [id])
+
+  @@index([status])
+  @@map("RelatorioTerceirizado")
 }

@@ -59,6 +59,7 @@ function formatPublicAgendamento(item, req) {
     fornecedor: item.fornecedor,
     transportadora: item.transportadora,
     motorista: item.motorista,
+    cpfMotorista: item.cpfMotorista,
     telefoneMotorista: item.telefoneMotorista,
     motoristaCpf: item.motoristaCpf,
     emailMotorista: item.emailMotorista,
@@ -214,6 +215,29 @@ router.get("/disponibilidade", async (req, res) => {
   }
 });
 
+router.get("/fornecedores-pendentes", async (_req, res) => {
+  try {
+    const itens = await prisma.relatorioTerceirizado.findMany({
+      where: { status: "AGUARDANDO_CHEGADA", agendamentoId: null },
+      orderBy: [{ fornecedor: "asc" }, { id: "desc" }]
+    });
+    res.json(itens.map((item) => ({
+      id: item.id,
+      fornecedor: item.fornecedor,
+      transportadora: item.transportadora,
+      motorista: item.motorista,
+      cpfMotorista: item.cpfMotorista,
+      placa: item.placa,
+      quantidadeNotas: item.quantidadeNotas,
+      quantidadeVolumes: item.quantidadeVolumes,
+      pesoTotalKg: item.pesoTotalKg,
+      valorTotalNf: item.valorTotalNf
+    })));
+  } catch (err) {
+    res.status(500).json({ message: err?.message || "Falha ao consultar fornecedores pendentes." });
+  }
+});
+
 router.post("/solicitacao", async (req, res) => {
   try {
     const payload = { ...(req.body || {}) };
@@ -226,15 +250,11 @@ router.post("/solicitacao", async (req, res) => {
     const horaAgendada = parseJanelaCodigo(janela.codigo).horaInicio;
     const doca = await getOrCreateDocaPadrao();
 
-    const notas = Array.isArray(payload.notas) ? payload.notas.map((nota) => ({
-      numeroNf: String(nota?.numeroNf || "").trim(),
-      serie: String(nota?.serie || "").trim(),
-      chaveAcesso: normalizeChaveAcesso(nota?.chaveAcesso || ""),
-      volumes: Number(nota?.volumes || 0),
-      peso: Number(nota?.peso || 0),
-      valorNf: Number(nota?.valorNf || 0),
-      observacao: String(nota?.observacao || "").trim()
-    })) : [];
+    const relatorio = payload.relatorioTerceirizadoId ? await prisma.relatorioTerceirizado.findUnique({ where: { id: Number(payload.relatorioTerceirizadoId) } }) : null;
+    const notas = normalizeNotas(payload.notas || (relatorio?.notasJson ? JSON.parse(relatorio.notasJson) : []));
+    const resumo = summarizeNotas(notas);
+
+    const totaisNotas = calculateNotasTotals(notas);
 
     const totaisNotas = calculateNotasTotals(notas);
 
@@ -246,7 +266,7 @@ router.post("/solicitacao", async (req, res) => {
       telefoneMotorista: String(payload.telefoneMotorista || "").trim(),
       emailMotorista: String(payload.emailMotorista || "").trim(),
       emailTransportadora: String(payload.emailTransportadora || "").trim(),
-      placa: String(payload.placa || "").trim().toUpperCase(),
+      placa: String(relatorio?.placa || payload.placa || "").trim().toUpperCase(),
       dataAgendada: String(payload.dataAgendada || "").trim(),
       horaAgendada,
       janelaId,
@@ -295,6 +315,13 @@ router.post("/solicitacao", async (req, res) => {
     if (notas.length) {
       await prisma.notaFiscal.createMany({
         data: notas.map((nota) => ({ ...nota, agendamentoId: created.id }))
+      });
+    }
+
+    if (relatorio) {
+      await prisma.relatorioTerceirizado.update({
+        where: { id: relatorio.id },
+        data: { agendamentoId: created.id, status: "AGENDADO" }
       });
     }
 
@@ -405,6 +432,9 @@ router.post("/fornecedor/:token/notas", async (req, res) => {
       }
     });
 
+    const notasAtualizadas = await prisma.notaFiscal.findMany({ where: { agendamentoId: item.id } });
+    const resumoAtualizado = summarizeNotas(notasAtualizadas);
+    await prisma.agendamento.update({ where: { id: item.id }, data: resumoAtualizado });
     res.status(201).json(nf);
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -429,7 +459,7 @@ router.get("/voucher/:token", async (req, res) => {
   try {
     const item = await resolveAgendamentoByAnyToken(req.params.token);
     if (!item) return res.status(404).json({ message: "Token inválido." });
-    const pdf = generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
+    const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename=voucher-${item.protocolo}.pdf`);
     res.send(pdf);
@@ -476,5 +506,32 @@ router.post("/checkout/:token", async (req, res) => {
     res.status(500).json({ message: err?.message || "Falha ao realizar check-out." });
   }
 });
+<<<<<<< HEAD
+=======
+
+router.post("/checkout/:token", async (req, res) => {
+  try {
+    const item = await prisma.agendamento.findUnique({ where: { checkinToken: req.params.token } });
+    if (!item) return res.status(404).json({ message: "Token de check-out inválido." });
+    if (!["CHEGOU", "EM_DESCARGA", "FINALIZADO"].includes(item.status)) {
+      return res.status(400).json({ message: "Check-out só permitido após a chegada do veículo." });
+    }
+
+    const updated = item.status === "FINALIZADO" ? item : await prisma.agendamento.update({
+      where: { id: item.id },
+      data: {
+        status: "FINALIZADO",
+        inicioDescargaEm: item.inicioDescargaEm || new Date(),
+        fimDescargaEm: item.fimDescargaEm || new Date()
+      }
+    });
+
+    res.json({ ok: true, message: "Check-out realizado com sucesso.", agendamento: updated });
+  } catch (err) {
+    console.error("Erro em /public/checkout:", err);
+    res.status(500).json({ message: err?.message || "Falha ao realizar check-out." });
+  }
+});
+>>>>>>> 442936730811b0fee8facf12b4d7ad2ea1759d4c
 
 export default router;

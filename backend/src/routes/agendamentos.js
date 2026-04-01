@@ -72,6 +72,98 @@ async function mustExist(id) {
   return prisma.agendamento.findUnique({ where: { id: Number(id) } });
 }
 
+function normalizeNotas(notas = []) {
+  return Array.isArray(notas) ? notas.map((nota) => ({
+    numeroNf: String(nota?.numeroNf || "").trim(),
+    serie: String(nota?.serie || "").trim(),
+    chaveAcesso: normalizeChaveAcesso(nota?.chaveAcesso || ""),
+    volumes: Number(nota?.volumes || 0),
+    peso: Number(nota?.peso || 0),
+    valorNf: Number(nota?.valorNf || 0),
+    observacao: String(nota?.observacao || "").trim()
+  })).filter((nota) => nota.numeroNf || nota.chaveAcesso) : [];
+}
+
+function summarizeNotas(notas = []) {
+  return {
+    quantidadeNotas: notas.length,
+    quantidadeVolumes: notas.reduce((acc, nota) => acc + (Number(nota.volumes) || 0), 0),
+    pesoTotalKg: Number(notas.reduce((acc, nota) => acc + (Number(nota.peso) || 0), 0).toFixed(3)),
+    valorTotalNf: Number(notas.reduce((acc, nota) => acc + (Number(nota.valorNf) || 0), 0).toFixed(2))
+  };
+}
+
+async function recalcAgendamentoTotals(agendamentoId) {
+  const notas = await prisma.notaFiscal.findMany({ where: { agendamentoId: Number(agendamentoId) } });
+  const resumo = summarizeNotas(notas);
+  return prisma.agendamento.update({
+    where: { id: Number(agendamentoId) },
+    data: resumo
+  });
+}
+
+async function resolveRelatorioTerceirizado(relatorioTerceirizadoId) {
+  if (!relatorioTerceirizadoId) return null;
+  return prisma.relatorioTerceirizado.findUnique({ where: { id: Number(relatorioTerceirizadoId) } });
+}
+
+async function sendCreationNotifications(item, req) {
+  const links = buildPublicLinks(req, item);
+  const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
+  const textoBase = [
+    `Agendamento criado com sucesso.`,
+    `Protocolo: ${item.protocolo}`,
+    `Data: ${item.dataAgendada} às ${item.horaAgendada}`,
+    `Doca: ${item.doca?.codigo || "A DEFINIR"}`,
+    `Consulta: ${links.consulta}`,
+    `Motorista: ${links.motorista}`,
+    `Voucher: ${links.voucher}`,
+    `Check-in: ${links.checkin}`,
+    `Check-out: ${links.checkout}`
+  ].join("\n");
+
+  const htmlBase = `<p><strong>Agendamento criado com sucesso.</strong></p>
+    <p><strong>Protocolo:</strong> ${item.protocolo}</p>
+    <p><strong>Data:</strong> ${item.dataAgendada} às ${item.horaAgendada}</p>
+    <p><strong>Doca:</strong> ${item.doca?.codigo || "A DEFINIR"}</p>
+    <p><a href="${links.consulta}">Consulta da transportadora/fornecedor</a></p>
+    <p><a href="${links.motorista}">Acompanhamento do motorista</a></p>
+    <p><a href="${links.voucher}">Voucher em PDF</a></p>
+    <p><a href="${links.checkin}">Check-in</a></p>
+    <p><a href="${links.checkout}">Check-out</a></p>`;
+
+  const results = [];
+
+  if (item.emailMotorista) {
+    results.push({ canal: "email", destino: item.emailMotorista, publico: "motorista", ...(await sendMail({
+      to: item.emailMotorista,
+      subject: `Agendamento ${item.protocolo} criado`,
+      text: textoBase,
+      html: htmlBase,
+      attachments: [{ filename: `voucher-${item.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
+    })) });
+  }
+
+  if (item.emailTransportadora) {
+    results.push({ canal: "email", destino: item.emailTransportadora, publico: "transportadora/fornecedor", ...(await sendMail({
+      to: item.emailTransportadora,
+      subject: `Agendamento ${item.protocolo} criado`,
+      text: textoBase,
+      html: htmlBase,
+      attachments: [{ filename: `voucher-${item.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
+    })) });
+  }
+
+  if (item.telefoneMotorista) {
+    results.push({ canal: "whatsapp", destino: item.telefoneMotorista, publico: "motorista", ...(await sendWhatsApp({
+      to: item.telefoneMotorista,
+      message: textoBase
+    })) });
+  }
+
+  return { results, links };
+}
+
 async function notificationSummary(agendamentoId) {
   const logs = await prisma.logAuditoria.findMany({
     where: { entidade: "AGENDAMENTO", entidadeId: Number(agendamentoId) },
@@ -97,7 +189,7 @@ async function notificationSummary(agendamentoId) {
 
 async function sendSchedulingNotifications(item, req, context = "agendamento") {
   const links = buildPublicLinks(req, item);
-  const pdf = generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
+  const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
   const results = [];
   const targets = [];
 
@@ -225,8 +317,25 @@ router.get("/:id", async (req, res) => {
 router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
   try {
     const payload = req.body || {};
-    validateAgendamentoPayload(payload, false);
-    await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada });
+    const relatorio = await resolveRelatorioTerceirizado(payload.relatorioTerceirizadoId);
+    const notasPayload = normalizeNotas(payload.notas || (relatorio?.notasJson ? JSON.parse(relatorio.notasJson) : []));
+    const resumo = summarizeNotas(notasPayload);
+
+    const merged = {
+      ...payload,
+      fornecedor: String(relatorio?.fornecedor || payload.fornecedor || "").trim(),
+      transportadora: String(relatorio?.transportadora || payload.transportadora || "").trim(),
+      motorista: String(relatorio?.motorista || payload.motorista || "").trim(),
+      cpfMotorista: normalizeCpf(relatorio?.cpfMotorista || payload.cpfMotorista || ""),
+      placa: String(relatorio?.placa || payload.placa || "").trim().toUpperCase(),
+      quantidadeNotas: Number(relatorio?.quantidadeNotas || payload.quantidadeNotas || resumo.quantidadeNotas || 0),
+      quantidadeVolumes: Number(relatorio?.quantidadeVolumes || payload.quantidadeVolumes || resumo.quantidadeVolumes || 0),
+      pesoTotalKg: Number(relatorio?.pesoTotalKg || payload.pesoTotalKg || resumo.pesoTotalKg || 0),
+      valorTotalNf: Number(relatorio?.valorTotalNf || payload.valorTotalNf || resumo.valorTotalNf || 0)
+    };
+
+    validateAgendamentoPayload(merged, false);
+    await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada });
 
     const item = await prisma.agendamento.create({
       data: {
@@ -251,7 +360,7 @@ router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res
         pesoTotal: Number(payload.pesoTotal || 0),
         valorTotal: Number(payload.valorTotal || 0),
         status: "PENDENTE_APROVACAO",
-        observacoes: payload.observacoes || ""
+        observacoes: merged.observacoes || ""
       }
     });
 
@@ -280,6 +389,7 @@ router.post("/:id/definir-doca", requireProfiles("ADMIN", "OPERADOR", "GESTOR"),
   try {
     const found = await full(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
+    if (found.status !== "CHEGOU") throw new Error("A doca só pode ser definida quando o agendamento estiver com status CHEGOU.");
     const docaId = Number(req.body?.docaId);
     if (!docaId) throw new Error("Doca é obrigatória.");
 
@@ -458,7 +568,7 @@ router.post("/:id/enviar-confirmacao", requireProfiles("ADMIN", "OPERADOR", "GES
     if (!ag.emailTransportadora) return res.status(400).json({ message: "Não há e-mail da transportadora/fornecedor cadastrado." });
 
     const links = buildPublicLinks(req, ag);
-    const pdf = generateVoucherPdf(ag, { baseUrl: getBaseUrl(req) });
+    const pdf = await generateVoucherPdf(ag, { baseUrl: getBaseUrl(req) });
     const textoDoca = ag.doca?.codigo || "A DEFINIR";
     const sent = await sendMail({
       to: ag.emailTransportadora,
@@ -496,7 +606,7 @@ router.get("/:id/checkout-qrcode.svg", async (req, res) => {
 router.get("/:id/voucher", async (req, res) => {
   const item = await full(req.params.id);
   if (!item) return res.status(404).send("Agendamento não encontrado.");
-  const pdf = generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
+  const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename=voucher-${item.protocolo}.pdf`);
   res.send(pdf);
