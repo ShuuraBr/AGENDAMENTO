@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS agendamentos (
     transportadora_id BIGINT UNSIGNED NULL,
     motorista_id BIGINT UNSIGNED NULL,
     veiculo_id BIGINT UNSIGNED NULL,
+    motorista_cpf VARCHAR(14) NULL,
     origem_solicitacao ENUM('MOTORISTA','TRANSPORTADORA','FORNECEDOR','INTERNO','API') NOT NULL DEFAULT 'TRANSPORTADORA',
     status ENUM('SOLICITADO','PENDENTE_APROVACAO','APROVADO','CANCELADO','CHEGOU','EM_DESCARGA','FINALIZADO','NO_SHOW') NOT NULL DEFAULT 'SOLICITADO',
     data_agendada DATE NOT NULL,
@@ -168,3 +169,23 @@ LEFT JOIN fornecedores f ON f.id = a.fornecedor_id
 LEFT JOIN transportadoras t ON t.id = a.transportadora_id
 LEFT JOIN motoristas m ON m.id = a.motorista_id
 LEFT JOIN veiculos v ON v.id = a.veiculo_id;
+
+
+CREATE TABLE IF NOT EXISTS integracao_terceirizado (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    fornecedor VARCHAR(180) NOT NULL,
+    cnpj_fornecedor VARCHAR(18) NULL,
+    status_externo ENUM('AGUARDANDO_CHEGADA','EM_RECEBIMENTO','FINALIZADO','CANCELADO') NOT NULL DEFAULT 'AGUARDANDO_CHEGADA',
+    numero_notas INT NOT NULL DEFAULT 0,
+    quantidade_volumes INT NOT NULL DEFAULT 0,
+    peso_total_kg DECIMAL(12,3) NOT NULL DEFAULT 0,
+    valor_total_nf DECIMAL(14,2) NOT NULL DEFAULT 0,
+    payload_json LONGTEXT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Ajustes para bases ja existentes
+ALTER TABLE agendamentos ADD COLUMN IF NOT EXISTS motorista_cpf VARCHAR(14) NULL AFTER veiculo_id;
+ALTER TABLE agendamentos MODIFY COLUMN peso_total_kg DECIMAL(12,3) NOT NULL DEFAULT 0;
+ALTER TABLE agendamentos MODIFY COLUMN valor_total_nf DECIMAL(14,2) NOT NULL DEFAULT 0;

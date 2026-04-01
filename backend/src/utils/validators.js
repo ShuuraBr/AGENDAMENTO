@@ -10,6 +10,10 @@ export function normalizeChaveAcesso(value) {
   return String(value || "").replace(/\D/g, "").trim();
 }
 
+export function normalizeCpf(value) {
+  return String(value || "").replace(/\D/g, "").trim();
+}
+
 export function validateNf(payload) {
   const numeroNf = String(payload?.numeroNf || "").trim();
   const chaveAcesso = normalizeChaveAcesso(payload?.chaveAcesso || "");
@@ -47,6 +51,13 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
 
   if (!/^\d{2}:\d{2}$/.test(String(payload.horaAgendada))) {
     throw new Error("A hora deve estar no formato HH:MM.");
+  }
+
+  if (payload.motoristaCpf) {
+    const cpf = normalizeCpf(payload.motoristaCpf);
+    if (cpf.length !== 11) {
+      throw new Error("CPF do motorista inválido. Informe 11 dígitos.");
+    }
   }
 
   if (payload.emailMotorista && !String(payload.emailMotorista).includes("@")) {
