@@ -6,7 +6,10 @@
     cadastroCache: [],
     nfRows: 1,
     nfDrafts: [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }],
-    disponibilidadePublica: []
+    disponibilidadePublica: [],
+    cameraStream: null,
+    barcodeDetector: null,
+    scanning: false
   };
 
   const CADASTRO_CONFIG = {
@@ -267,8 +270,8 @@
       wrap.appendChild(div);
     }
     wrap.querySelectorAll("[data-nf]").forEach((el) => {
-      el.addEventListener("input", syncNfDraftsFromDom);
-      el.addEventListener("change", syncNfDraftsFromDom);
+      el.addEventListener("input", () => { syncNfDraftsFromDom(); updateTotalsFromNotas(); });
+      el.addEventListener("change", () => { syncNfDraftsFromDom(); updateTotalsFromNotas(); });
     });
   }
 
@@ -285,6 +288,84 @@
         observacao: String(nota.observacao || "").trim()
       }))
       .filter((item) => item.numeroNf || item.chaveAcesso);
+  }
+
+  function updateTotalsFromNotas() {
+    const notas = collectNotas();
+    const totalNotas = notas.length;
+    const totalVolumes = notas.reduce((acc, item) => acc + Number(item.volumes || 0), 0);
+    const totalPeso = notas.reduce((acc, item) => acc + Number(item.peso || 0), 0);
+    const totalValor = notas.reduce((acc, item) => acc + Number(item.valorNf || 0), 0);
+    const form = byId("fornecedorForm");
+    if (!form) return;
+    form.querySelector('[name="quantidadeNotas"]').value = totalNotas;
+    form.querySelector('[name="quantidadeVolumes"]').value = totalVolumes;
+    form.querySelector('[name="pesoTotalKg"]').value = totalPeso.toFixed(3);
+    form.querySelector('[name="valorTotalNf"]').value = totalValor.toFixed(2);
+  }
+
+  async function loadFornecedoresPendentes() {
+    try {
+      const items = await api('/api/public/fornecedores-pendentes');
+      const select = byId('fornecedorPendenteSelect');
+      if (!select) return;
+      select.innerHTML = `<option value="">Selecionar manualmente</option>` + (Array.isArray(items) ? items.map((item) => `<option value="${escapeHtml(JSON.stringify(item).replaceAll('"','&quot;'))}">${escapeHtml(item.fornecedor || item.nome || '-')}</option>`).join('') : '');
+      select.addEventListener('change', () => {
+        if (!select.value) return;
+        const data = JSON.parse(select.value);
+        const form = byId('fornecedorForm');
+        ['fornecedor','transportadora','placa'].forEach((field) => { if (data[field] && form.querySelector(`[name="${field}"]`)) form.querySelector(`[name="${field}"]`).value = data[field]; });
+        if (Array.isArray(data.notasFiscais) && data.notasFiscais.length) {
+          state.nfRows = data.notasFiscais.length;
+          state.nfDrafts = data.notasFiscais.map((n) => ({ numeroNf: n.numeroNf || '', serie: n.serie || '', chaveAcesso: n.chaveAcesso || '', volumes: String(n.volumes || 0), peso: String(n.peso || 0), valorNf: String(n.valorNf || 0), observacao: n.observacao || '' }));
+          renderNfRows();
+          updateTotalsFromNotas();
+        }
+      });
+    } catch {}
+  }
+
+  async function startCameraScan() {
+    const video = byId('qrVideo');
+    if (!video || state.scanning) return;
+    try {
+      state.cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      video.srcObject = state.cameraStream;
+      await video.play();
+      state.barcodeDetector = 'BarcodeDetector' in window ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+      state.scanning = true;
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const loop = async () => {
+        if (!state.scanning) return;
+        try {
+          if (state.barcodeDetector) {
+            const codes = await state.barcodeDetector.detect(video);
+            if (codes[0]?.rawValue) {
+              const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
+              if (tokenInput) tokenInput.value = codes[0].rawValue;
+              await validateCheckin(codes[0].rawValue);
+              state.scanning = false;
+              return;
+            }
+          } else if (video.readyState >= 2) {
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight; ctx.drawImage(video, 0, 0);
+          }
+        } catch {}
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+      byId('checkinMsg').textContent = 'Câmera ativada.';
+    } catch (err) {
+      byId('checkinMsg').textContent = err.message || 'Não foi possível acessar a câmera.';
+    }
+  }
+
+  function stopCameraScan() {
+    state.scanning = false;
+    if (state.cameraStream) state.cameraStream.getTracks().forEach((track) => track.stop());
+    state.cameraStream = null;
+    const video = byId('qrVideo'); if (video) video.srcObject = null;
   }
 
   function renderPublicSlots(dataSelecionada) {
@@ -379,7 +460,10 @@
       doca: a.doca?.codigo || "",
       janela: a.janela?.codigo || "",
       data: a.dataAgendada,
-      hora: a.horaAgendada
+      hora: a.horaAgendada,
+      volumes: a.quantidadeVolumes || 0,
+      pesoKg: a.pesoTotalKg || 0,
+      valorTotal: a.valorTotalNf || 0
     })));
   }
 
@@ -412,7 +496,7 @@
         <div class="mt12">
           <strong>Fila (${d.fila.length})</strong>
           ${d.fila.length ? d.fila.map((f) => {
-            const needsDoca = d.codigo === "A DEFINIR" && !["FINALIZADO", "CANCELADO", "REPROVADO", "NO_SHOW"].includes(f.status);
+            const needsDoca = d.codigo === "A DEFINIR" && f.status === "CHEGOU";
             return `
               <div class="fila-item">
                 <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
@@ -586,11 +670,12 @@
 
   async function validateCheckin(token) {
     try {
-      const id = byId("agendamentoId")?.value || new URLSearchParams(location.search).get("id");
-      if (!id) throw new Error("Informe o ID do agendamento para validar o QR no recebimento.");
-      const data = await api(`/api/agendamentos/${id}/checkin`, { method: "POST", body: JSON.stringify({ token }) });
+      const modo = byId("checkinForm")?.querySelector("[name=modo]")?.value || "checkin";
+      const endpoint = modo === "checkout" ? `/api/public/checkout/${encodeURIComponent(token)}` : `/api/public/checkin/${encodeURIComponent(token)}`;
+      const data = await api(endpoint, { method: "POST", body: JSON.stringify({}) });
       byId("checkinMsg").textContent = data.message;
       byId("checkinResult").textContent = JSON.stringify(data.agendamento, null, 2);
+      stopCameraScan();
       await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas()]);
     } catch (err) {
       byId("checkinMsg").textContent = err.message;
@@ -738,10 +823,12 @@
         const payload = Object.fromEntries(new FormData(e.target).entries());
         payload.lgpdConsent = !!e.target.querySelector('[name="lgpdConsent"]')?.checked;
         payload.notas = collectNotas();
-        payload.quantidadeNotas = payload.notas.length;
+        updateTotalsFromNotas();
+        payload.quantidadeNotas = Number(payload.quantidadeNotas || payload.notas.length);
         const data = await api("/api/public/solicitacao", { method: "POST", body: JSON.stringify(payload) });
         byId("fornecedorMsg").innerHTML = `Solicitação enviada. Protocolo: <strong>${data.protocolo}</strong>. Horário: <strong>${data.horaAgendada}</strong>. Doca: <strong>${data.doca}</strong>.<br><a href="${data.linkFornecedor}">Consulta da transportadora/fornecedor</a> • <a href="${data.linkMotorista}">Acompanhamento do motorista</a> • <a href="${data.voucher}" target="_blank" rel="noreferrer">Voucher PDF</a><br>Token do motorista: <strong>${data.tokenMotorista}</strong>`;
         e.target.reset();
+        stopCameraScan();
         state.nfRows = 1;
         state.nfDrafts = [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }];
         renderNfRows();
@@ -790,6 +877,8 @@
       e.preventDefault();
       await validateCheckin(new FormData(e.target).get("token"));
     });
+    byId("startCamera")?.addEventListener("click", startCameraScan);
+    byId("stopCamera")?.addEventListener("click", stopCameraScan);
 
     byId("publicDataSelect")?.addEventListener("change", (e) => renderPublicSlots(e.target.value));
 
@@ -800,6 +889,7 @@
 
     try {
       await loadPublicDisponibilidade();
+      await loadFornecedoresPendentes();
     } catch (err) {
       const fornecedorMsg = byId("fornecedorMsg");
       if (fornecedorMsg) fornecedorMsg.textContent = err.message;

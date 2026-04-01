@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agendamento de Descarga V3.1</title>
-  <link rel="stylesheet" href="/assets/styles7.css" />
+  <link rel="stylesheet" href="/assets/styles8.css" />
   <link rel="icon" href="assets/Favicon.png" type="image">
 </head>
 <body>
@@ -21,6 +21,7 @@
       <button type="button" class="nav-btn active" data-view="public-home">Início</button>
             <button type="button" class="nav-btn" data-view="consulta">Consulta transportadora/fornecedor</button>
       <button type="button" class="nav-btn" data-view="motorista">Motorista</button>
+      <button type="button" class="nav-btn" data-view="fornecedor">Agendamento</button>
       <button type="button" class="nav-btn" data-view="login">Área do Colaborador</button>
     </nav>
 
@@ -29,7 +30,7 @@
       <button type="button" class="nav-btn" data-view="docas">Painel de Docas</button>
       <button type="button" class="nav-btn" data-view="cadastros">Cadastros</button>
       <button type="button" class="nav-btn" data-view="agendamentos">Agendamentos</button>
-      <button type="button" class="nav-btn" data-view="checkin">Check-in QR</button>
+      <button type="button" class="nav-btn" data-view="checkin">Check-in / Check-out QR</button>
       <button type="button" id="btnLogout">Sair</button>
     </nav>
   </header>
@@ -67,6 +68,7 @@
               <label>Fornecedor<input name="fornecedor" value="Fornecedor Externo" /></label>
               <label>Transportadora<input name="transportadora" value="Transportadora Externa" /></label>
               <label>Motorista<input name="motorista" value="Motorista Externo" /></label>
+              <label>CPF do motorista<input name="cpfMotorista" placeholder="Somente números" /></label>
               <label>Telefone do motorista<input name="telefoneMotorista" value="61999998888" /></label>
               <label>E-mail do motorista<input name="emailMotorista" value="motorista@teste.com" /></label>
               <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@teste.com" /></label>
@@ -74,10 +76,13 @@
             </div>
             <div>
               <div class="info-box"><strong>Doca:</strong> definida pelo operador do recebimento conforme disponibilidade operacional.</div>
+              <label>Fornecedor pendente<select name="fornecedorPendenteSelect"><option value="">Selecionar manualmente</option></select></label>
               <label>Data<select name="dataAgendada" id="publicDataSelect"></select></label>
               <label>Horário disponível<select name="janelaId" id="publicJanelaSelect"></select></label>
-              <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" /></label>
-              <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="8" /></label>
+              <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" readonly /></label>
+              <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="8" readonly /></label>
+              <label>Peso total (kg)<input name="pesoTotalKg" type="number" step="0.001" value="0" readonly /></label>
+              <label>Valor total (R$)<input name="valorTotalNf" type="number" step="0.01" value="0" readonly /></label>
               <label>Observações<textarea name="observacoes"></textarea></label>
               <label class="check">
                 <input name="lgpdConsent" type="checkbox" />
@@ -122,7 +127,7 @@
 
     <section id="checkin" class="view">
       <div class="card">
-        <h2>Check-in por QR Code</h2>
+        <h2>Check-in e check-out por QR Code</h2>
         <div class="grid2">
           <div>
             <video id="qrVideo" autoplay muted playsinline class="video"></video>
@@ -133,8 +138,9 @@
           </div>
           <div>
             <form id="checkinForm">
-              <label>Token do check-in<input name="token" placeholder="CHK-..." /></label>
-              <button type="submit">Validar check-in</button>
+              <label>Operação<select name="modo"><option value="checkin">Check-in</option><option value="checkout">Check-out</option></select></label>
+              <label>Token da operação<input name="token" placeholder="CHK-... ou OUT-..." /></label>
+              <button type="submit">Validar operação</button>
             </form>
             <p id="checkinMsg" class="msg"></p>
             <pre id="checkinResult"></pre>

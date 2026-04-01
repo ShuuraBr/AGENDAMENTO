@@ -57,6 +57,11 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
     throw new Error("E-mail da transportadora inválido.");
   }
 
+  const cpf = String(payload.cpfMotorista || payload.cpf || "").replace(/\D/g, "");
+  if (cpf && cpf.length !== 11) {
+    throw new Error("CPF do motorista deve conter 11 dígitos.");
+  }
+
   if (Number(payload.quantidadeNotas || 0) < 0) {
     throw new Error("Quantidade de notas inválida.");
   }

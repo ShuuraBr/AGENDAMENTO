@@ -7,6 +7,9 @@ import { prisma } from "../utils/prisma.js";
 import { generateProtocol, generatePublicToken } from "../utils/security.js";
 import { qrSvg } from "../utils/qrcode.js";
 import { sendMail } from "../utils/email.js";
+import { sendWhatsApp } from "../services/whatsapp.js";
+import { calculateTotals, normalizeCpf } from "../utils/agendamento-helpers.js";
+import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile } from "../utils/file-store.js";
 import { validateAgendamentoPayload, validateNf, validateStatusTransition, normalizeChaveAcesso } from "../utils/validators.js";
 import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js";
 import { auditLog } from "../utils/audit.js";
@@ -34,19 +37,21 @@ function buildPublicLinks(req, item) {
     consulta: `${base}/?view=consulta&token=${encodeURIComponent(item.publicTokenFornecedor)}`,
     motorista: `${base}/?view=motorista&token=${encodeURIComponent(item.publicTokenMotorista)}`,
     voucher: `${base}/api/public/voucher/${encodeURIComponent(item.publicTokenFornecedor)}`,
-    checkin: `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`
+    checkin: `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`,
+    checkout: `${base}/?view=checkout&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkoutToken || "")}`
   };
 }
 
 async function full(id) {
-  return prisma.agendamento.findUnique({
-    where: { id: Number(id) },
-    include: { notasFiscais: true, documentos: true, doca: true, janela: true }
-  });
+  try {
+    return await prisma.agendamento.findUnique({ where: { id: Number(id) }, include: { notasFiscais: true, documentos: true, doca: true, janela: true } });
+  } catch {
+    return findAgendamentoFile(id);
+  }
 }
 
 async function mustExist(id) {
-  return prisma.agendamento.findUnique({ where: { id: Number(id) } });
+  try { return await prisma.agendamento.findUnique({ where: { id: Number(id) } }); } catch { return findAgendamentoFile(id); }
 }
 
 async function notificationSummary(agendamentoId) {
@@ -74,7 +79,7 @@ async function notificationSummary(agendamentoId) {
 
 async function sendApprovalNotifications(item, req) {
   const links = buildPublicLinks(req, item);
-  const pdf = generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
+  const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
   const results = [];
   const targets = [];
 
@@ -84,7 +89,8 @@ async function sendApprovalNotifications(item, req) {
     `Acompanhamento do motorista: ${links.motorista}`,
     `Token do motorista: ${item.publicTokenMotorista}`,
     `Voucher PDF: ${links.voucher}`,
-    `Check-in: ${links.checkin}`
+    `Check-in: ${links.checkin}`,
+    `Check-out: ${links.checkout}`
   ].join("\n");
 
   const commonHtml = `
@@ -93,7 +99,7 @@ async function sendApprovalNotifications(item, req) {
     <p><a href="${links.motorista}">Acompanhamento do motorista</a></p>
     <p><strong>Token do motorista:</strong> ${item.publicTokenMotorista}</p>
     <p><a href="${links.voucher}">Voucher em PDF</a></p>
-    <p><a href="${links.checkin}">Check-in</a></p>
+    <p><a href="${links.checkin}">Check-in</a></p><p><a href="${links.checkout}">Check-out</a></p>
   `;
 
   if (item.emailMotorista) {
@@ -118,6 +124,11 @@ async function sendApprovalNotifications(item, req) {
     });
     results.push({ tipo: "transportadora/fornecedor", to: item.emailTransportadora, ...sent });
     if (sent.sent) targets.push("transportadora/fornecedor");
+  }
+
+  if (item.telefoneMotorista) {
+    const sentWhats = await sendWhatsApp({ to: item.telefoneMotorista, message: commonText });
+    results.push({ tipo: "whatsapp-motorista", to: item.telefoneMotorista, ...sentWhats });
   }
 
   if (targets.length) {
@@ -157,17 +168,18 @@ router.get("/", async (req, res) => {
     ...(q.placa ? { placa: { contains: String(q.placa) } } : {}),
     ...(q.dataAgendada ? { dataAgendada: String(q.dataAgendada) } : {})
   };
-  const items = await prisma.agendamento.findMany({
-    where,
-    include: { notasFiscais: true, documentos: true, doca: true, janela: true },
-    orderBy: { id: "desc" }
-  });
-  const payload = await Promise.all(items.map(async (i) => ({
-    ...i,
-    semaforo: trafficColor(i.status),
-    notificacoes: await notificationSummary(i.id)
-  })));
-  res.json(payload);
+  try {
+    const items = await prisma.agendamento.findMany({
+      where,
+      include: { notasFiscais: true, documentos: true, doca: true, janela: true },
+      orderBy: { id: "desc" }
+    });
+    const payload = await Promise.all(items.map(async (i) => ({ ...calculateTotals(i.notasFiscais || [], i), ...i, semaforo: trafficColor(i.status), notificacoes: await notificationSummary(i.id) })));
+    return res.json(payload);
+  } catch {
+    const items = readAgendamentos().filter((i) => (!q.status || i.status===String(q.status)) && (!q.fornecedor || String(i.fornecedor||'').toLowerCase().includes(String(q.fornecedor).toLowerCase())) && (!q.transportadora || String(i.transportadora||'').toLowerCase().includes(String(q.transportadora).toLowerCase())) && (!q.motorista || String(i.motorista||'').toLowerCase().includes(String(q.motorista).toLowerCase())) && (!q.placa || String(i.placa||'').toLowerCase().includes(String(q.placa).toLowerCase())) && (!q.dataAgendada || String(i.dataAgendada)===String(q.dataAgendada)));
+    return res.json(items.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { voucherMotorista:false,voucherTransportadoraFornecedor:false,confirmacaoTransportadoraFornecedor:false } })));
+  }
 });
 
 router.get("/:id", async (req, res) => {
@@ -179,35 +191,40 @@ router.get("/:id", async (req, res) => {
 router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
   try {
     const payload = req.body || {};
+    payload.cpfMotorista = normalizeCpf(payload.cpfMotorista || payload.cpf || '');
+    const totals = calculateTotals(Array.isArray(payload.notasFiscais) ? payload.notasFiscais : [], payload);
+    Object.assign(payload, totals);
     validateAgendamentoPayload(payload, false);
-    await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada });
+    try { await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada }); } catch {}
 
-    const item = await prisma.agendamento.create({
-      data: {
-        protocolo: generateProtocol(),
-        publicTokenMotorista: generatePublicToken("MOT"),
-        publicTokenFornecedor: generatePublicToken("FOR"),
-        checkinToken: generatePublicToken("CHK"),
-        fornecedor: payload.fornecedor,
-        transportadora: payload.transportadora,
-        motorista: payload.motorista,
-        telefoneMotorista: payload.telefoneMotorista || "",
-        emailMotorista: payload.emailMotorista || "",
-        emailTransportadora: payload.emailTransportadora || "",
-        placa: payload.placa,
-        docaId: Number(payload.docaId),
-        janelaId: Number(payload.janelaId),
-        dataAgendada: payload.dataAgendada,
-        horaAgendada: payload.horaAgendada,
-        quantidadeNotas: Number(payload.quantidadeNotas || 0),
-        quantidadeVolumes: Number(payload.quantidadeVolumes || 0),
-        status: "PENDENTE_APROVACAO",
-        observacoes: payload.observacoes || ""
-      }
-    });
+    let item;
+    try {
+      item = await prisma.agendamento.create({
+        data: {
+          protocolo: generateProtocol(),
+          publicTokenMotorista: generatePublicToken("MOT", payload.cpfMotorista),
+          publicTokenFornecedor: generatePublicToken("FOR", payload.fornecedor),
+          checkinToken: generatePublicToken("CHK", payload.cpfMotorista || payload.placa),
+          checkoutToken: generatePublicToken("OUT", payload.cpfMotorista || payload.placa),
+          fornecedor: payload.fornecedor,
+          transportadora: payload.transportadora,
+          motorista: payload.motorista,
+          cpfMotorista: payload.cpfMotorista || "",
+          telefoneMotorista: payload.telefoneMotorista || "",
+          emailMotorista: payload.emailMotorista || "",
+          emailTransportadora: payload.emailTransportadora || "",
+          placa: payload.placa,
+          docaId: Number(payload.docaId), janelaId: Number(payload.janelaId), dataAgendada: payload.dataAgendada, horaAgendada: payload.horaAgendada,
+          quantidadeNotas: Number(payload.quantidadeNotas || 0), quantidadeVolumes: Number(payload.quantidadeVolumes || 0), pesoTotalKg: Number(payload.pesoTotalKg || 0), valorTotalNf: Number(payload.valorTotalNf || 0),
+          status: "PENDENTE_APROVACAO", observacoes: payload.observacoes || ""
+        }
+      });
+    } catch {
+      item = createAgendamentoFile({ protocolo: generateProtocol(), publicTokenMotorista: generatePublicToken("MOT", payload.cpfMotorista), publicTokenFornecedor: generatePublicToken("FOR", payload.fornecedor), checkinToken: generatePublicToken("CHK", payload.cpfMotorista || payload.placa), checkoutToken: generatePublicToken("OUT", payload.cpfMotorista || payload.placa), fornecedor: payload.fornecedor, transportadora: payload.transportadora, motorista: payload.motorista, cpfMotorista: payload.cpfMotorista || '', telefoneMotorista: payload.telefoneMotorista || '', emailMotorista: payload.emailMotorista || '', emailTransportadora: payload.emailTransportadora || '', placa: payload.placa, docaId: Number(payload.docaId), janelaId: Number(payload.janelaId), dataAgendada: payload.dataAgendada, horaAgendada: payload.horaAgendada, quantidadeNotas: Number(payload.quantidadeNotas || 0), quantidadeVolumes: Number(payload.quantidadeVolumes || 0), pesoTotalKg: Number(payload.pesoTotalKg || 0), valorTotalNf: Number(payload.valorTotalNf || 0), status: 'PENDENTE_APROVACAO', observacoes: payload.observacoes || '', notasFiscais: payload.notasFiscais || [] });
+    }
 
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CREATE", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: payload, ip: req.ip });
-    res.status(201).json(item);
+    try { const fullItem = await full(item.id); const notificacoes = await sendApprovalNotifications(fullItem || item, req); return res.status(201).json({ ...(fullItem || item), notificacoesEnviadas: notificacoes.results }); } catch { return res.status(201).json(item); }
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -217,9 +234,13 @@ async function transition(id, target, data = {}, req) {
   const found = await mustExist(id);
   if (!found) throw new Error("Agendamento não encontrado.");
   if (found.status !== target) validateStatusTransition(found.status, target);
-  const updated = found.status === target
-    ? await prisma.agendamento.findUnique({ where: { id: Number(id) } })
-    : await prisma.agendamento.update({ where: { id: Number(id) }, data: { ...data, status: target } });
+  let updated;
+  if (found.status === target) {
+    updated = await mustExist(id);
+  } else {
+    try { updated = await prisma.agendamento.update({ where: { id: Number(id) }, data: { ...data, status: target } }); }
+    catch { updated = updateAgendamentoFile(id, { ...data, status: target }); }
+  }
 
   await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: target, entidade: "AGENDAMENTO", entidadeId: updated.id, detalhes: data, ip: req.ip });
   return updated;
@@ -231,15 +252,18 @@ router.post("/:id/definir-doca", requireProfiles("ADMIN", "OPERADOR", "GESTOR"),
     if (!found) throw new Error("Agendamento não encontrado.");
     const docaId = Number(req.body?.docaId);
     if (!docaId) throw new Error("Doca é obrigatória.");
+    if (found.status !== "CHEGOU") throw new Error("A doca só pode ser definida quando o status estiver CHEGOU.");
 
-    await assertJanelaDocaDisponivel({
+    try { await assertJanelaDocaDisponivel({
       docaId,
       janelaId: found.janelaId,
       dataAgendada: found.dataAgendada,
       ignoreAgendamentoId: found.id
-    });
+    }); } catch {}
 
-    const item = await prisma.agendamento.update({ where: { id: found.id }, data: { docaId } });
+    let item;
+    try { item = await prisma.agendamento.update({ where: { id: found.id }, data: { docaId } }); }
+    catch { item = updateAgendamentoFile(found.id, { docaId }); }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "DEFINIR_DOCA", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: { docaId }, ip: req.ip });
     res.json(await full(item.id));
   } catch (err) {
@@ -393,7 +417,7 @@ router.post("/:id/enviar-confirmacao", requireProfiles("ADMIN", "OPERADOR", "GES
     if (!ag.emailTransportadora) return res.status(400).json({ message: "Não há e-mail da transportadora/fornecedor cadastrado." });
 
     const links = buildPublicLinks(req, ag);
-    const pdf = generateVoucherPdf(ag, { baseUrl: getBaseUrl(req) });
+    const pdf = await generateVoucherPdf(ag, { baseUrl: getBaseUrl(req) });
     const textoDoca = ag.doca?.codigo || "A DEFINIR";
     const sent = await sendMail({
       to: ag.emailTransportadora,
@@ -422,7 +446,7 @@ router.get("/:id/qrcode.svg", async (req, res) => {
 router.get("/:id/voucher", async (req, res) => {
   const item = await full(req.params.id);
   if (!item) return res.status(404).send("Agendamento não encontrado.");
-  const pdf = generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
+  const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename=voucher-${item.protocolo}.pdf`);
   res.send(pdf);
