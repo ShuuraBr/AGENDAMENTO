@@ -8,7 +8,7 @@ import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { calculateTotals, normalizeCpf } from "../utils/agendamento-helpers.js";
 import {
   readJanelas, readDocas, readAgendamentos, readFornecedoresPendentes,
-  createAgendamentoFile, findAgendamentoByTokenFile, findAgendamentoFile, updateAgendamentoFile
+  createAgendamentoFile, findAgendamentoByTokenFile, findAgendamentoFile, updateAgendamentoFile, ensureDocaPadraoFile
 } from "../utils/file-store.js";
 
 const router = express.Router();
@@ -30,8 +30,7 @@ async function getOrCreateDocaPadrao() {
     if (first) return first;
     return prisma.doca.create({ data: { codigo: "A DEFINIR", descricao: "Doca definida pelo operador do recebimento" } });
   } catch {
-    const docas = readDocas();
-    return docas.find((d) => d.codigo === 'A DEFINIR') || docas[0] || { id: 1, codigo: 'A DEFINIR', descricao: 'Doca definida pelo operador do recebimento' };
+    return ensureDocaPadraoFile();
   }
 }
 

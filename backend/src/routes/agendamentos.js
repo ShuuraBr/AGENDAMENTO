@@ -9,7 +9,7 @@ import { qrSvg } from "../utils/qrcode.js";
 import { sendMail } from "../utils/email.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
 import { calculateTotals, normalizeCpf } from "../utils/agendamento-helpers.js";
-import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile } from "../utils/file-store.js";
+import { readAgendamentos, readDocas, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile, ensureDocaPadraoFile } from "../utils/file-store.js";
 import { validateAgendamentoPayload, validateNf, validateStatusTransition, normalizeChaveAcesso } from "../utils/validators.js";
 import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js";
 import { auditLog } from "../utils/audit.js";
@@ -40,6 +40,16 @@ function buildPublicLinks(req, item) {
     checkin: `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`,
     checkout: `${base}/?view=checkout&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkoutToken || "")}`
   };
+}
+
+async function getOrCreateDocaPadrao() {
+  try {
+    const existing = await prisma.doca.findFirst({ where: { codigo: "A DEFINIR" }, orderBy: { id: "asc" } });
+    if (existing) return existing;
+    return await prisma.doca.create({ data: { codigo: "A DEFINIR", descricao: "Doca definida posteriormente no painel de docas" } });
+  } catch {
+    return ensureDocaPadraoFile();
+  }
 }
 
 async function full(id) {
@@ -194,6 +204,11 @@ router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res
     payload.cpfMotorista = normalizeCpf(payload.cpfMotorista || payload.cpf || '');
     const totals = calculateTotals(Array.isArray(payload.notasFiscais) ? payload.notasFiscais : [], payload);
     Object.assign(payload, totals);
+    if (!payload.docaId) {
+      const docaPadrao = await getOrCreateDocaPadrao();
+      payload.docaId = Number(docaPadrao.id);
+      payload.doca = docaPadrao.codigo;
+    }
     validateAgendamentoPayload(payload, false);
     try { await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada }); } catch {}
 
@@ -261,9 +276,10 @@ router.post("/:id/definir-doca", requireProfiles("ADMIN", "OPERADOR", "GESTOR"),
       ignoreAgendamentoId: found.id
     }); } catch {}
 
+    const docaSelecionada = readDocas().find((doca) => Number(doca.id) === Number(docaId));
     let item;
     try { item = await prisma.agendamento.update({ where: { id: found.id }, data: { docaId } }); }
-    catch { item = updateAgendamentoFile(found.id, { docaId }); }
+    catch { item = updateAgendamentoFile(found.id, { docaId, doca: docaSelecionada?.codigo || found.doca || '' }); }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "DEFINIR_DOCA", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: { docaId }, ip: req.ip });
     res.json(await full(item.id));
   } catch (err) {
