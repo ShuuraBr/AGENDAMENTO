@@ -51,8 +51,14 @@ export function readFornecedoresPendentes() { return readJsonFile('fornecedores-
 
 export function enrichAgendamentoRecord(item = {}) {
   const notas = Array.isArray(item.notasFiscais) ? item.notasFiscais : [];
+  const docas = readJsonFile('docas.json', []);
+  const janelas = readJsonFile('janelas.json', []);
+  const docaRelacionada = docas.find((doca) => String(doca.id) === String(item.docaId || item.doca?.id || '')) || null;
+  const janelaRelacionada = janelas.find((janela) => String(janela.id) === String(item.janelaId || item.janela?.id || '')) || null;
   return {
     ...item,
+    doca: typeof item.doca === 'object' && item.doca ? item.doca : (docaRelacionada ? { ...docaRelacionada } : item.doca),
+    janela: typeof item.janela === 'object' && item.janela ? item.janela : (janelaRelacionada ? { ...janelaRelacionada } : item.janela),
     notasFiscais: notas,
     documentos: Array.isArray(item.documentos) ? item.documentos : [],
     ...calculateTotals(notas, item)
