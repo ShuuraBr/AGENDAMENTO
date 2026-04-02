@@ -106,9 +106,11 @@ model Agendamento {
   publicTokenMotorista  String       @unique
   publicTokenFornecedor String       @unique
   checkinToken          String       @unique
+  checkoutToken         String?      @unique
   fornecedor            String
   transportadora        String
   motorista             String
+  cpfMotorista          String?
   telefoneMotorista     String?
   emailMotorista        String?
   emailTransportadora   String?
@@ -119,6 +121,8 @@ model Agendamento {
   horaAgendada          String
   quantidadeNotas       Int          @default(0)
   quantidadeVolumes     Int          @default(0)
+  pesoTotalKg           Float        @default(0)
+  valorTotalNf          Float        @default(0)
   status                String       @default("PENDENTE_APROVACAO")
   observacoes           String?
   motivoReprovacao      String?

@@ -83,13 +83,31 @@ router.post("/solicitacao", async (req, res) => {
     janela ||= readJanelas().find((item) => Number(item.id) === janelaId);
     if (!janela) return res.status(404).json({ message: "Janela não encontrada." });
     const horaAgendada = parseJanelaCodigo(janela.codigo).horaInicio;
-    const agendamentoPayload = { fornecedor: String(payload.fornecedor || "").trim(), transportadora: String(payload.transportadora || "").trim(), motorista: String(payload.motorista || "").trim(), cpfMotorista, telefoneMotorista: String(payload.telefoneMotorista || "").trim(), emailMotorista: String(payload.emailMotorista || "").trim(), emailTransportadora: String(payload.emailTransportadora || "").trim(), placa: String(payload.placa || "").trim().toUpperCase(), dataAgendada: String(payload.dataAgendada || "").trim(), horaAgendada, janelaId, docaId: doca.id, observacoes: String(payload.observacoes || "").trim(), lgpdConsent: Boolean(payload.lgpdConsent), ...totals };
+    const agendamentoPayload = { fornecedor: String(payload.fornecedor || "").trim(), transportadora: String(payload.transportadora || "").trim(), motorista: String(payload.motorista || "").trim(), cpfMotorista, telefoneMotorista: String(payload.telefoneMotorista || "").trim(), emailMotorista: String(payload.emailMotorista || "").trim(), emailTransportadora: String(payload.emailTransportadora || "").trim(), placa: String(payload.placa || "").trim().toUpperCase(), dataAgendada: String(payload.dataAgendada || "").trim(), horaAgendada, janelaId, docaId: doca.id, observacoes: String(payload.observacoes || "").trim(), ...totals };
     validateAgendamentoPayload(agendamentoPayload, true);
 
     try {
       await assertJanelaDocaDisponivel({ docaId: doca.id, janelaId, dataAgendada: agendamentoPayload.dataAgendada });
-      const created = await prisma.agendamento.create({ data: { protocolo: generateProtocol(), publicTokenMotorista: generatePublicToken("MOT", cpfMotorista), publicTokenFornecedor: generatePublicToken("FOR", agendamentoPayload.fornecedor), checkinToken: generatePublicToken("CHK", cpfMotorista || agendamentoPayload.placa), checkoutToken: generatePublicToken("OUT", cpfMotorista || agendamentoPayload.placa), ...agendamentoPayload, status: "PENDENTE_APROVACAO", lgpdConsentAt: new Date() } });
-      if (notas.length) await prisma.notaFiscal.createMany({ data: notas.map((nota) => ({ ...nota, agendamentoId: created.id })) });
+      const created = await prisma.$transaction(async (tx) => {
+        const agendamento = await tx.agendamento.create({
+          data: {
+            protocolo: generateProtocol(),
+            publicTokenMotorista: generatePublicToken("MOT", cpfMotorista),
+            publicTokenFornecedor: generatePublicToken("FOR", agendamentoPayload.fornecedor),
+            checkinToken: generatePublicToken("CHK", cpfMotorista || agendamentoPayload.placa),
+            checkoutToken: generatePublicToken("OUT", cpfMotorista || agendamentoPayload.placa),
+            ...agendamentoPayload,
+            status: "PENDENTE_APROVACAO",
+            lgpdConsentAt: new Date()
+          }
+        });
+        if (notas.length) {
+          await tx.notaFiscal.createMany({
+            data: notas.map((nota) => ({ ...nota, agendamentoId: agendamento.id }))
+          });
+        }
+        return agendamento;
+      });
       const full = await prisma.agendamento.findUnique({ where: { id: created.id }, include: { notasFiscais: true, doca: true, janela: true, documentos: true } });
       const links = buildLinks(req, full);
       return res.status(201).json({ ok: true, id: full.id, protocolo: full.protocolo, horaAgendada, doca: full.doca?.codigo || "A DEFINIR", linkMotorista: links.motorista, linkFornecedor: links.consulta, voucher: links.voucher, tokenMotorista: full.publicTokenMotorista, tokenConsulta: full.publicTokenFornecedor, tokenCheckout: full.checkoutToken });
