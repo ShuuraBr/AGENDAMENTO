@@ -6,6 +6,11 @@ import { calculateTotals } from './agendamento-helpers.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const dataDir = path.resolve(__dirname, '../../data');
+const DOCA_OCCUPYING_STATUSES = ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"];
+
+function occupiesDoca(status) {
+  return DOCA_OCCUPYING_STATUSES.includes(String(status || ""));
+}
 
 function filePath(name) {
   return path.join(dataDir, name);

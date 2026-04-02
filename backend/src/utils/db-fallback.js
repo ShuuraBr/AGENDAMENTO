@@ -125,3 +125,68 @@ export async function fetchAgendamentosRaw(filters = {}) {
     documentos: []
   }));
 }
+
+
+function occupiesDocaStatus(status) {
+  return ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"].includes(String(status || ""));
+}
+
+function queuePriority(status) {
+  const map = { CHEGOU: 1, EM_DESCARGA: 2, APROVADO: 3, PENDENTE_APROVACAO: 4 };
+  return map[String(status || "")] || 99;
+}
+
+function trafficColor(status) {
+  if (["EM_DESCARGA", "CHEGOU"].includes(String(status || ""))) return "VERDE";
+  if (["APROVADO", "PENDENTE_APROVACAO"].includes(String(status || ""))) return "AMARELO";
+  return "VERMELHO";
+}
+
+export async function fetchDocaPainelRaw(dataAgendada = null) {
+  const client = await getPrismaClient();
+  if (!client) throw new Error("Prisma client indisponível.");
+
+  const [agTable, docaTable] = await Promise.all([
+    resolveTableName(["Agendamento", "agendamento", "agendamentos"]),
+    resolveTableName(["Doca", "doca", "docas"])
+  ]);
+
+  const where = [];
+  const args = [];
+  if (dataAgendada) {
+    where.push(`a.${qid("dataAgendada")} = ?`);
+    args.push(String(dataAgendada));
+  }
+
+  const [docas, agendamentos] = await Promise.all([
+    client.$queryRawUnsafe(`SELECT id, codigo, descricao FROM ${qid(docaTable)} ORDER BY codigo ASC`),
+    client.$queryRawUnsafe(`
+      SELECT a.id, a.protocolo, a.status, a.motorista, a.placa, a.fornecedor, a.transportadora, a.horaAgendada, a.docaId, a.janelaId, a.dataAgendada
+      FROM ${qid(agTable)} a
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY a.horaAgendada ASC, a.id ASC
+    `, ...args)
+  ]);
+
+  return docas.map((doca) => {
+    const fila = agendamentos
+      .filter((a) => Number(a.docaId) === Number(doca.id) && occupiesDocaStatus(a.status))
+      .sort((a, b) => {
+        const pa = queuePriority(a.status);
+        const pb = queuePriority(b.status);
+        if (pa !== pb) return pa - pb;
+        return String(a.horaAgendada || "").localeCompare(String(b.horaAgendada || ""));
+      });
+
+    const ativo = fila.find((a) => ["CHEGOU", "EM_DESCARGA"].includes(String(a.status || ""))) || fila[0] || null;
+
+    return {
+      docaId: doca.id,
+      codigo: doca.codigo,
+      descricao: doca.descricao || "",
+      ocupacaoAtual: ativo ? ativo.status : "LIVRE",
+      semaforo: ativo ? trafficColor(ativo.status) : "VERDE",
+      fila
+    };
+  });
+}

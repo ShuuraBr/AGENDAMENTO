@@ -88,6 +88,64 @@ async function safeNotificationSummary(agendamentoId) {
   }
 }
 
+async function createAgendamentoInDatabase(payload) {
+  const notas = Array.isArray(payload.notasFiscais) ? payload.notasFiscais : [];
+  const protocol = generateProtocol();
+  const publicTokenMotorista = generatePublicToken("MOT", payload.cpfMotorista);
+  const publicTokenFornecedor = generatePublicToken("FOR", payload.fornecedor);
+  const checkinToken = generatePublicToken("CHK", payload.cpfMotorista || payload.placa);
+  const checkoutToken = generatePublicToken("OUT", payload.cpfMotorista || payload.placa);
+
+  const item = await prisma.$transaction(async (tx) => {
+    const created = await tx.agendamento.create({
+      data: {
+        protocolo: protocol,
+        publicTokenMotorista,
+        publicTokenFornecedor,
+        checkinToken,
+        checkoutToken,
+        fornecedor: payload.fornecedor,
+        transportadora: payload.transportadora,
+        motorista: payload.motorista,
+        cpfMotorista: payload.cpfMotorista || "",
+        telefoneMotorista: payload.telefoneMotorista || "",
+        emailMotorista: payload.emailMotorista || "",
+        emailTransportadora: payload.emailTransportadora || "",
+        placa: payload.placa,
+        docaId: Number(payload.docaId),
+        janelaId: Number(payload.janelaId),
+        dataAgendada: payload.dataAgendada,
+        horaAgendada: payload.horaAgendada,
+        quantidadeNotas: Number(payload.quantidadeNotas || 0),
+        quantidadeVolumes: Number(payload.quantidadeVolumes || 0),
+        pesoTotalKg: Number(payload.pesoTotalKg || 0),
+        valorTotalNf: Number(payload.valorTotalNf || 0),
+        status: "PENDENTE_APROVACAO",
+        observacoes: payload.observacoes || ""
+      }
+    });
+
+    if (notas.length) {
+      await tx.notaFiscal.createMany({
+        data: notas.map((nota) => ({
+          agendamentoId: created.id,
+          numeroNf: String(nota?.numeroNf || "").trim(),
+          serie: String(nota?.serie || "").trim(),
+          chaveAcesso: normalizeChaveAcesso(nota?.chaveAcesso || ""),
+          volumes: Number(nota?.volumes || 0),
+          peso: Number(nota?.peso || 0),
+          valorNf: Number(nota?.valorNf || 0),
+          observacao: String(nota?.observacao || "").trim()
+        }))
+      });
+    }
+
+    return created.id;
+  });
+
+  return full(item);
+}
+
 async function sendApprovalNotifications(item, req) {
   const links = buildPublicLinks(req, item);
   const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
@@ -225,45 +283,9 @@ router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res
 
     let item;
     try {
-      item = await prisma.$transaction(async (tx) => {
-        const created = await tx.agendamento.create({
-          data: {
-            protocolo: generateProtocol(),
-            publicTokenMotorista: generatePublicToken("MOT", payload.cpfMotorista),
-            publicTokenFornecedor: generatePublicToken("FOR", payload.fornecedor),
-            checkinToken: generatePublicToken("CHK", payload.cpfMotorista || payload.placa),
-            checkoutToken: generatePublicToken("OUT", payload.cpfMotorista || payload.placa),
-            fornecedor: payload.fornecedor,
-            transportadora: payload.transportadora,
-            motorista: payload.motorista,
-            cpfMotorista: payload.cpfMotorista || "",
-            telefoneMotorista: payload.telefoneMotorista || "",
-            emailMotorista: payload.emailMotorista || "",
-            emailTransportadora: payload.emailTransportadora || "",
-            placa: payload.placa,
-            docaId: Number(payload.docaId), janelaId: Number(payload.janelaId), dataAgendada: payload.dataAgendada, horaAgendada: payload.horaAgendada,
-            quantidadeNotas: Number(payload.quantidadeNotas || 0), quantidadeVolumes: Number(payload.quantidadeVolumes || 0), pesoTotalKg: Number(payload.pesoTotalKg || 0), valorTotalNf: Number(payload.valorTotalNf || 0),
-            status: "PENDENTE_APROVACAO", observacoes: payload.observacoes || ""
-          }
-        });
-        const notas = Array.isArray(payload.notasFiscais) ? payload.notasFiscais : [];
-        if (notas.length) {
-          await tx.notaFiscal.createMany({
-            data: notas.map((nota) => ({
-              agendamentoId: created.id,
-              numeroNf: String(nota?.numeroNf || "").trim(),
-              serie: String(nota?.serie || "").trim(),
-              chaveAcesso: String(nota?.chaveAcesso || "").trim(),
-              volumes: Number(nota?.volumes || 0),
-              peso: Number(nota?.peso || 0),
-              valorNf: Number(nota?.valorNf || 0),
-              observacao: String(nota?.observacao || "").trim()
-            }))
-          });
-        }
-        return created;
-      });
-    } catch {
+      item = await createAgendamentoInDatabase(payload);
+    } catch (dbError) {
+      console.error('Erro ao criar agendamento no banco. Usando fallback em arquivo:', dbError?.message || dbError);
       item = createAgendamentoFile({ protocolo: generateProtocol(), publicTokenMotorista: generatePublicToken("MOT", payload.cpfMotorista), publicTokenFornecedor: generatePublicToken("FOR", payload.fornecedor), checkinToken: generatePublicToken("CHK", payload.cpfMotorista || payload.placa), checkoutToken: generatePublicToken("OUT", payload.cpfMotorista || payload.placa), fornecedor: payload.fornecedor, transportadora: payload.transportadora, motorista: payload.motorista, cpfMotorista: payload.cpfMotorista || '', telefoneMotorista: payload.telefoneMotorista || '', emailMotorista: payload.emailMotorista || '', emailTransportadora: payload.emailTransportadora || '', placa: payload.placa, docaId: Number(payload.docaId), janelaId: Number(payload.janelaId), dataAgendada: payload.dataAgendada, horaAgendada: payload.horaAgendada, quantidadeNotas: Number(payload.quantidadeNotas || 0), quantidadeVolumes: Number(payload.quantidadeVolumes || 0), pesoTotalKg: Number(payload.pesoTotalKg || 0), valorTotalNf: Number(payload.valorTotalNf || 0), status: 'PENDENTE_APROVACAO', observacoes: payload.observacoes || '', notasFiscais: payload.notasFiscais || [] });
     }
 

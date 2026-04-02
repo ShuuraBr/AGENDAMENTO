@@ -69,6 +69,64 @@ router.get("/disponibilidade", async (req, res) => {
 
 router.get("/fornecedores-pendentes", async (_req, res) => { res.json(readFornecedoresPendentes()); });
 
+async function createPublicAgendamentoInDatabase({ agendamentoPayload, notas, cpfMotorista }) {
+  const protocolo = generateProtocol();
+  const publicTokenMotorista = generatePublicToken("MOT", cpfMotorista);
+  const publicTokenFornecedor = generatePublicToken("FOR", agendamentoPayload.fornecedor);
+  const checkinToken = generatePublicToken("CHK", cpfMotorista || agendamentoPayload.placa);
+  const checkoutToken = generatePublicToken("OUT", cpfMotorista || agendamentoPayload.placa);
+
+  const createdId = await prisma.$transaction(async (tx) => {
+    const created = await tx.agendamento.create({
+      data: {
+        protocolo,
+        publicTokenMotorista,
+        publicTokenFornecedor,
+        checkinToken,
+        checkoutToken,
+        fornecedor: agendamentoPayload.fornecedor,
+        transportadora: agendamentoPayload.transportadora,
+        motorista: agendamentoPayload.motorista,
+        cpfMotorista: agendamentoPayload.cpfMotorista || "",
+        telefoneMotorista: agendamentoPayload.telefoneMotorista || "",
+        emailMotorista: agendamentoPayload.emailMotorista || "",
+        emailTransportadora: agendamentoPayload.emailTransportadora || "",
+        placa: agendamentoPayload.placa,
+        dataAgendada: agendamentoPayload.dataAgendada,
+        horaAgendada: agendamentoPayload.horaAgendada,
+        janelaId: Number(agendamentoPayload.janelaId),
+        docaId: Number(agendamentoPayload.docaId),
+        observacoes: agendamentoPayload.observacoes || "",
+        quantidadeNotas: Number(agendamentoPayload.quantidadeNotas || 0),
+        quantidadeVolumes: Number(agendamentoPayload.quantidadeVolumes || 0),
+        pesoTotalKg: Number(agendamentoPayload.pesoTotalKg || 0),
+        valorTotalNf: Number(agendamentoPayload.valorTotalNf || 0),
+        status: "PENDENTE_APROVACAO",
+        lgpdConsentAt: new Date()
+      }
+    });
+
+    if (notas.length) {
+      await tx.notaFiscal.createMany({
+        data: notas.map((nota) => ({
+          agendamentoId: created.id,
+          numeroNf: String(nota?.numeroNf || "").trim(),
+          serie: String(nota?.serie || "").trim(),
+          chaveAcesso: normalizeChaveAcesso(nota?.chaveAcesso || ""),
+          volumes: Number(nota?.volumes || 0),
+          peso: Number(nota?.peso || 0),
+          valorNf: Number(nota?.valorNf || 0),
+          observacao: String(nota?.observacao || "").trim()
+        }))
+      });
+    }
+
+    return created.id;
+  });
+
+  return prisma.agendamento.findUnique({ where: { id: createdId }, include: { notasFiscais: true, doca: true, janela: true, documentos: true } });
+}
+
 router.post("/solicitacao", async (req, res) => {
   try {
     const payload = { ...(req.body || {}) };
@@ -83,32 +141,12 @@ router.post("/solicitacao", async (req, res) => {
     janela ||= readJanelas().find((item) => Number(item.id) === janelaId);
     if (!janela) return res.status(404).json({ message: "Janela não encontrada." });
     const horaAgendada = parseJanelaCodigo(janela.codigo).horaInicio;
-    const agendamentoPayload = { fornecedor: String(payload.fornecedor || "").trim(), transportadora: String(payload.transportadora || "").trim(), motorista: String(payload.motorista || "").trim(), cpfMotorista, telefoneMotorista: String(payload.telefoneMotorista || "").trim(), emailMotorista: String(payload.emailMotorista || "").trim(), emailTransportadora: String(payload.emailTransportadora || "").trim(), placa: String(payload.placa || "").trim().toUpperCase(), dataAgendada: String(payload.dataAgendada || "").trim(), horaAgendada, janelaId, docaId: doca.id, observacoes: String(payload.observacoes || "").trim(), ...totals };
+    const agendamentoPayload = { fornecedor: String(payload.fornecedor || "").trim(), transportadora: String(payload.transportadora || "").trim(), motorista: String(payload.motorista || "").trim(), cpfMotorista, telefoneMotorista: String(payload.telefoneMotorista || "").trim(), emailMotorista: String(payload.emailMotorista || "").trim(), emailTransportadora: String(payload.emailTransportadora || "").trim(), placa: String(payload.placa || "").trim().toUpperCase(), dataAgendada: String(payload.dataAgendada || "").trim(), horaAgendada, janelaId, docaId: doca.id, observacoes: String(payload.observacoes || "").trim(), lgpdConsent: Boolean(payload.lgpdConsent), ...totals };
     validateAgendamentoPayload(agendamentoPayload, true);
 
     try {
       await assertJanelaDocaDisponivel({ docaId: doca.id, janelaId, dataAgendada: agendamentoPayload.dataAgendada });
-      const created = await prisma.$transaction(async (tx) => {
-        const agendamento = await tx.agendamento.create({
-          data: {
-            protocolo: generateProtocol(),
-            publicTokenMotorista: generatePublicToken("MOT", cpfMotorista),
-            publicTokenFornecedor: generatePublicToken("FOR", agendamentoPayload.fornecedor),
-            checkinToken: generatePublicToken("CHK", cpfMotorista || agendamentoPayload.placa),
-            checkoutToken: generatePublicToken("OUT", cpfMotorista || agendamentoPayload.placa),
-            ...agendamentoPayload,
-            status: "PENDENTE_APROVACAO",
-            lgpdConsentAt: new Date()
-          }
-        });
-        if (notas.length) {
-          await tx.notaFiscal.createMany({
-            data: notas.map((nota) => ({ ...nota, agendamentoId: agendamento.id }))
-          });
-        }
-        return agendamento;
-      });
-      const full = await prisma.agendamento.findUnique({ where: { id: created.id }, include: { notasFiscais: true, doca: true, janela: true, documentos: true } });
+      const full = await createPublicAgendamentoInDatabase({ agendamentoPayload, notas, cpfMotorista });
       const links = buildLinks(req, full);
       return res.status(201).json({ ok: true, id: full.id, protocolo: full.protocolo, horaAgendada, doca: full.doca?.codigo || "A DEFINIR", linkMotorista: links.motorista, linkFornecedor: links.consulta, voucher: links.voucher, tokenMotorista: full.publicTokenMotorista, tokenConsulta: full.publicTokenFornecedor, tokenCheckout: full.checkoutToken });
     } catch (dbErr) {
