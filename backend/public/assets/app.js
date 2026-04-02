@@ -116,6 +116,99 @@
     return `${d}/${m}/${y}`;
   }
 
+  function normalizeDateToIso(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+    return raw;
+  }
+
+  function formatIntegerBR(value) {
+    const n = Number(value || 0);
+    return Number.isFinite(n) ? n.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) : '0';
+  }
+
+  function formatDecimalBR(value, decimals = 3) {
+    const n = Number(value || 0);
+    return Number.isFinite(n)
+      ? n.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+      : Number(0).toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  }
+
+  function parseNumberBR(value) {
+    if (typeof value === 'number') return value;
+    const raw = String(value || '').trim();
+    if (!raw) return 0;
+    const normalized = raw.replace(/\./g, '').replace(',', '.');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function formatCpf(value) {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 11);
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+    if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+  }
+
+  function formatPhone(value) {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 11);
+    if (digits.length <= 2) return digits ? `(${digits}` : '';
+    if (digits.length <= 6) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
+    if (digits.length <= 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+    return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  }
+
+  function formatHour(value) {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 4);
+    if (digits.length <= 2) return digits;
+    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+  }
+
+  function formatDateInputBR(value) {
+    const digits = String(value || '').replace(/\D/g, '').slice(0, 8);
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+  }
+
+  function applyInputMasks(root = document) {
+    root.querySelectorAll('input[name="cpfMotorista"]').forEach((input) => {
+      input.addEventListener('input', () => { input.value = formatCpf(input.value); });
+      input.value = formatCpf(input.value);
+    });
+
+    root.querySelectorAll('input[name="telefoneMotorista"], input[name="telefone"]').forEach((input) => {
+      input.addEventListener('input', () => { input.value = formatPhone(input.value); });
+      input.value = formatPhone(input.value);
+    });
+
+    root.querySelectorAll('input[name="horaAgendada"]').forEach((input) => {
+      input.addEventListener('input', () => { input.value = formatHour(input.value); });
+      input.value = formatHour(input.value);
+    });
+
+    root.querySelectorAll('input[name="dataAgendada"]').forEach((input) => {
+      if (input.type === 'text') {
+        input.addEventListener('input', () => { input.value = formatDateInputBR(input.value); });
+        input.value = input.value ? formatDateInputBR(input.value) : formatDateBR(new Date().toISOString().slice(0, 10));
+      }
+    });
+  }
+
+  function renderNotaSerieList(item) {
+    const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : Array.isArray(item?.notas) ? item.notas : [];
+    if (!notas.length) return `<span>${escapeHtml(formatIntegerBR(item?.quantidadeNotas ?? 0))}</span>`;
+    return `<div class="nf-series-list">${notas.slice(0, 3).map((nota) => {
+      const numero = `NF ${String(nota?.numeroNf || '-').trim() || '-'}`;
+      const serie = `Série ${String(nota?.serie || '-').trim() || '-'}`;
+      return `<span class="nf-series-item">${escapeHtml(`${numero} • ${serie}`)}</span>`;
+    }).join('')}${notas.length > 3 ? `<span class="nf-series-item">${escapeHtml(`+${notas.length - 3} NF`)}</span>` : ''}</div>`;
+  }
+
   function statusLabel(status) {
     return String(status || "").replaceAll("_", " ");
   }
@@ -126,7 +219,7 @@
 
   function renderNotasTable(notas) {
     if (!Array.isArray(notas) || !notas.length) return '<p class="hint">Sem notas fiscais cadastradas.</p>';
-    return `<table class="table"><thead><tr><th>Número NF</th><th>Série</th><th>Chave</th><th>Volumes</th></tr></thead><tbody>${notas.map((nota) => `<tr><td>${escapeHtml(nota.numeroNf || "-")}</td><td>${escapeHtml(nota.serie || "-")}</td><td>${escapeHtml(nota.chaveAcesso || "-")}</td><td>${escapeHtml(nota.volumes ?? 0)}</td></tr>`).join("")}</tbody></table>`;
+    return `<table class="table"><thead><tr><th>Número NF</th><th>Série</th><th>Chave</th><th>Volumes</th></tr></thead><tbody>${notas.map((nota) => `<tr><td>${escapeHtml(nota.numeroNf || "-")}</td><td>${escapeHtml(nota.serie || "-")}</td><td>${escapeHtml(nota.chaveAcesso || "-")}</td><td>${escapeHtml(formatDecimalBR(nota.volumes ?? 0, 3))}</td></tr>`).join("")}</tbody></table>`;
   }
 
   function normalizePendingFornecedor(item = {}) {
@@ -215,11 +308,11 @@
             <div><span>Motorista</span><strong>${escapeHtml(data.motorista || "-")}</strong></div>
             <div><span>Placa</span><strong>${escapeHtml(data.placa || "-")}</strong></div>
             <div><span>Data</span><strong>${escapeHtml(formatDateBR(data.dataAgendada) || "-")}</strong></div>
-            <div><span>Hora</span><strong>${escapeHtml(data.horaAgendada || "-")}</strong></div>
+            <div><span>Hora</span><strong>${escapeHtml(formatHour(data.horaAgendada) || "-")}</strong></div>
             <div><span>Doca</span><strong>${escapeHtml(data.doca || "A DEFINIR")}</strong></div>
             <div><span>Janela</span><strong>${escapeHtml(data.janela || "-")}</strong></div>
-            <div><span>Volumes</span><strong>${escapeHtml(data.quantidadeVolumes ?? 0)}</strong></div>
-            <div><span>Notas</span><strong>${escapeHtml(data.quantidadeNotas ?? 0)}</strong></div>
+            <div><span>Volumes</span><strong>${escapeHtml(formatDecimalBR(data.quantidadeVolumes ?? 0, 3))}</strong></div>
+            <div><span>Notas</span><strong>${escapeHtml(formatIntegerBR(data.quantidadeNotas ?? 0))}</strong></div>
             ${mode === "motorista" ? `<div><span>Token do motorista</span><strong>${escapeHtml(data.publicTokenMotorista || "-")}</strong></div>` : `<div><span>Token de consulta</span><strong>${escapeHtml(data.publicTokenFornecedor || "-")}</strong></div>`}
             <div><span>Check-in</span><strong>${escapeHtml(data.checkinToken || "-")}</strong></div>
           </div>
@@ -371,10 +464,10 @@
     const totalValor = notas.reduce((acc, item) => acc + Number(item.valorNf || 0), 0);
     const form = byId("fornecedorForm");
     if (!form) return;
-    form.querySelector('[name="quantidadeNotas"]').value = totalNotas;
-    form.querySelector('[name="quantidadeVolumes"]').value = totalVolumes;
-    form.querySelector('[name="pesoTotalKg"]').value = totalPeso.toFixed(3);
-    form.querySelector('[name="valorTotalNf"]').value = totalValor.toFixed(2);
+    form.querySelector('[name="quantidadeNotas"]').value = formatIntegerBR(totalNotas);
+    form.querySelector('[name="quantidadeVolumes"]').value = formatDecimalBR(totalVolumes, 3);
+    form.querySelector('[name="pesoTotalKg"]').value = formatDecimalBR(totalPeso, 3);
+    form.querySelector('[name="valorTotalNf"]').value = formatDecimalBR(totalValor, 2);
   }
 
   async function loadFornecedoresPendentes() {
@@ -501,10 +594,10 @@
     const totalPeso = notas.reduce((acc, nota) => acc + Number(nota.peso || 0), 0);
     const totalValor = notas.reduce((acc, nota) => acc + Number(nota.valorNf || 0), 0);
     const setValue = (id, value) => { const el = byId(id); if (el) el.value = value; };
-    setValue('internalQuantidadeNotas', notas.length);
-    setValue('internalQuantidadeVolumes', totalVolumes.toFixed(3));
-    setValue('internalPesoTotalKg', totalPeso.toFixed(3));
-    setValue('internalValorTotalNf', totalValor.toFixed(2));
+    setValue('internalQuantidadeNotas', formatIntegerBR(notas.length));
+    setValue('internalQuantidadeVolumes', formatDecimalBR(totalVolumes, 3));
+    setValue('internalPesoTotalKg', formatDecimalBR(totalPeso, 3));
+    setValue('internalValorTotalNf', formatDecimalBR(totalValor, 2));
   }
 
   function renderPendingNotasInterno() {
@@ -517,25 +610,22 @@
       updateInternalTotals();
       return;
     }
-innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
+
+    wrap.innerHTML = `<div class="pending-notas-toolbar"><button type="button" class="btn-secondary" id="btnSelectAllPendingNotas">Selecionar todos</button></div><div class="pending-notas-grid">${notas.map((nota, idx) => `
       <div class="pending-nota-item">
         <label class="pending-nota-card">
           <div class="pending-nota-check">
             <input type="checkbox" data-internal-nf="${idx}" checked />
-            <span>Selecionar NF</span>
+            <span>${escapeHtml(`NF ${nota.numeroNf || '-'} • Série ${nota.serie || '-'}`)}</span>
           </div>
           <div class="pending-nota-fields">
-            <div class="pending-nota-field pending-nota-field-full">
-              <span class="pending-nota-title">Nota fiscal</span>
-              <strong>NF ${escapeHtml(nota.numeroNf || '-')}</strong>
-            </div>
             <div class="pending-nota-field">
               <span class="pending-nota-title">Volumes</span>
-              <strong>${escapeHtml(Number(nota.volumes || 0).toFixed(3))}</strong>
+              <strong>${escapeHtml(formatDecimalBR(nota.volumes || 0, 3))}</strong>
             </div>
             <div class="pending-nota-field">
               <span class="pending-nota-title">Peso</span>
-              <strong>${escapeHtml(Number(nota.peso || 0).toFixed(3))} kg</strong>
+              <strong>${escapeHtml(formatDecimalBR(nota.peso || 0, 3))} kg</strong>
             </div>
             <div class="pending-nota-field pending-nota-field-full">
               <span class="pending-nota-title">Valor da nota</span>
@@ -544,14 +634,22 @@ innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
           </div>
         </label>
       </div>`).join('')}</div>`;
+
     const sync = () => {
       state.internalSelectedNotas = notas.filter((_nota, index) => wrap.querySelector(`[data-internal-nf="${index}"]`)?.checked);
       updateInternalTotals();
     };
+
     wrap.querySelectorAll('[data-internal-nf]').forEach((el) => el.addEventListener('change', sync));
+    wrap.querySelector('#btnSelectAllPendingNotas')?.addEventListener('click', () => {
+      wrap.querySelectorAll('[data-internal-nf]').forEach((el) => { el.checked = true; });
+      sync();
+    });
+
     state.internalSelectedNotas = [...notas];
     updateInternalTotals();
   }
+
 
   function applyFornecedorPendenteInterno(item) {
     state.internalPendingFornecedor = item || null;
@@ -626,7 +724,7 @@ innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
             <th>Janela</th>
             <th>Data</th>
             <th>Hora</th>
-            <th>NF</th>
+            <th>NF / Série</th>
             <th>Volumes</th>
             <th>Peso kg</th>
             <th>Valor total</th>
@@ -645,11 +743,11 @@ innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
               <td>${escapeHtml(item.placa || '')}</td>
               <td>${escapeHtml(currentDocaLabel(item))}</td>
               <td>${escapeHtml(item.janela?.codigo || item.janela || '')}</td>
-              <td>${escapeHtml(item.dataAgendada || '')}</td>
-              <td>${escapeHtml(item.horaAgendada || '')}</td>
-              <td>${escapeHtml(item.quantidadeNotas ?? 0)}</td>
-              <td>${escapeHtml(Number(item.quantidadeVolumes || 0).toFixed(3))}</td>
-              <td>${escapeHtml(Number(item.pesoTotalKg || 0).toFixed(3))}</td>
+              <td>${escapeHtml(formatDateBR(item.dataAgendada || '') || '')}</td>
+              <td>${escapeHtml(formatHour(item.horaAgendada || '') || '')}</td>
+              <td class="nf-series-cell">${renderNotaSerieList(item)}</td>
+              <td>${escapeHtml(formatDecimalBR(item.quantidadeVolumes || 0, 3))}</td>
+              <td>${escapeHtml(formatDecimalBR(item.pesoTotalKg || 0, 3))}</td>
               <td>${escapeHtml(Number(item.valorTotalNf || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))}</td>
               ${includeActions ? `<td>
                 <div class="row gap8 wrap action-cell">
@@ -748,7 +846,12 @@ innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
       Object.entries(data.kpis || {}).forEach(([k, v]) => {
         const div = document.createElement("div");
         div.className = "kpi";
-        div.innerHTML = `<strong>${escapeHtml(k)}</strong><span>${escapeHtml(v)}</span>`;
+        const key = String(k || '').toLowerCase();
+        let formatted = v;
+        if (key.includes('valor')) formatted = Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        else if (key.includes('peso') || key.includes('volume')) formatted = formatDecimalBR(v || 0, 3);
+        else if (typeof v === 'number') formatted = formatIntegerBR(v);
+        div.innerHTML = `<strong>${escapeHtml(k)}</strong><span>${escapeHtml(formatted)}</span>`;
         kpis.appendChild(div);
       });
     }
@@ -781,7 +884,7 @@ innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
             return `
               <div class="fila-item">
                 <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
-                <div>${escapeHtml(f.placa)} • ${escapeHtml(f.horaAgendada)} • ${escapeHtml(f.status)}</div>
+                <div>${escapeHtml(f.placa)} • ${escapeHtml(formatHour(f.horaAgendada))} • ${escapeHtml(f.status)}</div>
                 ${needsDoca ? `<div class="warning-box">Selecione a doca para este agendamento.</div><div class="row gap8 wrap mt12"><select data-doca-painel-select="${escapeHtml(f.id)}" class="dock-select">${docaSelectOptions(f.doca?.id || f.docaId || '')}</select><button type="button" data-doca-painel-save="${escapeHtml(f.id)}">Definir doca</button></div>` : ""}
               </div>
             `;
@@ -844,6 +947,7 @@ innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
     byId("cadastroForm").innerHTML = config.fields.map((field) => buildField(field, record ? record[field.name] : "")).join("");
     state.cadastroEditId = record?.id || null;
     byId("cadastroMsg").textContent = state.cadastroEditId ? `Modo edição: ID ${state.cadastroEditId}` : "Modo novo cadastro";
+    applyInputMasks(byId("cadastroForm"));
   }
 
   function getCadastroPayload() {
@@ -974,6 +1078,9 @@ Deseja liberar manualmente a descarga deste veículo?`);
     renderCadastroForm();
     renderPendingNotasInterno();
     byId("loginForm")?.reset();
+    applyInputMasks(document);
+    const internalDateInput = byId("agendamentoForm")?.querySelector('[name="dataAgendada"]');
+    if (internalDateInput && !internalDateInput.value) internalDateInput.value = formatDateBR(new Date().toISOString().slice(0, 10));
 
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.setAttribute("type", "button");
@@ -1040,12 +1147,15 @@ Deseja liberar manualmente a descarga deste veículo?`);
       e.preventDefault();
       try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
+        payload.dataAgendada = normalizeDateToIso(payload.dataAgendada);
+        payload.horaAgendada = formatHour(payload.horaAgendada);
         payload.cpfMotorista = String(payload.cpfMotorista || '').replace(/\D/g, '');
+        payload.telefoneMotorista = String(payload.telefoneMotorista || '').replace(/\D/g, '');
         payload.notasFiscais = selectedInternalNotas();
         payload.quantidadeNotas = Number(payload.notasFiscais.length || 0);
-        payload.quantidadeVolumes = Number(byId('internalQuantidadeVolumes')?.value || 0);
-        payload.pesoTotalKg = Number(byId('internalPesoTotalKg')?.value || 0);
-        payload.valorTotalNf = Number(byId('internalValorTotalNf')?.value || 0);
+        payload.quantidadeVolumes = parseNumberBR(byId('internalQuantidadeVolumes')?.value || 0);
+        payload.pesoTotalKg = parseNumberBR(byId('internalPesoTotalKg')?.value || 0);
+        payload.valorTotalNf = parseNumberBR(byId('internalValorTotalNf')?.value || 0);
         if (!payload.fornecedorPendenteInterno) throw new Error('Selecione o fornecedor pendente.');
         if (!payload.fornecedor) throw new Error('Fornecedor pendente inválido.');
         if (!payload.notasFiscais.length) throw new Error('Selecione ao menos uma NF pendente para o agendamento.');
@@ -1059,7 +1169,9 @@ Deseja liberar manualmente a descarga deste veículo?`);
         const fornecedorField = byId('internalFornecedorNome');
         if (fornecedorField) fornecedorField.value = '';
         renderPendingNotasInterno();
-        document.querySelectorAll('#agendamentoForm input[type="date"]').forEach((el) => { el.value = new Date().toISOString().slice(0, 10); });
+        const dataInput = byId('agendamentoForm')?.querySelector('[name="dataAgendada"]');
+        if (dataInput) dataInput.value = formatDateBR(new Date().toISOString().slice(0, 10));
+        applyInputMasks(byId('agendamentoForm'));
         await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno(), loadFilterOptions()]);
       } catch (err) {
         byId("agendamentoMsg").textContent = err.message;
@@ -1098,6 +1210,10 @@ Deseja liberar manualmente a descarga deste veículo?`);
       e.preventDefault();
       try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
+        payload.cpfMotorista = String(payload.cpfMotorista || '').replace(/\D/g, '');
+        payload.telefoneMotorista = String(payload.telefoneMotorista || '').replace(/\D/g, '');
+        payload.dataAgendada = normalizeDateToIso(payload.dataAgendada);
+        payload.horaAgendada = formatHour(payload.horaAgendada);
         payload.lgpdConsent = !!e.target.querySelector('[name="lgpdConsent"]')?.checked;
         payload.notas = collectNotas();
         updateTotalsFromNotas();

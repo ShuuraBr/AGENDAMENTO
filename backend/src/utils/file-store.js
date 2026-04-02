@@ -47,7 +47,34 @@ export function readTransportadoras() { return readJsonFile('transportadoras.jso
 export function readMotoristas() { return readJsonFile('motoristas.json', []); }
 export function readVeiculos() { return readJsonFile('veiculos.json', []); }
 export function readRegras() { return readJsonFile('regras.json', []); }
-export function readFornecedoresPendentes() { return readJsonFile('fornecedores-pendentes.json', []); }
+function normalizePendingNota(item = {}) {
+  return {
+    ...item,
+    numeroNf: String(item?.numeroNf ?? item?.numero_nf ?? item?.notaFiscal ?? item?.nota_fiscal ?? item?.["Nr. Nota"] ?? item?.["NR NOTA"] ?? item?.["NF"] ?? '').trim(),
+    serie: String(item?.serie ?? item?.serieNf ?? item?.serie_nf ?? item?.["Série"] ?? item?.["Serie"] ?? item?.["SERIE"] ?? '').trim(),
+    chaveAcesso: String(item?.chaveAcesso ?? item?.chave_acesso ?? item?.["Chave de acesso"] ?? '').trim(),
+    volumes: Number(item?.volumes ?? item?.volume ?? item?.["Volumes"] ?? 0),
+    peso: Number(item?.peso ?? item?.["Peso"] ?? 0),
+    valorNf: Number(item?.valorNf ?? item?.valor_nf ?? item?.valor ?? item?.["Valor da nota"] ?? 0),
+    observacao: String(item?.observacao ?? item?.observações ?? item?.["Observação"] ?? '').trim()
+  };
+}
+
+export function readFornecedoresPendentes() {
+  return readJsonFile('fornecedores-pendentes.json', []).map((item) => {
+    const notasRaw = Array.isArray(item?.notas) ? item.notas : Array.isArray(item?.notasFiscais) ? item.notasFiscais : [];
+    const notas = notasRaw.map(normalizePendingNota).filter((nota) => nota.numeroNf || nota.chaveAcesso);
+    return {
+      ...item,
+      notas,
+      notasFiscais: notas,
+      quantidadeNotas: Number(item?.quantidadeNotas ?? notas.length ?? 0),
+      quantidadeVolumes: Number(item?.quantidadeVolumes ?? notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0)),
+      pesoTotalKg: Number(item?.pesoTotalKg ?? notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0)),
+      valorTotalNf: Number(item?.valorTotalNf ?? notas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0))
+    };
+  });
+}
 
 export function enrichAgendamentoRecord(item = {}) {
   const notas = Array.isArray(item.notasFiscais) ? item.notasFiscais : [];

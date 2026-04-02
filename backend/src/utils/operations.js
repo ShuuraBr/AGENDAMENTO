@@ -1,4 +1,5 @@
 import { prisma } from "./prisma.js";
+import { readAgendamentos } from "./file-store.js";
 
 export function queuePriority(status) {
   const map = {
@@ -15,15 +16,28 @@ export function queuePriority(status) {
 }
 
 export async function assertJanelaDocaDisponivel({ docaId, janelaId, dataAgendada, ignoreAgendamentoId = null }) {
-  const conflict = await prisma.agendamento.findFirst({
-    where: {
-      id: ignoreAgendamentoId ? { not: Number(ignoreAgendamentoId) } : undefined,
-      docaId: Number(docaId),
-      janelaId: Number(janelaId),
-      dataAgendada: String(dataAgendada),
-      status: { in: ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"] }
-    }
-  });
+  let conflict = null;
+
+  try {
+    conflict = await prisma.agendamento.findFirst({
+      where: {
+        id: ignoreAgendamentoId ? { not: Number(ignoreAgendamentoId) } : undefined,
+        docaId: Number(docaId),
+        janelaId: Number(janelaId),
+        dataAgendada: String(dataAgendada),
+        status: { in: ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"] }
+      }
+    });
+  } catch {
+    conflict = readAgendamentos().find((item) => {
+      if (ignoreAgendamentoId && Number(item?.id) === Number(ignoreAgendamentoId)) return false;
+      return Number(item?.docaId || item?.doca?.id || 0) === Number(docaId)
+        && Number(item?.janelaId || item?.janela?.id || 0) === Number(janelaId)
+        && String(item?.dataAgendada || '') === String(dataAgendada)
+        && ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"].includes(String(item?.status || ''));
+    }) || null;
+  }
+
   if (conflict) {
     throw new Error(`Conflito de doca/janela. Já existe o agendamento ${conflict.protocolo} ocupando esta posição.`);
   }

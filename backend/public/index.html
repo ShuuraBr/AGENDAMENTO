@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agendamento de Descarga V3.1</title>
-  <link rel="stylesheet" href="/assets/styles22.css" />
+  <link rel="stylesheet" href="/assets/styles23.css" />
   <link rel="icon" href="assets/Favicon.png" type="image">
 </head>
 <body>
@@ -67,8 +67,8 @@
               <label>Fornecedor<input name="fornecedor" value="Fornecedor Externo" /></label>
               <label>Transportadora<input name="transportadora" value="Transportadora Externa" /></label>
               <label>Motorista<input name="motorista" value="Motorista Externo" /></label>
-              <label>CPF do motorista<input name="cpfMotorista" placeholder="Somente números" /></label>
-              <label>Telefone do motorista<input name="telefoneMotorista" value="61999998888" /></label>
+              <label>CPF do motorista<input name="cpfMotorista" type="text" inputmode="numeric" placeholder="000.000.000-00" /></label>
+              <label>Telefone do motorista<input name="telefoneMotorista" type="text" inputmode="numeric" value="(61) 99999-8888" /></label>
               <label>E-mail do motorista<input name="emailMotorista" value="motorista@teste.com" /></label>
               <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@teste.com" /></label>
               <label>Placa<input name="placa" value="DEF4G56" /></label>
@@ -243,16 +243,16 @@
                 <label>Transportadora<input name="transportadora" value="" required /></label>
                 <label>Placa<input name="placa" value="" required /></label>
                 <label>Janela<select name="janelaId" id="internalJanelaSelect" required></select></label>
-                <label>Data<input name="dataAgendada" type="date" required /></label>
-                <label>Hora<input name="horaAgendada" value="" placeholder="08:00" required /></label>
+                <label>Data<input name="dataAgendada" type="text" inputmode="numeric" placeholder="dd/mm/aaaa" required /></label>
+                <label>Hora<input name="horaAgendada" type="text" inputmode="numeric" value="" placeholder="08:00" required /></label>
               </div>
             </div>
             <div class="card inner mt16">
               <h3>Dados do motorista</h3>
               <div class="form-grid operator-grid mt12">
                 <label>Motorista<input name="motorista" value="" required /></label>
-                <label>CPF do motorista<input name="cpfMotorista" value="" placeholder="Somente números" required /></label>
-                <label>Telefone do motorista<input name="telefoneMotorista" value="" required /></label>
+                <label>CPF do motorista<input name="cpfMotorista" type="text" inputmode="numeric" value="" placeholder="000.000.000-00" required /></label>
+                <label>Telefone do motorista<input name="telefoneMotorista" type="text" inputmode="numeric" value="" placeholder="(00) 00000-0000" required /></label>
                 <label>E-mail do motorista<input name="emailMotorista" value="" required /></label>
                 <label>E-mail da transportadora<input name="emailTransportadora" value="" required /></label>
               </div>
@@ -265,10 +265,10 @@
             <div class="card inner mt16">
               <h3>Totais do agendamento</h3>
               <div class="form-grid operator-grid mt12">
-                <label>Quantidade de notas<input name="quantidadeNotas" id="internalQuantidadeNotas" type="number" value="0" readonly required /></label>
-                <label>Quantidade de volumes<input name="quantidadeVolumes" id="internalQuantidadeVolumes" type="number" value="0" step="0.001" readonly required /></label>
-                <label>Peso total (kg)<input name="pesoTotalKg" id="internalPesoTotalKg" type="number" value="0" step="0.001" readonly required /></label>
-                <label>Valor total (R$)<input name="valorTotalNf" id="internalValorTotalNf" type="number" value="0" step="0.01" readonly required /></label>
+                <label>Quantidade de notas<input name="quantidadeNotas" id="internalQuantidadeNotas" type="text" value="0" readonly required /></label>
+                <label>Quantidade de volumes<input name="quantidadeVolumes" id="internalQuantidadeVolumes" type="text" value="0,000" readonly required /></label>
+                <label>Peso total (kg)<input name="pesoTotalKg" id="internalPesoTotalKg" type="text" value="0,000" readonly required /></label>
+                <label>Valor total (R$)<input name="valorTotalNf" id="internalValorTotalNf" type="text" value="0,00" readonly required /></label>
                 <input type="hidden" name="fornecedor" id="internalFornecedorNome" value="" />
                 <label class="form-group-full">Observações<textarea name="observacoes" required></textarea></label>
               </div>
