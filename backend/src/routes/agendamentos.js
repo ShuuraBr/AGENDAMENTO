@@ -43,6 +43,17 @@ function buildPublicLinks(req, item) {
   };
 }
 
+function formatDateBR(value) {
+  if (!value) return "-";
+  const [year, month, day] = String(value).split("-");
+  if (!year || !month || !day) return String(value);
+  return `${day}/${month}/${year}`;
+}
+
+function buildScheduleIntro(item) {
+  return `O agendamento foi efetuado para o dia ${formatDateBR(item.dataAgendada)}, às ${item.horaAgendada || "-"}. Solicitamos chegada com 10 minutos de antecedência.`;
+}
+
 async function full(id) {
   try {
     return await prisma.agendamento.findUnique({ where: { id: Number(id) }, include: { notasFiscais: true, documentos: true, doca: true, janela: true } });
@@ -151,8 +162,10 @@ async function sendApprovalNotifications(item, req) {
   const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
   const results = [];
   const targets = [];
+  const scheduleIntro = buildScheduleIntro(item);
 
   const commonText = [
+    scheduleIntro,
     `Protocolo: ${item.protocolo}`,
     `Consulta do fornecedor/transportadora: ${links.consulta}`,
     `Acompanhamento do motorista: ${links.motorista}`,
@@ -163,12 +176,16 @@ async function sendApprovalNotifications(item, req) {
   ].join("\n");
 
   const commonHtml = `
+    <p>${scheduleIntro}</p>
     <p><strong>Protocolo:</strong> ${item.protocolo}</p>
+    <p><strong>Data:</strong> ${formatDateBR(item.dataAgendada)}</p>
+    <p><strong>Hora:</strong> ${item.horaAgendada || "-"}</p>
     <p><a href="${links.consulta}">Consulta da transportadora/fornecedor</a></p>
     <p><a href="${links.motorista}">Acompanhamento do motorista</a></p>
     <p><strong>Token do motorista:</strong> ${item.publicTokenMotorista}</p>
     <p><a href="${links.voucher}">Voucher em PDF</a></p>
-    <p><a href="${links.checkin}">Check-in</a></p><p><a href="${links.checkout}">Check-out</a></p>
+    <p><a href="${links.checkin}">Check-in</a></p>
+    <p><a href="${links.checkout}">Check-out</a></p>
   `;
 
   if (item.emailMotorista) {
@@ -343,7 +360,7 @@ router.post("/:id/definir-doca", requireProfiles("ADMIN", "OPERADOR", "GESTOR"),
 
 router.post("/:id/aprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
   try {
-    const found = await mustExist(req.params.id);
+    const found = await full(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
 
     const data = {};
@@ -352,8 +369,20 @@ router.post("/:id/aprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), asyn
     if (req.body?.dataAgendada) data.dataAgendada = String(req.body.dataAgendada);
     if (req.body?.horaAgendada) data.horaAgendada = String(req.body.horaAgendada);
 
-    const merged = { ...found, ...data };
-    validateAgendamentoPayload(merged, false);
+    const merged = {
+      ...found,
+      ...data,
+      notasFiscais: Array.isArray(found.notasFiscais) ? found.notasFiscais : []
+    };
+
+    if (!merged.docaId) throw new Error("Doca é obrigatória para aprovação.");
+    if (!merged.janelaId) throw new Error("Janela é obrigatória para aprovação.");
+    if (!merged.dataAgendada) throw new Error("Data agendada é obrigatória para aprovação.");
+    if (!merged.horaAgendada) throw new Error("Hora agendada é obrigatória para aprovação.");
+    if (!Array.isArray(merged.notasFiscais) || !merged.notasFiscais.length) {
+      throw new Error("Selecione ao menos uma NF para o agendamento interno.");
+    }
+
     await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada, ignoreAgendamentoId: found.id });
 
     const updated = await transition(req.params.id, "APROVADO", data, req);
@@ -526,11 +555,15 @@ router.post("/:id/enviar-confirmacao", requireProfiles("ADMIN", "OPERADOR", "GES
     const links = buildPublicLinks(req, ag);
     const pdf = await generateVoucherPdf(ag, { baseUrl: getBaseUrl(req) });
     const textoDoca = ag.doca?.codigo || "A DEFINIR";
+    const scheduleIntro = buildScheduleIntro(ag);
     const sent = await sendMail({
       to: ag.emailTransportadora,
       subject: `Confirmação do agendamento ${ag.protocolo}`,
-      text: `Agendamento confirmado. Protocolo ${ag.protocolo}. Data ${ag.dataAgendada} às ${ag.horaAgendada}. Doca ${textoDoca}. Consulta: ${links.consulta}`,
-      html: `<p>Agendamento confirmado.</p><p><strong>Protocolo:</strong> ${ag.protocolo}</p><p><strong>Data:</strong> ${ag.dataAgendada}</p><p><strong>Hora:</strong> ${ag.horaAgendada}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><a href="${links.consulta}">Consulta do agendamento</a></p>`,
+      text: `${scheduleIntro}
+Protocolo: ${ag.protocolo}
+Doca: ${textoDoca}
+Consulta: ${links.consulta}`,
+      html: `<p>${scheduleIntro}</p><p><strong>Protocolo:</strong> ${ag.protocolo}</p><p><strong>Data:</strong> ${formatDateBR(ag.dataAgendada)}</p><p><strong>Hora:</strong> ${ag.horaAgendada}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><a href="${links.consulta}">Consulta do agendamento</a></p>`,
       attachments: [{ filename: `voucher-${ag.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
     });
 
