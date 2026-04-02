@@ -268,18 +268,22 @@ router.post("/:id/definir-doca", requireProfiles("ADMIN", "OPERADOR", "GESTOR"),
     if (!found) throw new Error("Agendamento não encontrado.");
     const docaId = Number(req.body?.docaId);
     if (!docaId) throw new Error("Doca é obrigatória.");
-    if (found.status !== "CHEGOU") throw new Error("A doca só pode ser definida quando o status estiver CHEGOU.");
+    if (["FINALIZADO", "CANCELADO", "REPROVADO", "NO_SHOW"].includes(found.status)) {
+      throw new Error("Não é possível alterar a doca para este status.");
+    }
 
-    try { await assertJanelaDocaDisponivel({
-      docaId,
-      janelaId: found.janelaId,
-      dataAgendada: found.dataAgendada,
-      ignoreAgendamentoId: found.id
-    }); } catch {}
+    try {
+      await assertJanelaDocaDisponivel({
+        docaId,
+        janelaId: found.janelaId,
+        dataAgendada: found.dataAgendada,
+        ignoreAgendamentoId: found.id
+      });
+    } catch {}
 
     let item;
     try { item = await prisma.agendamento.update({ where: { id: found.id }, data: { docaId } }); }
-    catch { item = updateAgendamentoFile(found.id, { docaId }); }
+    catch { item = updateAgendamentoFile(found.id, { docaId, doca: undefined }); }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "DEFINIR_DOCA", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: { docaId }, ip: req.ip });
     res.json(await full(item.id));
   } catch (err) {

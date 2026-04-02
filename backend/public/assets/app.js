@@ -7,11 +7,13 @@
     nfRows: 1,
     nfDrafts: [{ numeroNf: "", serie: "", chaveAcesso: "", volumes: "0", peso: "0", valorNf: "0", observacao: "" }],
     disponibilidadePublica: [],
+    pendingFornecedores: [],
     cameraStream: null,
     barcodeDetector: null,
     scanning: false,
     internalPendingFornecedor: null,
-    internalSelectedNotas: []
+    internalSelectedNotas: [],
+    docaOptions: []
   };
 
   const CADASTRO_CONFIG = {
@@ -125,6 +127,75 @@
   function renderNotasTable(notas) {
     if (!Array.isArray(notas) || !notas.length) return '<p class="hint">Sem notas fiscais cadastradas.</p>';
     return `<table class="table"><thead><tr><th>Número NF</th><th>Série</th><th>Chave</th><th>Volumes</th></tr></thead><tbody>${notas.map((nota) => `<tr><td>${escapeHtml(nota.numeroNf || "-")}</td><td>${escapeHtml(nota.serie || "-")}</td><td>${escapeHtml(nota.chaveAcesso || "-")}</td><td>${escapeHtml(nota.volumes ?? 0)}</td></tr>`).join("")}</tbody></table>`;
+  }
+
+  function normalizePendingFornecedor(item = {}) {
+    const notas = Array.isArray(item.notasFiscais) ? item.notasFiscais : Array.isArray(item.notas) ? item.notas : [];
+    return {
+      ...item,
+      notas,
+      notasFiscais: notas,
+      quantidadeNotas: Number(item.quantidadeNotas ?? notas.length ?? 0),
+      quantidadeVolumes: Number(item.quantidadeVolumes ?? notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0)),
+      pesoTotalKg: Number(item.pesoTotalKg ?? notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0)),
+      valorTotalNf: Number(item.valorTotalNf ?? notas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0))
+    };
+  }
+
+  function getPendingFornecedorById(id) {
+    return (state.pendingFornecedores || []).find((item) => String(item.id) === String(id)) || null;
+  }
+
+  function populateSelectOptions(select, items, placeholder, formatter = (value) => value, selectedValue = "") {
+    if (!select) return;
+    const current = selectedValue || select.value || "";
+    const unique = [...new Set((items || []).map((item) => String(item || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` + unique.map((value) => `<option value="${escapeHtml(value)}" ${String(current) === String(value) ? "selected" : ""}>${escapeHtml(formatter(value))}</option>`).join("");
+  }
+
+  function currentDocaLabel(item) {
+    return item?.doca?.codigo || item?.doca || "A DEFINIR";
+  }
+
+  function docaSelectOptions(selectedValue = "") {
+    return `<option value="">Selecione a doca</option>` + (state.docaOptions || []).map((doca) => {
+      const value = String(doca.id || "");
+      const selected = String(selectedValue) === value || String(selectedValue) === String(doca.codigo || "");
+      return `<option value="${escapeHtml(value)}" ${selected ? "selected" : ""}>${escapeHtml(doca.codigo || `Doca ${value}`)}</option>`;
+    }).join("");
+  }
+
+  function normalizeOperationToken(rawValue) {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return "";
+    try {
+      const url = raw.startsWith("http://") || raw.startsWith("https://") ? new URL(raw) : new URL(raw, window.location.origin);
+      const token = url.searchParams.get("token");
+      if (token) return token;
+    } catch {}
+    const match = raw.match(/(?:^|[?&])token=([^&#]+)/i);
+    if (match?.[1]) {
+      try { return decodeURIComponent(match[1]); } catch { return match[1]; }
+    }
+    return raw;
+  }
+
+  function applyCheckinRouteContext({ autoValidate = false } = {}) {
+    const params = new URLSearchParams(location.search);
+    const view = params.get("view");
+    const rawToken = params.get("token") || "";
+    if (!["checkin", "checkout"].includes(view) || !rawToken) return false;
+    const token = normalizeOperationToken(rawToken);
+    const form = byId("checkinForm");
+    const tokenInput = form?.querySelector('[name="token"]');
+    const modoInput = form?.querySelector('[name="modo"]');
+    if (tokenInput) tokenInput.value = token;
+    if (modoInput) modoInput.value = view === "checkout" ? "checkout" : "checkin";
+    showView("checkin");
+    if (autoValidate && token) {
+      validateCheckin(token).catch(() => {});
+    }
+    return true;
   }
 
   function renderPublicResult(data, mode = "consulta") {
@@ -309,21 +380,31 @@
   async function loadFornecedoresPendentes() {
     try {
       const items = await api('/api/public/fornecedores-pendentes');
+      state.pendingFornecedores = Array.isArray(items) ? items.map(normalizePendingFornecedor) : [];
       const select = byId('fornecedorPendenteSelect');
       if (!select) return;
-      select.innerHTML = `<option value="">Selecionar manualmente</option>` + (Array.isArray(items) ? items.map((item) => `<option value="${escapeHtml(JSON.stringify(item).replaceAll('"','&quot;'))}">${escapeHtml(item.fornecedor || item.nome || '-')}</option>`).join('') : '');
-      select.addEventListener('change', () => {
-        if (!select.value) return;
-        const data = JSON.parse(select.value);
+      select.innerHTML = `<option value="">Selecionar manualmente</option>` + state.pendingFornecedores.map((item) => `<option value="${escapeHtml(item.id || '')}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('');
+      select.onchange = () => {
+        const data = getPendingFornecedorById(select.value);
         const form = byId('fornecedorForm');
-        ['fornecedor','transportadora','placa'].forEach((field) => { if (data[field] && form.querySelector(`[name="${field}"]`)) form.querySelector(`[name="${field}"]`).value = data[field]; });
-        if (Array.isArray(data.notasFiscais) && data.notasFiscais.length) {
-          state.nfRows = data.notasFiscais.length;
-          state.nfDrafts = data.notasFiscais.map((n) => ({ numeroNf: n.numeroNf || '', serie: n.serie || '', chaveAcesso: n.chaveAcesso || '', volumes: String(n.volumes || 0), peso: String(n.peso || 0), valorNf: String(n.valorNf || 0), observacao: n.observacao || '' }));
+        if (!data || !form) {
+          state.nfRows = 1;
+          state.nfDrafts = [{ numeroNf: '', serie: '', chaveAcesso: '', volumes: '0', peso: '0', valorNf: '0', observacao: '' }];
           renderNfRows();
           updateTotalsFromNotas();
+          return;
         }
-      });
+        ['fornecedor', 'transportadora', 'placa'].forEach((field) => {
+          if (data[field] && form.querySelector(`[name="${field}"]`)) form.querySelector(`[name="${field}"]`).value = data[field];
+        });
+        const notas = Array.isArray(data.notas) ? data.notas : [];
+        state.nfRows = Math.max(notas.length, 1);
+        state.nfDrafts = notas.length
+          ? notas.map((n) => ({ numeroNf: n.numeroNf || '', serie: n.serie || '', chaveAcesso: n.chaveAcesso || '', volumes: String(n.volumes || 0), peso: String(n.peso || 0), valorNf: String(n.valorNf || 0), observacao: n.observacao || '' }))
+          : [{ numeroNf: '', serie: '', chaveAcesso: '', volumes: '0', peso: '0', valorNf: '0', observacao: '' }];
+        renderNfRows();
+        updateTotalsFromNotas();
+      };
     } catch {}
   }
 
@@ -345,8 +426,9 @@
             const codes = await state.barcodeDetector.detect(video);
             if (codes[0]?.rawValue) {
               const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
-              if (tokenInput) tokenInput.value = codes[0].rawValue;
-              await validateCheckin(codes[0].rawValue);
+              const normalizedToken = normalizeOperationToken(codes[0].rawValue);
+              if (tokenInput) tokenInput.value = normalizedToken;
+              await validateCheckin(normalizedToken);
               state.scanning = false;
               return;
             }
@@ -428,7 +510,7 @@
   function renderPendingNotasInterno() {
     const wrap = byId('internalPendingNotas');
     if (!wrap) return;
-    const notas = Array.isArray(state.internalPendingFornecedor?.notas) ? state.internalPendingFornecedor.notas : [];
+    const notas = Array.isArray(state.internalPendingFornecedor?.notas) ? state.internalPendingFornecedor.notas : Array.isArray(state.internalPendingFornecedor?.notasFiscais) ? state.internalPendingFornecedor.notasFiscais : [];
     if (!notas.length) {
       wrap.innerHTML = '<div class="warning-box">Selecione um fornecedor pendente para carregar as NF disponíveis.</div>';
       state.internalSelectedNotas = [];
@@ -437,14 +519,29 @@
     }
     wrap.innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
       <div class="pending-nota-item">
-        <label>
-          <input type="checkbox" data-internal-nf="${idx}" checked />
-          <span class="pending-nota-meta">
-            <strong>NF ${escapeHtml(nota.numeroNf || '-')}</strong>
-            <span>Volumes: ${escapeHtml(Number(nota.volumes || 0).toFixed(3))}</span>
-            <span>Peso: ${escapeHtml(Number(nota.peso || 0).toFixed(3))} kg</span>
-            <span>Valor: ${escapeHtml(Number(nota.valorNf || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))}</span>
-          </span>
+        <label class="pending-nota-card">
+          <div class="pending-nota-check">
+            <input type="checkbox" data-internal-nf="${idx}" checked />
+            <span>Selecionar NF</span>
+          </div>
+          <div class="pending-nota-fields">
+            <div class="pending-nota-field pending-nota-field-full">
+              <span class="pending-nota-title">Nota fiscal</span>
+              <strong>NF ${escapeHtml(nota.numeroNf || '-')}</strong>
+            </div>
+            <div class="pending-nota-field">
+              <span class="pending-nota-title">Volumes</span>
+              <strong>${escapeHtml(Number(nota.volumes || 0).toFixed(3))}</strong>
+            </div>
+            <div class="pending-nota-field">
+              <span class="pending-nota-title">Peso</span>
+              <strong>${escapeHtml(Number(nota.peso || 0).toFixed(3))} kg</strong>
+            </div>
+            <div class="pending-nota-field pending-nota-field-full">
+              <span class="pending-nota-title">Valor da nota</span>
+              <strong>${escapeHtml(Number(nota.valorNf || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))}</strong>
+            </div>
+          </div>
         </label>
       </div>`).join('')}</div>`;
     const sync = () => {
@@ -466,9 +563,10 @@
   async function loadFornecedoresPendentesInterno() {
     try {
       const items = await api('/api/public/fornecedores-pendentes');
+      state.pendingFornecedores = Array.isArray(items) ? items.map(normalizePendingFornecedor) : [];
       const select = byId('internalFornecedorPendenteSelect');
       if (!select) return;
-      select.innerHTML = `<option value="">Selecione o fornecedor pendente</option>` + (Array.isArray(items) ? items.map((item) => `<option value="${escapeHtml(JSON.stringify(item).replaceAll('"','&quot;'))}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('') : '');
+      select.innerHTML = `<option value="">Selecione o fornecedor pendente</option>` + state.pendingFornecedores.map((item) => `<option value="${escapeHtml(item.id || '')}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('');
       select.onchange = () => {
         if (!select.value) {
           state.internalPendingFornecedor = null;
@@ -478,10 +576,124 @@
           renderPendingNotasInterno();
           return;
         }
-        try { applyFornecedorPendenteInterno(JSON.parse(select.value)); } catch {}
+        const selected = getPendingFornecedorById(select.value);
+        if (selected) applyFornecedorPendenteInterno(selected);
       };
     } catch {}
   }
+
+  async function loadDocaOptions() {
+    if (!state.token || isTokenExpired(state.token)) return;
+    try {
+      const items = await api('/api/cadastros/docas');
+      state.docaOptions = Array.isArray(items) ? items : [];
+    } catch {
+      state.docaOptions = [];
+    }
+  }
+
+  async function loadFilterOptions() {
+    if (!state.token || isTokenExpired(state.token)) return;
+    try {
+      const items = await api('/api/agendamentos');
+      populateSelectOptions(byId('fStatus'), items.map((item) => item.status), 'Status');
+      populateSelectOptions(byId('fFornecedor'), items.map((item) => item.fornecedor), 'Fornecedor');
+      populateSelectOptions(byId('fTransportadora'), items.map((item) => item.transportadora), 'Transportadora');
+      populateSelectOptions(byId('fMotorista'), items.map((item) => item.motorista), 'Motorista');
+      populateSelectOptions(byId('fPlaca'), items.map((item) => item.placa), 'Placa');
+    } catch {}
+  }
+
+  function renderOperationalTable(items, { targetId, includeActions = false } = {}) {
+    const wrap = byId(targetId);
+    if (!wrap) return;
+    if (!Array.isArray(items) || !items.length) {
+      wrap.innerHTML = '<p>Nenhum registro.</p>';
+      return;
+    }
+    wrap.innerHTML = `
+      <table class="table operational-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Protocolo</th>
+            <th>Status</th>
+            <th>Fornecedor</th>
+            <th>Transportadora</th>
+            <th>Motorista</th>
+            <th>Placa</th>
+            <th>Doca</th>
+            <th>Janela</th>
+            <th>Data</th>
+            <th>Hora</th>
+            <th>NF</th>
+            <th>Volumes</th>
+            <th>Peso kg</th>
+            <th>Valor total</th>
+            ${includeActions ? '<th>Ações</th>' : ''}
+          </tr>
+        </thead>
+        <tbody>
+          ${items.map((item) => `
+            <tr>
+              <td>${escapeHtml(item.id ?? '')}</td>
+              <td>${escapeHtml(item.protocolo || '')}</td>
+              <td>${renderStatusBadge(item.status, item.semaforo)}</td>
+              <td>${escapeHtml(item.fornecedor || '')}</td>
+              <td>${escapeHtml(item.transportadora || '')}</td>
+              <td>${escapeHtml(item.motorista || '')}</td>
+              <td>${escapeHtml(item.placa || '')}</td>
+              <td>${escapeHtml(currentDocaLabel(item))}</td>
+              <td>${escapeHtml(item.janela?.codigo || item.janela || '')}</td>
+              <td>${escapeHtml(item.dataAgendada || '')}</td>
+              <td>${escapeHtml(item.horaAgendada || '')}</td>
+              <td>${escapeHtml(item.quantidadeNotas ?? 0)}</td>
+              <td>${escapeHtml(Number(item.quantidadeVolumes || 0).toFixed(3))}</td>
+              <td>${escapeHtml(Number(item.pesoTotalKg || 0).toFixed(3))}</td>
+              <td>${escapeHtml(Number(item.valorTotalNf || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))}</td>
+              ${includeActions ? `<td>
+                <div class="row gap8 wrap action-cell">
+                  <button type="button" class="btn-secondary" data-select-agendamento="${escapeHtml(item.id)}">Usar ID</button>
+                  <select data-doca-select="${escapeHtml(item.id)}" class="dock-select">${docaSelectOptions(item.doca?.id || item.docaId || item.doca || '')}</select>
+                  <button type="button" data-definir-doca="${escapeHtml(item.id)}">Definir doca</button>
+                </div>
+              </td>` : ''}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+
+    if (includeActions) {
+      wrap.querySelectorAll('[data-select-agendamento]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const field = byId('agendamentoId');
+          if (field) field.value = btn.dataset.selectAgendamento || '';
+        });
+      });
+      wrap.querySelectorAll('[data-definir-doca]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const agendamentoId = btn.dataset.definirDoca;
+          const select = wrap.querySelector(`[data-doca-select="${agendamentoId}"]`);
+          const docaId = select?.value || '';
+          if (!docaId) {
+            byId('operacaoMsg').textContent = 'Selecione a doca antes de confirmar.';
+            return;
+          }
+          try {
+            await api(`/api/agendamentos/${agendamentoId}/definir-doca`, { method: 'POST', body: JSON.stringify({ docaId }) });
+            byId('operacaoMsg').textContent = 'Doca definida com sucesso.';
+            const field = byId('agendamentoId');
+            if (field) field.value = agendamentoId;
+            await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
+          } catch (err) {
+            byId('operacaoMsg').textContent = err.message;
+          }
+        });
+      });
+    }
+  }
+
 
   function renderPublicDates() {
     const dataSelect = byId("publicDataSelect");
@@ -522,6 +734,7 @@
       const janelaOptions = janelas.map((j) => `<option value="${j.id}">${escapeHtml(j.codigo)}</option>`).join("");
       const janelaSelect = byId("internalJanelaSelect");
       if (janelaSelect) janelaSelect.innerHTML = janelaOptions;
+      await Promise.allSettled([loadDocaOptions(), loadFilterOptions()]);
     } catch {}
   }
 
@@ -539,22 +752,7 @@
         kpis.appendChild(div);
       });
     }
-    byId("dashboardTable").innerHTML = tableFromObjects((data.agendamentos || []).map((a) => ({
-      id: a.id,
-      protocolo: a.protocolo,
-      status: a.status,
-      fornecedor: a.fornecedor,
-      transportadora: a.transportadora,
-      motorista: a.motorista,
-      placa: a.placa,
-      doca: a.doca?.codigo || "",
-      janela: a.janela?.codigo || "",
-      data: a.dataAgendada,
-      hora: a.horaAgendada,
-      volumes: a.quantidadeVolumes || 0,
-      pesoKg: a.pesoTotalKg || 0,
-      valorTotal: a.valorTotalNf || 0
-    })));
+    renderOperationalTable(data.agendamentos || [], { targetId: 'dashboardTable', includeActions: true });
   }
 
   function semaforoClass(v) {
@@ -579,18 +777,35 @@
         <div class="mt12">
           <strong>Fila (${d.fila.length})</strong>
           ${d.fila.length ? d.fila.map((f) => {
-            const needsDoca = d.codigo === "A DEFINIR" && f.status === "CHEGOU";
+            const needsDoca = d.codigo === "A DEFINIR" && ["CHEGOU", "APROVADO", "PENDENTE_APROVACAO"].includes(f.status);
             return `
               <div class="fila-item">
                 <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
                 <div>${escapeHtml(f.placa)} • ${escapeHtml(f.horaAgendada)} • ${escapeHtml(f.status)}</div>
-                ${needsDoca ? `<div class="warning-box">A doca deve ser definida exclusivamente na aba de controle de docas.</div>` : ""}
+                ${needsDoca ? `<div class="warning-box">Selecione a doca para este agendamento.</div><div class="row gap8 wrap mt12"><select data-doca-painel-select="${escapeHtml(f.id)}" class="dock-select">${docaSelectOptions(f.doca?.id || f.docaId || '')}</select><button type="button" data-doca-painel-save="${escapeHtml(f.id)}">Definir doca</button></div>` : ""}
               </div>
             `;
           }).join("") : "<div class='fila-item'>Sem fila</div>"}
         </div>
       </div>
     `).join("");
+
+    wrap.querySelectorAll('[data-doca-painel-save]').forEach((btn) => btn.addEventListener('click', async () => {
+      const agendamentoId = btn.dataset.docaPainelSave;
+      const select = wrap.querySelector(`[data-doca-painel-select="${agendamentoId}"]`);
+      const docaId = select?.value || '';
+      if (!docaId) {
+        byId('operacaoMsg').textContent = 'Selecione a doca antes de confirmar.';
+        return;
+      }
+      try {
+        await api(`/api/agendamentos/${agendamentoId}/definir-doca`, { method: 'POST', body: JSON.stringify({ docaId }) });
+        byId('operacaoMsg').textContent = 'Doca definida com sucesso.';
+        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
+      } catch (err) {
+        byId('operacaoMsg').textContent = err.message;
+      }
+    }));
   }
 
   function normalizeValueByField(field, value) {
@@ -698,20 +913,7 @@
     const params = new URLSearchParams();
     Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
     const items = await api(`/api/agendamentos?${params.toString()}`);
-    byId("agendamentosList").innerHTML = tableFromObjects(items.map((i) => ({
-      id: i.id,
-      protocolo: i.protocolo,
-      status: i.status,
-      fornecedor: i.fornecedor,
-      transportadora: i.transportadora,
-      motorista: i.motorista,
-      placa: i.placa,
-      doca: i.doca?.codigo || "",
-      janela: i.janela?.codigo || "",
-      data: i.dataAgendada,
-      hora: i.horaAgendada,
-      semaforo: i.semaforo || ""
-    })));
+    renderOperationalTable(items || [], { targetId: 'agendamentosList', includeActions: true });
   }
 
   function currentId() {
@@ -728,7 +930,7 @@
     try {
       await fn();
       byId("operacaoMsg").textContent = success;
-      await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas()]);
+      await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
     } catch (err) {
       byId("operacaoMsg").textContent = err.message;
     }
@@ -736,8 +938,12 @@
 
   async function validateCheckin(token) {
     try {
+      const normalizedToken = normalizeOperationToken(token);
+      const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
+      if (tokenInput) tokenInput.value = normalizedToken;
+      if (!normalizedToken) throw new Error('Informe o token da operação.');
       const modo = byId("checkinForm")?.querySelector("[name=modo]")?.value || "checkin";
-      const endpoint = modo === "checkout" ? `/api/public/checkout/${encodeURIComponent(token)}` : `/api/public/checkin/${encodeURIComponent(token)}`;
+      const endpoint = modo === "checkout" ? `/api/public/checkout/${encodeURIComponent(normalizedToken)}` : `/api/public/checkin/${encodeURIComponent(normalizedToken)}`;
       let data;
       try {
         data = await api(endpoint, { method: "POST", body: JSON.stringify({}) });
@@ -755,7 +961,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
       byId("checkinMsg").textContent = data.message;
       byId("checkinResult").textContent = JSON.stringify(data.agendamento, null, 2);
       stopCameraScan();
-      await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas()]);
+      await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas(), loadFilterOptions()]);
     } catch (err) {
       byId("checkinMsg").textContent = err.message;
     }
@@ -797,8 +1003,10 @@ Deseja liberar manualmente a descarga deste veículo?`);
         localStorage.setItem("token", data.token);
         updateNav();
         await fillSelects();
-        showView("dashboard");
-        await loadDashboard();
+        if (!applyCheckinRouteContext({ autoValidate: true })) {
+          showView("dashboard");
+          await loadDashboard();
+        }
         byId("loginMsg").textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
       } catch (err) {
         byId("loginMsg").textContent = err.message || "Falha no login.";
@@ -851,7 +1059,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
         if (fornecedorField) fornecedorField.value = '';
         renderPendingNotasInterno();
         document.querySelectorAll('#agendamentoForm input[type="date"]').forEach((el) => { el.value = new Date().toISOString().slice(0, 10); });
-        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno()]);
+        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno(), loadFilterOptions()]);
       } catch (err) {
         byId("agendamentoMsg").textContent = err.message;
       }
@@ -943,7 +1151,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
 
     byId("checkinForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await validateCheckin(new FormData(e.target).get("token"));
+      await validateCheckin(normalizeOperationToken(new FormData(e.target).get("token")));
     });
     byId("startCamera")?.addEventListener("click", startCameraScan);
     byId("stopCamera")?.addEventListener("click", stopCameraScan);
@@ -967,9 +1175,12 @@ Deseja liberar manualmente a descarga deste veículo?`);
     const params = new URLSearchParams(location.search);
     const view = params.get("view");
     const token = params.get("token");
-    if (view === "checkin") {
-      showView(state.token && !isTokenExpired(state.token) ? "checkin" : "login");
-      if (token) byId("checkinForm")?.querySelector('input[name="token"]').setAttribute("value", token);
+    if (view === "checkin" || view === "checkout") {
+      if (state.token && !isTokenExpired(state.token)) {
+        applyCheckinRouteContext({ autoValidate: false });
+      } else {
+        showView("login");
+      }
     } else if (view === "motorista" && token) {
       showView("motorista");
       const input = byId("motoristaConsultaForm")?.querySelector('input[name="token"]');
