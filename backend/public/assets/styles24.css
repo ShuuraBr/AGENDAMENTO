@@ -66,3 +66,37 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 .pending-notas-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}.pending-nota-item{border:1px solid #d7deea;border-radius:12px;padding:14px;background:#fff}.pending-nota-card{display:grid;gap:14px;margin:0}.pending-nota-check{display:flex;align-items:center;gap:10px;padding-bottom:10px;border-bottom:1px solid #e2e8f0;font-size:13px;font-weight:700;color:#334155}.pending-nota-check input[type="checkbox"]{width:18px;height:18px;margin:0}.pending-nota-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.pending-nota-field{display:grid;gap:4px;padding:12px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}.pending-nota-field-full{grid-column:1 / -1}.pending-nota-title{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:700}.pending-nota-field strong{font-size:16px;color:#0f172a;line-height:1.35;word-break:break-word}.warning-box{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:12px;border-radius:12px;margin-top:12px}.hint{color:#64748b}.hidden{display:none !important;}@media (max-width:680px){.pending-nota-fields{grid-template-columns:1fr}}
 
 .action-cell{min-width:230px}.dock-select{min-width:150px;max-width:220px}.operational-table .badge{white-space:nowrap}.operational-table td{white-space:nowrap}.operational-table td:nth-child(4),.operational-table td:nth-child(5),.operational-table td:nth-child(6){white-space:normal;min-width:160px}
+
+
+/* Ajustes visuais da rodada atual: NFs em linha e limpeza da aba Agendamentos */
+.pending-notas-list{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
+.pending-nota-row{display:inline-flex;align-items:center;gap:10px;padding:10px 14px;min-height:44px;border:1px solid #dbe2ea;border-radius:10px;background:#f8fafc;cursor:pointer;flex:0 1 auto}
+.pending-nota-row:hover{background:#eff6ff;border-color:#93c5fd}
+.pending-nota-row-check{display:inline-flex;align-items:center;justify-content:center}
+.pending-nota-row-check input[type="checkbox"]{width:17px;height:17px;margin:0}
+.pending-nota-row-label{display:inline-flex;align-items:center;font-size:14px;font-weight:700;color:#0f172a;line-height:1.2;white-space:nowrap}
+
+/* Compatibilidade com versões anteriores em bloco */
+.pending-notas-grid{display:flex;flex-wrap:wrap;gap:10px}
+.pending-nota-item{display:inline-flex;align-items:center;padding:10px 14px;border:1px solid #dbe2ea;border-radius:10px;background:#f8fafc;width:auto;min-width:auto}
+.pending-nota-card,.pending-nota-fields{display:contents}
+.pending-nota-field{display:none !important}
+.pending-nota-check{display:inline-flex;align-items:center;gap:10px;padding:0;border:0;font-size:14px;font-weight:700;color:#0f172a}
+.pending-nota-check input[type="checkbox"]{width:17px;height:17px;margin:0}
+
+/* Aba Agendamentos sem controles visuais extras de doca/ID na listagem */
+#agendamentos .action-cell,
+#agendamentos [data-select-agendamento],
+#agendamentos [data-doca-select],
+#agendamentos [data-definir-doca]{display:none !important}
+#agendamentos .operational-table{table-layout:auto}
+#agendamentos .operational-table td,
+#agendamentos .operational-table th{white-space:normal}
+
+@media (max-width:680px){
+  .pending-notas-list,.pending-notas-grid{flex-direction:column;align-items:stretch}
+  .pending-nota-row,.pending-nota-item{width:100%}
+  .pending-nota-row-label,.pending-nota-check{white-space:normal}
+}
+
+.pending-notas-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}.pending-notas-toolbar button{white-space:nowrap}.nf-series-list{display:grid;gap:4px}.nf-series-item{display:block;line-height:1.35}.operational-table td.nf-series-cell{white-space:normal;min-width:180px}

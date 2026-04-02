@@ -9,7 +9,7 @@ import { qrSvg } from "../utils/qrcode.js";
 import { sendMail } from "../utils/email.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
 import { calculateTotals, normalizeCpf } from "../utils/agendamento-helpers.js";
-import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile } from "../utils/file-store.js";
+import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile, addDocumentoFile, addNotaFile } from "../utils/file-store.js";
 import { validateAgendamentoPayload, validateNf, validateStatusTransition, normalizeChaveAcesso } from "../utils/validators.js";
 import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js";
 import { auditLog } from "../utils/audit.js";
@@ -76,6 +76,16 @@ async function notificationSummary(agendamentoId) {
     voucherTransportadoraFornecedor: !!findLog("ENVIAR_INFORMACOES", (d) => Array.isArray(d.targets) && d.targets.includes("transportadora/fornecedor")),
     confirmacaoTransportadoraFornecedor: !!findLog("ENVIAR_CONFIRMACAO", (d) => Array.isArray(d.targets) && d.targets.includes("transportadora/fornecedor"))
   };
+}
+
+const EMPTY_NOTIFICATIONS = { voucherMotorista: false, voucherTransportadoraFornecedor: false, confirmacaoTransportadoraFornecedor: false };
+
+async function safeNotificationSummary(agendamentoId) {
+  try {
+    return await notificationSummary(agendamentoId);
+  } catch {
+    return { ...EMPTY_NOTIFICATIONS };
+  }
 }
 
 async function sendApprovalNotifications(item, req) {
@@ -175,22 +185,22 @@ router.get("/", async (req, res) => {
       include: { notasFiscais: true, documentos: true, doca: true, janela: true },
       orderBy: { id: "desc" }
     });
-    const payload = await Promise.all(items.map(async (i) => ({ ...calculateTotals(i.notasFiscais || [], i), ...i, semaforo: trafficColor(i.status), notificacoes: await notificationSummary(i.id) })));
+    const payload = await Promise.all(items.map(async (i) => ({ ...calculateTotals(i.notasFiscais || [], i), ...i, semaforo: trafficColor(i.status), notificacoes: await safeNotificationSummary(i.id) })));
     return res.json(payload);
   } catch {
     try {
       const items = await fetchAgendamentosRaw(q);
-      return res.json(items.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { voucherMotorista:false,voucherTransportadoraFornecedor:false,confirmacaoTransportadoraFornecedor:false } })));
+      return res.json(items.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { ...EMPTY_NOTIFICATIONS } })));
     } catch {}
     const items = readAgendamentos().filter((i) => (!q.status || i.status===String(q.status)) && (!q.fornecedor || String(i.fornecedor||'').toLowerCase().includes(String(q.fornecedor).toLowerCase())) && (!q.transportadora || String(i.transportadora||'').toLowerCase().includes(String(q.transportadora).toLowerCase())) && (!q.motorista || String(i.motorista||'').toLowerCase().includes(String(q.motorista).toLowerCase())) && (!q.placa || String(i.placa||'').toLowerCase().includes(String(q.placa).toLowerCase())) && (!q.dataAgendada || String(i.dataAgendada)===String(q.dataAgendada)));
-    return res.json(items.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { voucherMotorista:false,voucherTransportadoraFornecedor:false,confirmacaoTransportadoraFornecedor:false } })));
+    return res.json(items.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { ...EMPTY_NOTIFICATIONS } })));
   }
 });
 
 router.get("/:id", async (req, res) => {
   const item = await full(req.params.id);
   if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
-  res.json({ ...item, semaforo: trafficColor(item.status), notificacoes: await notificationSummary(item.id) });
+  res.json({ ...item, semaforo: trafficColor(item.status), notificacoes: await safeNotificationSummary(item.id) });
 });
 
 router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
@@ -308,8 +318,12 @@ router.post("/:id/aprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), asyn
 
     const updated = await transition(req.params.id, "APROVADO", data, req);
     const item = await full(updated.id);
-    const notificacoes = await sendApprovalNotifications(item, req);
-    res.json({ ...item, notificacoesEnviadas: notificacoes.results, links: notificacoes.links });
+    res.json({
+      ...item,
+      notificacoesEnviadas: [],
+      envioAutomatico: false,
+      message: "Agendamento aprovado. O e-mail com voucher só é enviado ao salvar ou ao clicar em 'Enviar informações'."
+    });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -335,10 +349,15 @@ router.post("/:id/reagendar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), as
     validateAgendamentoPayload(merged, false);
     await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada, ignoreAgendamentoId: found.id });
 
-    const item = await prisma.agendamento.update({
-      where: { id: Number(req.params.id) },
-      data: { dataAgendada: merged.dataAgendada, horaAgendada: merged.horaAgendada, docaId: Number(merged.docaId), janelaId: Number(merged.janelaId), status: "PENDENTE_APROVACAO" }
-    });
+    let item;
+    try {
+      item = await prisma.agendamento.update({
+        where: { id: Number(req.params.id) },
+        data: { dataAgendada: merged.dataAgendada, horaAgendada: merged.horaAgendada, docaId: Number(merged.docaId), janelaId: Number(merged.janelaId), status: "PENDENTE_APROVACAO" }
+      });
+    } catch {
+      item = updateAgendamentoFile(req.params.id, { dataAgendada: merged.dataAgendada, horaAgendada: merged.horaAgendada, docaId: Number(merged.docaId), janelaId: Number(merged.janelaId), status: "PENDENTE_APROVACAO" });
+    }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "REAGENDAR", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: req.body, ip: req.ip });
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
@@ -349,7 +368,12 @@ router.post("/:id/cancelar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), asy
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
     if (["FINALIZADO", "CANCELADO"].includes(found.status)) throw new Error("Não é possível cancelar esse status.");
-    const item = await prisma.agendamento.update({ where: { id: Number(req.params.id) }, data: { status: "CANCELADO", motivoCancelamento: req.body?.motivo || "Cancelado" } });
+    let item;
+    try {
+      item = await prisma.agendamento.update({ where: { id: Number(req.params.id) }, data: { status: "CANCELADO", motivoCancelamento: req.body?.motivo || "Cancelado" } });
+    } catch {
+      item = updateAgendamentoFile(req.params.id, { status: "CANCELADO", motivoCancelamento: req.body?.motivo || "Cancelado" });
+    }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CANCELAR", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: req.body, ip: req.ip });
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
@@ -368,7 +392,12 @@ router.post("/:id/no-show", requireProfiles("ADMIN", "OPERADOR", "GESTOR", "PORT
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
     if (!["PENDENTE_APROVACAO", "APROVADO"].includes(found.status)) throw new Error("No-show só pode ser aplicado antes da descarga.");
-    const item = await prisma.agendamento.update({ where: { id: Number(req.params.id) }, data: { status: "NO_SHOW" } });
+    let item;
+    try {
+      item = await prisma.agendamento.update({ where: { id: Number(req.params.id) }, data: { status: "NO_SHOW" } });
+    } catch {
+      item = updateAgendamentoFile(req.params.id, { status: "NO_SHOW" });
+    }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "NO_SHOW", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: null, ip: req.ip });
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
@@ -391,7 +420,12 @@ router.post("/:id/documentos", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), u
     const ag = await mustExist(req.params.id);
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
     if (!req.file) return res.status(400).json({ message: "Arquivo não enviado." });
-    const item = await prisma.documento.create({ data: { agendamentoId: ag.id, tipoDocumento: req.body?.tipoDocumento || "ANEXO", nomeArquivo: req.file.originalname, urlArquivo: req.file.path.replace(/\\/g, "/") } });
+    let item;
+    try {
+      item = await prisma.documento.create({ data: { agendamentoId: ag.id, tipoDocumento: req.body?.tipoDocumento || "ANEXO", nomeArquivo: req.file.originalname, urlArquivo: req.file.path.replace(/\\/g, "/") } });
+    } catch {
+      item = addDocumentoFile({ agendamentoId: ag.id, tipoDocumento: req.body?.tipoDocumento || "ANEXO", nomeArquivo: req.file.originalname, urlArquivo: req.file.path.replace(/\\/g, "/") });
+    }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "UPLOAD_DOCUMENTO", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: { nomeArquivo: req.file.originalname }, ip: req.ip });
     res.status(201).json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
@@ -403,9 +437,22 @@ router.post("/:id/notas", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async 
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
     const payload = { ...req.body, chaveAcesso: normalizeChaveAcesso(req.body?.chaveAcesso || "") };
     validateNf(payload);
-    const item = await prisma.notaFiscal.create({
-      data: {
-        agendamentoId: ag.id,
+    let item;
+    try {
+      item = await prisma.notaFiscal.create({
+        data: {
+          agendamentoId: ag.id,
+          numeroNf: payload.numeroNf || "",
+          serie: payload.serie || "",
+          chaveAcesso: payload.chaveAcesso || "",
+          volumes: Number(payload.volumes || 0),
+          peso: Number(payload.peso || 0),
+          valorNf: Number(payload.valorNf || 0),
+          observacao: payload.observacao || ""
+        }
+      });
+    } catch {
+      item = addNotaFile(ag.id, {
         numeroNf: payload.numeroNf || "",
         serie: payload.serie || "",
         chaveAcesso: payload.chaveAcesso || "",
@@ -413,8 +460,8 @@ router.post("/:id/notas", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async 
         peso: Number(payload.peso || 0),
         valorNf: Number(payload.valorNf || 0),
         observacao: payload.observacao || ""
-      }
-    });
+      });
+    }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "ADD_NF", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: payload, ip: req.ip });
     res.status(201).json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
