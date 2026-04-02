@@ -63,3 +63,5 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 
 
 .pending-notas-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.pending-nota-item{border:1px solid #d7deea;border-radius:12px;padding:14px;background:#fff}.pending-nota-item label{display:flex;gap:10px;align-items:flex-start;margin:0}.pending-nota-item input[type="checkbox"]{margin-top:4px}.pending-nota-meta{display:grid;gap:4px}.warning-box{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:12px;border-radius:12px;margin-top:12px}.hint{color:#64748b}.hidden{display:none !important;}
+
+.action-cell{min-width:230px}.dock-select{min-width:150px;max-width:220px}.operational-table .badge{white-space:nowrap}.operational-table td{white-space:nowrap}.operational-table td:nth-child(4),.operational-table td:nth-child(5),.operational-table td:nth-child(6){white-space:normal;min-width:160px}
