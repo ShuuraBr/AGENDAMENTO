@@ -517,7 +517,7 @@
       updateInternalTotals();
       return;
     }
-innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
+    wrap.innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
       <div class="pending-nota-item">
         <label class="pending-nota-card">
           <div class="pending-nota-check">
