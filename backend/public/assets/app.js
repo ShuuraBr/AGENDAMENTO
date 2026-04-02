@@ -517,13 +517,33 @@
       updateInternalTotals();
       return;
     }
-    wrap.innerHTML = `<div class="pending-notas-list">${notas.map((nota, idx) => `
-      <label class="pending-nota-row">
-        <span class="pending-nota-row-check">
-          <input type="checkbox" data-internal-nf="${idx}" checked />
-        </span>
-        <span class="pending-nota-row-label">NF ${escapeHtml(nota.numeroNf || '-')}</span>
-      </label>`).join('')}</div>`;
+innerHTML = `<div class="pending-notas-grid">${notas.map((nota, idx) => `
+      <div class="pending-nota-item">
+        <label class="pending-nota-card">
+          <div class="pending-nota-check">
+            <input type="checkbox" data-internal-nf="${idx}" checked />
+            <span>Selecionar NF</span>
+          </div>
+          <div class="pending-nota-fields">
+            <div class="pending-nota-field pending-nota-field-full">
+              <span class="pending-nota-title">Nota fiscal</span>
+              <strong>NF ${escapeHtml(nota.numeroNf || '-')}</strong>
+            </div>
+            <div class="pending-nota-field">
+              <span class="pending-nota-title">Volumes</span>
+              <strong>${escapeHtml(Number(nota.volumes || 0).toFixed(3))}</strong>
+            </div>
+            <div class="pending-nota-field">
+              <span class="pending-nota-title">Peso</span>
+              <strong>${escapeHtml(Number(nota.peso || 0).toFixed(3))} kg</strong>
+            </div>
+            <div class="pending-nota-field pending-nota-field-full">
+              <span class="pending-nota-title">Valor da nota</span>
+              <strong>${escapeHtml(Number(nota.valorNf || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))}</strong>
+            </div>
+          </div>
+        </label>
+      </div>`).join('')}</div>`;
     const sync = () => {
       state.internalSelectedNotas = notas.filter((_nota, index) => wrap.querySelector(`[data-internal-nf="${index}"]`)?.checked);
       updateInternalTotals();
@@ -894,6 +914,7 @@
     Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
     const items = await api(`/api/agendamentos?${params.toString()}`);
     renderOperationalTable(items || [], { targetId: 'agendamentosList', includeActions: false });
+
   }
 
   function currentId() {
