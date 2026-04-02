@@ -7,6 +7,23 @@ function money(value = 0) {
   return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function formatNumberBR(value = 0, minimumFractionDigits = 0, maximumFractionDigits = 3) {
+  return Number(value || 0).toLocaleString('pt-BR', {
+    minimumFractionDigits,
+    maximumFractionDigits
+  });
+}
+
+function formatWeightKg(value = 0) {
+  return `${formatNumberBR(value, 3, 3)} kg`;
+}
+
+function formatCpf(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length !== 11) return value || '-';
+  return digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+}
+
 function formatDateBR(value) {
   if (!value) return '-';
   const [year, month, day] = String(value).split('-');
@@ -65,7 +82,7 @@ export async function generateVoucherPdf(agendamento, options = {}) {
     ['Fornecedor', agendamento.fornecedor || '-'],
     ['Transportadora', agendamento.transportadora || '-'],
     ['Motorista', agendamento.motorista || '-'],
-    ['CPF do motorista', agendamento.cpfMotorista || '-'],
+    ['CPF do motorista', formatCpf(agendamento.cpfMotorista)],
     ['Placa', agendamento.placa || '-'],
     ['Data agendada', formatDateBR(agendamento.dataAgendada)],
     ['Hora', agendamento.horaAgendada || '-'],
@@ -73,9 +90,9 @@ export async function generateVoucherPdf(agendamento, options = {}) {
     ['Janela', agendamento.janela?.codigo || agendamento.janela || '-'],
     ['Token do motorista', agendamento.publicTokenMotorista || '-'],
     ['Token do fornecedor', agendamento.publicTokenFornecedor || '-'],
-    ['Notas', String(agendamento.quantidadeNotas ?? 0)],
-    ['Volumes', Number(agendamento.quantidadeVolumes || 0).toFixed(3)],
-    ['Peso total', `${Number(agendamento.pesoTotalKg || 0).toFixed(3)} kg`],
+    ['Notas', formatNumberBR(agendamento.quantidadeNotas ?? 0, 0, 0)],
+    ['Volumes', formatNumberBR(agendamento.quantidadeVolumes || 0, 0, 3)],
+    ['Peso total', formatWeightKg(agendamento.pesoTotalKg || 0)],
     ['Valor total', money(agendamento.valorTotalNf || 0)]
   ];
 
@@ -97,12 +114,12 @@ export async function generateVoucherPdf(agendamento, options = {}) {
     doc.font('Helvetica').fontSize(9).fillColor('#334155').text('Sem notas fiscais cadastradas.', summaryX + 16, lineY, { width: contentWidth - 32 });
   } else {
     notas.slice(0, 5).forEach((nota) => {
-      const linha = `NF ${nota.numeroNf || '-'} | Série ${nota.serie || '-'} | Vol. ${Number(nota.volumes || 0).toFixed(3)} | Peso ${Number(nota.peso || 0).toFixed(3)} kg | ${money(nota.valorNf || 0)}`;
+      const linha = `NF ${nota.numeroNf || '-'} | Série ${nota.serie || '-'} | Vol. ${formatNumberBR(nota.volumes || 0, 0, 3)} | Peso ${formatWeightKg(nota.peso || 0)} | ${money(nota.valorNf || 0)}`;
       doc.font('Helvetica').fontSize(8.5).fillColor('#334155').text(linha, summaryX + 16, lineY, { width: contentWidth - 32, ellipsis: true });
       lineY += 15;
     });
     if (notas.length > 5) {
-      doc.font('Helvetica-Oblique').fontSize(8).fillColor('#64748b').text(`+ ${notas.length - 5} NF adicionais no sistema`, summaryX + 16, lineY, { width: contentWidth - 32 });
+      doc.font('Helvetica-Oblique').fontSize(8).fillColor('#64748b').text(`+ ${notas.length - 5} NF adicionais no sistema.`, summaryX + 16, lineY, { width: contentWidth - 32 });
     }
   }
   if (agendamento.observacoes) {
@@ -119,12 +136,13 @@ export async function generateVoucherPdf(agendamento, options = {}) {
   drawSectionTitle(doc, 'QR Code de check-out', summaryX + 290, qrY + 14);
   doc.image(qrCheckin, summaryX + 45, qrY + 40, { fit: [165, 165] });
   doc.image(qrCheckout, summaryX + 319, qrY + 40, { fit: [165, 165] });
-  doc.font('Helvetica').fontSize(8.5).fillColor('#475569').text('Use este QR no recebimento para registrar a chegada.', summaryX + 16, qrY + 176, { width: 220 });
-  doc.text('Use este QR ao finalizar a operação e liberar a saída.', summaryX + 290, qrY + 176, { width: 220 });
+  doc.font('Helvetica').fontSize(8.5).fillColor('#475569').text('Use este QR no recebimento para registrar a chegada do veículo.', summaryX + 16, qrY + 176, { width: 220 });
+  doc.text('Use este QR ao finalizar a operação, para registrar a saída do veículo.', summaryX + 290, qrY + 176, { width: 220 });
   doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#0f172a').text(`Token: ${checkinToken || '-'}`, summaryX + 16, qrY + 204, { width: 220 });
   doc.text(`Token: ${checkoutToken || '-'}`, summaryX + 290, qrY + 204, { width: 220 });
   doc.font('Helvetica').fontSize(6.5).fillColor('#64748b').text(checkinUrl, summaryX + 16, qrY + 218, { width: 220, ellipsis: true });
   doc.text(checkoutUrl, summaryX + 290, qrY + 218, { width: 220, ellipsis: true });
+
 
   doc.end();
   return await new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));

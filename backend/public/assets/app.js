@@ -1080,7 +1080,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
     byId("loginForm")?.reset();
     applyInputMasks(document);
     const internalDateInput = byId("agendamentoForm")?.querySelector('[name="dataAgendada"]');
-    if (internalDateInput && !internalDateInput.value) internalDateInput.value = formatDateBR(new Date().toISOString().slice(0, 10));
+    if (internalDateInput && !internalDateInput.value) internalDateInput.value = new Date().toISOString().slice(0, 10);
 
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.setAttribute("type", "button");
@@ -1170,7 +1170,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
         if (fornecedorField) fornecedorField.value = '';
         renderPendingNotasInterno();
         const dataInput = byId('agendamentoForm')?.querySelector('[name="dataAgendada"]');
-        if (dataInput) dataInput.value = formatDateBR(new Date().toISOString().slice(0, 10));
+        if (dataInput) dataInput.value = new Date().toISOString().slice(0, 10);
         applyInputMasks(byId('agendamentoForm'));
         await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno(), loadFilterOptions()]);
       } catch (err) {
