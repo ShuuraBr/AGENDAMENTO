@@ -17,7 +17,7 @@ export async function evaluateApprovalRules(payload) {
   }
 
   if (payload.docaId) {
-    const doca = await prisma.doca.findUnique({ where: { id: payload.docaId } } });
+    const doca = await prisma.doca.findUnique({ where: { id: payload.docaId } });
     if (!doca || !doca.ativa) {
       autoApprove = false;
       reasons.push('Doca inválida ou inativa.');

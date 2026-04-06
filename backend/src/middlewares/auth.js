@@ -12,17 +12,6 @@ export function authRequired(req, res, next) {
   }
 }
 
-export function getOptionalUserFromRequest(req) {
-  const header = req.headers.authorization || "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
-  if (!token) return null;
-  try {
-    return verifyInternalSession(token);
-  } catch {
-    return null;
-  }
-}
-
 export function requireProfiles(...profiles) {
   return (req, res, next) => {
     if (!req.user || !profiles.includes(req.user.perfil)) {

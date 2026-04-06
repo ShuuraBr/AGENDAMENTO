@@ -213,23 +213,8 @@
     return String(status || "").replaceAll("_", " ");
   }
 
-  function statusBadgeClass(status, semaforo) {
-    const normalized = String(status || "").toUpperCase();
-    const map = {
-      PENDENTE_APROVACAO: "amarelo",
-      APROVADO: "azul",
-      CHEGOU: "ciano",
-      EM_DESCARGA: "laranja",
-      FINALIZADO: "verde",
-      CANCELADO: "cinza",
-      REPROVADO: "vermelho",
-      NO_SHOW: "vermelho"
-    };
-    return map[normalized] || semaforoClass(semaforo || status);
-  }
-
   function renderStatusBadge(status, semaforo) {
-    return `<span class="badge ${statusBadgeClass(status, semaforo)}">${escapeHtml(statusLabel(status))}</span>`;
+    return `<span class="badge ${semaforoClass(semaforo || status)}">${escapeHtml(statusLabel(status))}</span>`;
   }
 
   function renderNotasTable(notas) {
@@ -354,18 +339,6 @@
     try { return JSON.parse(atob(token.split(".")[1])); } catch { return null; }
   }
 
-  function currentUser() {
-    return state.token && !isTokenExpired(state.token) ? parseJwt(state.token) : null;
-  }
-
-  function currentProfile() {
-    return String(currentUser()?.perfil || "").toUpperCase();
-  }
-
-  function isAdmin() {
-    return currentProfile() === "ADMIN";
-  }
-
   function isTokenExpired(token) {
     const data = parseJwt(token);
     if (!data?.exp) return false;
@@ -383,15 +356,6 @@
     const logged = !!state.token && !isTokenExpired(state.token);
     byId("publicNav")?.classList.toggle("hidden", logged);
     byId("privateNav")?.classList.toggle("hidden", !logged);
-    document.querySelectorAll(".admin-only").forEach((el) => el.classList.toggle("hidden-by-role", !isAdmin()));
-    const usuariosTab = document.querySelector('.cad-tab[data-tipo="usuarios"]');
-    usuariosTab?.classList.toggle('hidden-by-role', !isAdmin());
-    if (!isAdmin() && state.cadastroTipo === 'usuarios') {
-      state.cadastroTipo = 'fornecedores';
-      setActiveButton('.cad-tab', document.querySelector('.cad-tab[data-tipo="fornecedores"]'));
-      renderCadastroForm();
-      loadCadastro().catch(() => {});
-    }
     if (!logged && state.token) logout();
   }
 
@@ -878,7 +842,6 @@
     const data = await api(`/api/dashboard/operacional?${params.toString()}`);
     const kpis = byId("kpis");
     if (kpis) {
-<<<<<<< HEAD
       kpis.innerHTML = "";
       const hiddenKpis = new Set(['documentos', 'volumes', 'origem']);
       Object.entries(data.kpis || {})
@@ -894,37 +857,6 @@
           div.innerHTML = `<strong>${escapeHtml(k)}</strong><span>${escapeHtml(formatted)}</span>`;
           kpis.appendChild(div);
         });
-=======
-      const labels = {
-        total: 'Total',
-        pendentes: 'Pendentes',
-        aprovados: 'Aprovados',
-        chegou: 'Chegou',
-        emDescarga: 'Em descarga',
-        finalizados: 'Finalizados',
-        cancelados: 'Cancelados',
-        noShow: 'No-show',
-        documentos: 'Documentos',
-        volumes: 'Volumes',
-        pesoKg: 'Peso kg',
-        valorTotal: 'Valor total'
-      };
-      const order = ['total', 'pendentes', 'aprovados', 'chegou', 'emDescarga', 'finalizados', 'cancelados', 'noShow', 'documentos', 'volumes', 'pesoKg', 'valorTotal'];
-      kpis.innerHTML = '';
-      order.forEach((key) => {
-        if (!(key in (data.kpis || {}))) return;
-        const value = data.kpis[key];
-        const div = document.createElement('div');
-        div.className = 'kpi';
-        div.dataset.key = key;
-        let formatted = value;
-        if (key === 'valorTotal') formatted = Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        else if (key === 'pesoKg' || key === 'volumes') formatted = formatDecimalBR(value || 0, 3);
-        else formatted = formatIntegerBR(value || 0);
-        div.innerHTML = `<strong class="kpi-label">${escapeHtml(labels[key] || key)}</strong><span class="kpi-value">${escapeHtml(formatted)}</span>`;
-        kpis.appendChild(div);
-      });
->>>>>>> e5083df4985759e952079d5f891cc01c38f2a41d
     }
     renderOperationalTable(data.agendamentos || [], { targetId: 'dashboardTable', includeActions: true });
   }
@@ -982,48 +914,6 @@
     }));
   }
 
-  function renderAuditoria(items) {
-    const wrap = byId('auditoriaList');
-    if (!wrap) return;
-    if (!Array.isArray(items) || !items.length) {
-      wrap.innerHTML = '<p>Nenhum log encontrado.</p>';
-      return;
-    }
-    wrap.innerHTML = items.map((item) => {
-      const detalhes = item?.detalhes ? JSON.stringify(item.detalhes, null, 2) : 'Sem detalhes adicionais.';
-      return `
-        <div class="audit-card">
-          <div class="audit-head">
-            <div>
-              <div class="audit-title">${escapeHtml(item.acao || '-')} • ${escapeHtml(item.entidade || '-')} ${item.entidadeId ? `#${escapeHtml(item.entidadeId)}` : ''}</div>
-              <div class="audit-meta">
-                <span><strong>Quando:</strong> ${escapeHtml(item.createdAt ? new Date(item.createdAt).toLocaleString('pt-BR') : '-')}</span>
-                <span><strong>Usuário:</strong> ${escapeHtml(item.usuarioNome || item.usuarioEmail || item.usuarioId || 'Sistema/Público')}</span>
-                <span><strong>Perfil:</strong> ${escapeHtml(item.perfil || '-')}</span>
-                <span><strong>IP:</strong> ${escapeHtml(item.ip || '-')}</span>
-              </div>
-            </div>
-            <span class="badge cinza">LOG</span>
-          </div>
-          <pre class="audit-details">${escapeHtml(detalhes)}</pre>
-        </div>
-      `;
-    }).join('');
-  }
-
-  async function loadAuditoria() {
-    if (!isAdmin()) {
-      byId('auditoriaMsg').textContent = 'Somente o administrador pode visualizar os logs.';
-      return;
-    }
-    const entidadeId = String(byId('auditEntidadeId')?.value || '').trim();
-    const params = new URLSearchParams({ entidade: 'AGENDAMENTO', limit: '300' });
-    if (entidadeId) params.set('entidadeId', entidadeId);
-    const items = await api(`/api/dashboard/auditoria?${params.toString()}`);
-    byId('auditoriaMsg').textContent = `${Array.isArray(items) ? items.length : 0} log(s) carregado(s).`;
-    renderAuditoria(items || []);
-  }
-
   function normalizeValueByField(field, value) {
     if (field.type === "number") return value === "" ? 0 : Number(value);
     return value;
@@ -1054,10 +944,6 @@
   }
 
   function renderCadastroForm(record = null) {
-    if (state.cadastroTipo === 'usuarios' && !isAdmin()) {
-      byId('cadastroMsg').textContent = 'Apenas o administrador pode acessar o cadastro de usuários.';
-      return;
-    }
     const config = CADASTRO_CONFIG[state.cadastroTipo];
     if (!config) return;
     byId("cadastroTitulo").textContent = config.titulo;
@@ -1109,19 +995,12 @@
   }
 
   async function loadCadastro() {
-    if (state.cadastroTipo === 'usuarios' && !isAdmin()) {
-      byId('cadastroMsg').textContent = 'Apenas o administrador pode acessar o cadastro de usuários.';
-      return;
-    }
     const config = CADASTRO_CONFIG[state.cadastroTipo];
     const items = await api(config.endpoint);
     renderCadastroList(items);
   }
 
   async function saveCadastro() {
-    if (state.cadastroTipo === 'usuarios' && !isAdmin()) {
-      throw new Error('Apenas o administrador pode salvar usuários.');
-    }
     const config = CADASTRO_CONFIG[state.cadastroTipo];
     const payload = getCadastroPayload();
     let endpoint = config.endpoint;
@@ -1196,24 +1075,6 @@ Deseja liberar manualmente a descarga deste veículo?`);
     }
   }
 
-  async function loadAvaliacao(token) {
-    const payload = await api(`/api/public/avaliacao/${encodeURIComponent(token)}`);
-    const intro = [];
-    if (payload.protocolo) intro.push(`Protocolo: ${payload.protocolo}`);
-    if (payload.motorista) intro.push(`Motorista: ${payload.motorista}`);
-    if (payload.fornecedor) intro.push(`Fornecedor: ${payload.fornecedor}`);
-    if (payload.dataAgendada) intro.push(`Data agendada: ${formatDateBR(payload.dataAgendada)}`);
-    byId('avaliacaoIntro').textContent = intro.join(' • ');
-    const form = byId('avaliacaoForm');
-    if (form) {
-      form.querySelector('[name="token"]').value = token;
-      Array.from(form.elements).forEach((el) => {
-        if (el.name !== 'token') el.disabled = !!payload.respondida;
-      });
-    }
-    byId('avaliacaoMsg').textContent = payload.respondida ? 'Esta avaliação já foi respondida. Obrigado pelo retorno.' : '';
-  }
-
   document.addEventListener("DOMContentLoaded", async () => {
     updateNav();
     renderNfRows();
@@ -1265,7 +1126,6 @@ Deseja liberar manualmente a descarga deste veículo?`);
 
     byId("loadDashboard")?.addEventListener("click", async () => { try { await loadDashboard(); } catch (err) { alert(err.message); } });
     byId("loadDocas")?.addEventListener("click", async () => { try { await loadDocas(); } catch (err) { alert(err.message); } });
-    byId("loadAuditoria")?.addEventListener("click", async () => { try { await loadAuditoria(); } catch (err) { byId('auditoriaMsg').textContent = err.message; } });
 
     document.querySelectorAll(".cad-tab").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
@@ -1413,25 +1273,6 @@ Deseja liberar manualmente a descarga deste veículo?`);
       e.preventDefault();
       await validateCheckin(normalizeOperationToken(new FormData(e.target).get("token")));
     });
-    byId('avaliacaoForm')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      try {
-        const formData = new FormData(e.target);
-        const token = String(formData.get('token') || '').trim();
-        const payload = {
-          notaAtendimento: Number(formData.get('notaAtendimento')),
-          notaEquipeRecebimento: Number(formData.get('notaEquipeRecebimento')),
-          processoTranquilo: formData.get('processoTranquilo') === 'on',
-          processoRapido: formData.get('processoRapido') === 'on',
-          comentario: String(formData.get('comentario') || '').trim()
-        };
-        const data = await api(`/api/public/avaliacao/${encodeURIComponent(token)}`, { method: 'POST', body: JSON.stringify(payload) });
-        byId('avaliacaoMsg').textContent = data.message || 'Avaliação registrada com sucesso.';
-        Array.from(e.target.elements).forEach((el) => { if (el.name !== 'token') el.disabled = true; });
-      } catch (err) {
-        byId('avaliacaoMsg').textContent = err.message;
-      }
-    });
     byId("startCamera")?.addEventListener("click", startCameraScan);
     byId("stopCamera")?.addEventListener("click", stopCameraScan);
 
@@ -1465,21 +1306,11 @@ Deseja liberar manualmente a descarga deste veículo?`);
       const input = byId("motoristaConsultaForm")?.querySelector('input[name="token"]');
       if (input) input.value = token;
       byId("motoristaConsultaForm")?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
-    } else if (view === 'avaliacao' && token) {
-      showView('avaliacao');
-      try {
-        await loadAvaliacao(token);
-      } catch (err) {
-        byId('avaliacaoMsg').textContent = err.message;
-      }
     } else if ((view === "consulta" || view === "fornecedor") && token) {
       showView("consulta");
       const input = byId("consultaForm")?.querySelector('input[name="token"]');
       if (input) input.value = token;
       byId("consultaForm")?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
-    } else if (view === 'auditoria' && state.token && !isTokenExpired(state.token) && isAdmin()) {
-      showView('auditoria');
-      try { await loadAuditoria(); } catch (err) { byId('auditoriaMsg').textContent = err.message; }
     } else if (view === "consulta") {
       showView("consulta");
     } else if (view === "fornecedor") {

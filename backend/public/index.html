@@ -26,7 +26,6 @@
 
     <nav id="privateNav" class="nav-menu hidden">
       <button type="button" class="nav-btn" data-view="dashboard">Dashboard</button>
-      <button type="button" class="nav-btn admin-only" data-view="auditoria">Auditoria</button>
       <button type="button" class="nav-btn" data-view="docas">Painel de Docas</button>
       <button type="button" class="nav-btn" data-view="cadastros">Cadastros</button>
       <button type="button" class="nav-btn" data-view="agendamentos">Agendamentos</button>
@@ -122,50 +121,6 @@
         </form>
         <p id="motoristaMsg" class="msg"></p>
         <div id="motoristaResult" class="mt16"></div>
-      </div>
-    </section>
-
-    <section id="avaliacao" class="view">
-      <div class="card narrow">
-        <h2>Avaliação do atendimento</h2>
-        <p class="hint">Este formulário é enviado somente após o check-out do motorista.</p>
-        <div id="avaliacaoIntro" class="info-box mt12"></div>
-        <form id="avaliacaoForm" class="mt16">
-          <input type="hidden" name="token" />
-          <label>Como foi o atendimento recebido?
-            <select name="notaAtendimento" required>
-              <option value="">Selecione</option>
-              <option value="5">5 - Excelente</option>
-              <option value="4">4 - Bom</option>
-              <option value="3">3 - Regular</option>
-              <option value="2">2 - Ruim</option>
-              <option value="1">1 - Muito ruim</option>
-            </select>
-          </label>
-          <label>O que achou da equipe de recebimento?
-            <select name="notaEquipeRecebimento" required>
-              <option value="">Selecione</option>
-              <option value="5">5 - Excelente</option>
-              <option value="4">4 - Bom</option>
-              <option value="3">3 - Regular</option>
-              <option value="2">2 - Ruim</option>
-              <option value="1">1 - Muito ruim</option>
-            </select>
-          </label>
-          <label class="check">
-            <input name="processoTranquilo" type="checkbox" />
-            <span>O processo de recebimento ocorreu de forma tranquila.</span>
-          </label>
-          <label class="check">
-            <input name="processoRapido" type="checkbox" />
-            <span>O processo foi eficaz e rápido.</span>
-          </label>
-          <label>Comentário adicional
-            <textarea name="comentario" rows="5" placeholder="Escreva aqui sua percepção sobre o atendimento."></textarea>
-          </label>
-          <button type="submit">Enviar avaliação</button>
-        </form>
-        <p id="avaliacaoMsg" class="msg"></p>
       </div>
     </section>
 
@@ -269,23 +224,6 @@
             <div id="cadastroList" class="mt12"></div>
           </div>
         </div>
-      </div>
-    </section>
-
-    <section id="auditoria" class="view">
-      <div class="card">
-        <div class="row between wrap">
-          <div>
-            <h2>Auditoria operacional</h2>
-            <p class="hint">Rastreabilidade completa das ações executadas no sistema.</p>
-          </div>
-          <div class="row gap8 wrap">
-            <input id="auditEntidadeId" placeholder="ID do agendamento" />
-            <button id="loadAuditoria" type="button">Atualizar logs</button>
-          </div>
-        </div>
-        <p id="auditoriaMsg" class="msg"></p>
-        <div id="auditoriaList" class="mt16"></div>
       </div>
     </section>
 

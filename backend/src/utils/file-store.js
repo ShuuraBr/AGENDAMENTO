@@ -47,10 +47,6 @@ export function readDocas() { return readJsonFile('docas.json', []); }
 export function readJanelas() { return readJsonFile('janelas.json', []); }
 export function readDocumentos() { return readJsonFile('documentos.json', []); }
 export function writeDocumentos(items) { return writeJsonFile('documentos.json', items); }
-export function readLogsAuditoria() { return readJsonFile('logs-auditoria.json', []); }
-export function writeLogsAuditoria(items) { return writeJsonFile('logs-auditoria.json', items); }
-export function readAvaliacoesAtendimento() { return readJsonFile('avaliacoes-atendimento.json', []); }
-export function writeAvaliacoesAtendimento(items) { return writeJsonFile('avaliacoes-atendimento.json', items); }
 export function readFornecedores() { return readJsonFile('fornecedores.json', []); }
 export function readTransportadoras() { return readJsonFile('transportadoras.json', []); }
 export function readMotoristas() { return readJsonFile('motoristas.json', []); }
@@ -180,53 +176,6 @@ export function buildDocaPainelFromFiles(dataAgendada = null) {
   });
 }
 
-
-
-export function addLogAuditoriaFile(data = {}) {
-  const items = readLogsAuditoria();
-  const item = {
-    id: nextId(items),
-    createdAt: new Date().toISOString(),
-    ...data,
-    entidadeId: data?.entidadeId != null ? Number(data.entidadeId) : null,
-    usuarioId: data?.usuarioId != null ? Number(data.usuarioId) : null
-  };
-  items.unshift(item);
-  writeLogsAuditoria(items);
-  return item;
-}
-
-export function findAvaliacaoAtendimentoByToken(token) {
-  return readAvaliacoesAtendimento().find((item) => String(item?.token || '') === String(token || '')) || null;
-}
-
-export function upsertAvaliacaoAtendimentoFile(payload = {}) {
-  const items = readAvaliacoesAtendimento();
-  const token = String(payload?.token || '').trim();
-  const agendamentoId = Number(payload?.agendamentoId || 0);
-  const index = items.findIndex((item) => (token && String(item?.token || '') === token) || (agendamentoId && Number(item?.agendamentoId || 0) === agendamentoId));
-
-  if (index >= 0) {
-    items[index] = {
-      ...items[index],
-      ...payload,
-      id: items[index].id,
-      updatedAt: new Date().toISOString()
-    };
-    writeAvaliacoesAtendimento(items);
-    return items[index];
-  }
-
-  const item = {
-    id: nextId(items),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    ...payload
-  };
-  items.unshift(item);
-  writeAvaliacoesAtendimento(items);
-  return item;
-}
 
 function cadastroFileName(tipo = '') {
   const map = {
