@@ -843,17 +843,20 @@
     const kpis = byId("kpis");
     if (kpis) {
       kpis.innerHTML = "";
-      Object.entries(data.kpis || {}).forEach(([k, v]) => {
-        const div = document.createElement("div");
-        div.className = "kpi";
-        const key = String(k || '').toLowerCase();
-        let formatted = v;
-        if (key.includes('valor')) formatted = Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        else if (key.includes('peso') || key.includes('volume')) formatted = formatDecimalBR(v || 0, 3);
-        else if (typeof v === 'number') formatted = formatIntegerBR(v);
-        div.innerHTML = `<strong>${escapeHtml(k)}</strong><span>${escapeHtml(formatted)}</span>`;
-        kpis.appendChild(div);
-      });
+      const hiddenKpis = new Set(['documentos', 'volumes', 'origem']);
+      Object.entries(data.kpis || {})
+        .filter(([k]) => !hiddenKpis.has(String(k || '').toLowerCase()))
+        .forEach(([k, v]) => {
+          const div = document.createElement("div");
+          div.className = "kpi";
+          const key = String(k || '').toLowerCase();
+          let formatted = v;
+          if (key.includes('valor')) formatted = Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          else if (key.includes('peso') || key.includes('volume')) formatted = formatDecimalBR(v || 0, 3);
+          else if (typeof v === 'number') formatted = formatIntegerBR(v);
+          div.innerHTML = `<strong>${escapeHtml(k)}</strong><span>${escapeHtml(formatted)}</span>`;
+          kpis.appendChild(div);
+        });
     }
     renderOperationalTable(data.agendamentos || [], { targetId: 'dashboardTable', includeActions: true });
   }

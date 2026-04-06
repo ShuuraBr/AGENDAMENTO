@@ -32,11 +32,8 @@ function buildKpis(all, docs, origem) {
     finalizados: enriched.filter(x => x.status === "FINALIZADO").length,
     cancelados: enriched.filter(x => x.status === "CANCELADO").length,
     noShow: enriched.filter(x => x.status === "NO_SHOW").length,
-    documentos: docs,
-    volumes: enriched.reduce((a, b) => a + Number(b.quantidadeVolumes || 0), 0),
     pesoKg: Number(enriched.reduce((a, b) => a + Number(b.pesoTotalKg || 0), 0).toFixed(3)),
-    valorTotal: Number(enriched.reduce((a, b) => a + Number(b.valorTotalNf || 0), 0).toFixed(2)),
-    origem
+    valorTotal: Number(enriched.reduce((a, b) => a + Number(b.valorTotalNf || 0), 0).toFixed(2))
   };
 }
 

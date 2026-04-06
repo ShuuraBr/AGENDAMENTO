@@ -100,3 +100,23 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 }
 
 .pending-notas-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}.pending-notas-toolbar button{white-space:nowrap}.nf-series-list{display:grid;gap:4px}.nf-series-item{display:block;line-height:1.35}.operational-table td.nf-series-cell{white-space:normal;min-width:180px}
+
+.grid{grid-template-columns:repeat(auto-fit,minmax(145px,1fr));align-items:stretch}
+.kpi{min-width:0;min-height:104px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;padding:14px 16px;overflow:hidden}
+.kpi strong{font-size:11px;line-height:1.35;letter-spacing:.04em;word-break:break-word}
+.kpi span{font-size:clamp(24px,2vw,34px);line-height:1.05;word-break:break-word;overflow-wrap:anywhere}
+.kpi .kpi-label{display:block}
+.kpi .kpi-value{display:block;text-align:left}
+.badge.azul{background:#dbeafe;color:#1d4ed8}
+.badge.ciano{background:#cffafe;color:#0f766e}
+.badge.laranja{background:#ffedd5;color:#c2410c}
+.badge.cinza{background:#e5e7eb;color:#374151}
+.admin-only.hidden-by-role{display:none !important}
+#auditoriaList{display:grid;gap:12px}
+.audit-card{border:1px solid #dbe2ea;border-radius:12px;padding:14px;background:#fff}
+.audit-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start}
+.audit-title{font-weight:700;color:#0f172a}
+.audit-meta{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:#64748b;margin-top:8px}
+.audit-details{margin-top:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px;white-space:pre-wrap;word-break:break-word}
+#auditoria .card{overflow:hidden}
+#avaliacao .card{max-width:760px;margin:0 auto}
