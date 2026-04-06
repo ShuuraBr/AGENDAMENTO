@@ -9,7 +9,7 @@ import { auditLog } from '../utils/audit.js';
 import { calculateTotals, normalizeCpf } from '../utils/agendamento-helpers.js';
 import { sendMail } from '../utils/email.js';
 import { ensureFeedbackRequest, getFeedbackRequestByToken, maskCpf, submitFeedbackByToken } from '../utils/driver-feedback.js';
-import { listFornecedoresPendentesImportados } from '../utils/relatorio-entradas.js';
+import { listFornecedoresPendentesImportados, scanImportFolderAndProcess } from '../utils/relatorio-entradas.js';
 import {
   readJanelas,
   readDocas,
@@ -341,6 +341,12 @@ router.get('/disponibilidade', async (req, res) => {
 });
 
 router.get('/fornecedores-pendentes', async (_req, res) => {
+  try {
+    await scanImportFolderAndProcess();
+  } catch (error) {
+    console.error('Falha ao sincronizar fornecedores pendentes antes da abertura da página:', error?.message || error);
+  }
+
   res.json(await listFornecedoresPendentesImportados());
 });
 

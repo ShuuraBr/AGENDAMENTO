@@ -4,6 +4,7 @@ import {
   ensureRelatorioImportUpToDate,
   getImportDirectory,
   getRelatorioImportStatus,
+  getRelatorioImportRowCount,
   importRelatorioSpreadsheet,
   listSupportedImportFiles,
   relatorioSpreadsheetUpload,
@@ -24,8 +25,7 @@ router.get('/status', requireProfiles('ADMIN', 'GESTOR', 'OPERADOR'), async (_re
     ok: true,
     pastaMonitorada: getImportDirectory(),
     ultimoProcessamento: getRelatorioImportStatus(),
-    totalLinhasNoBanco: sync?.totalLinhasNoBanco ?? 0,
-    sincronizacaoAtual: sync,
+    totalLinhasNoBanco: await getRelatorioImportRowCount(),
     arquivosDetectados: files
   });
 });
