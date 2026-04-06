@@ -1,4 +1,4 @@
-import('./backend/src/server.js')
+import('./src/server.js')
   .then(() => {
     console.log('[OK] Backend iniciado via server.js raiz');
   })
