@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
     "prisma:generate": "node ./node_modules/prisma/build/index.js generate --schema=prisma/schema.prisma",
     "prisma:push": "node ./node_modules/prisma/build/index.js db push --schema=prisma/schema.prisma",
     "prisma:seed": "node prisma/seed.js",

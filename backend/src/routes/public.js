@@ -10,7 +10,7 @@ import {
   readJanelas, readDocas, readAgendamentos, readFornecedoresPendentes,
   createAgendamentoFile, findAgendamentoByTokenFile, findAgendamentoFile, updateAgendamentoFile
 } from "../utils/file-store.js";
-import { syncLatestRelatorioToDatabase, fetchPendingFornecedoresFromDatabase, getRelatorioStatus } from "../utils/relatorio-terceirizado.js";
+import { ensureLatestRelatorioImport, listFornecedoresPendentesImportados, getRelatorioImportStatus, getRelatorioRowsCount } from "../utils/relatorio-entradas.js";
 
 const router = express.Router();
 const ACTIVE_STATUSES = ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"];
@@ -71,8 +71,11 @@ router.get("/disponibilidade", async (req, res) => {
 
 router.get("/relatorio-status", async (_req, res) => {
   try {
-    await syncLatestRelatorioToDatabase();
-    res.json(await getRelatorioStatus());
+    await ensureLatestRelatorioImport({ forceIfEmpty: true });
+    res.json({
+      ultimoProcessamento: getRelatorioImportStatus(),
+      totalLinhasNoBanco: await getRelatorioRowsCount()
+    });
   } catch (error) {
     console.error('[RELATORIO_IMPORT] Falha ao consultar status:', error?.message || error);
     res.status(500).json({ message: error?.message || 'Falha ao consultar o status da importação.' });
@@ -81,9 +84,8 @@ router.get("/relatorio-status", async (_req, res) => {
 
 router.get("/fornecedores-pendentes", async (_req, res) => {
   try {
-    await syncLatestRelatorioToDatabase();
-    const items = await fetchPendingFornecedoresFromDatabase();
-    return res.json(items);
+    await ensureLatestRelatorioImport({ forceIfEmpty: true });
+    return res.json(await listFornecedoresPendentesImportados());
   } catch (error) {
     console.error('[RELATORIO_IMPORT] Falha ao montar fornecedores pendentes:', error?.message || error);
     return res.json(readFornecedoresPendentes());

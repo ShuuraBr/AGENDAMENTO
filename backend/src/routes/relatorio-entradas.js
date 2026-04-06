@@ -3,7 +3,6 @@ import { authRequired, requireProfiles } from '../middlewares/auth.js';
 import {
   countRelatorioRowsInDatabase,
   getImportDirectory,
-  getRelatorioImportStatus,
   getRelatorioImportStatusDetailed,
   importRelatorioSpreadsheet,
   listSupportedImportFiles,

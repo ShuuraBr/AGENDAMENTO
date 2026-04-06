@@ -12,6 +12,14 @@ const backendRoot = path.resolve(__dirname, '../..');
 const dataDir = path.resolve(backendRoot, 'data');
 const uploadsDir = path.resolve(backendRoot, 'uploads');
 const importDir = path.join(uploadsDir, 'importacao-relatorio');
+const importDirCandidates = Array.from(new Set([
+  importDir,
+  path.resolve(backendRoot, '../uploads/importacao-relatorio'),
+  path.resolve(backendRoot, '../../uploads/importacao-relatorio'),
+  path.resolve(process.cwd(), 'uploads/importacao-relatorio'),
+  path.resolve(process.cwd(), 'backend/uploads/importacao-relatorio'),
+  path.resolve(process.cwd(), 'backend/backend/uploads/importacao-relatorio')
+]));
 const fallbackFile = path.join(dataDir, 'fornecedores-pendentes.json');
 const rawFallbackFile = path.join(dataDir, 'relatorio-terceirizado-raw.json');
 const stateFile = path.join(dataDir, 'importacao-relatorio-state.json');
@@ -79,6 +87,11 @@ function ensureDir(dir) {
 
 function quoteIdentifier(value = '') {
   return `\`${String(value).replace(/`/g, '``')}\``;
+}
+
+function sqlLiteral(value) {
+  if (value === null || value === undefined) return 'NULL';
+  return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
 }
 
 function xmlUnescape(value = '') {
@@ -217,16 +230,6 @@ function parseCsvLine(line = '', delimiter = ';') {
   return fields.map((value) => value.trim());
 }
 
-function detectHeaderIndex(rows = []) {
-  return rows.findIndex((row) => {
-    const normalized = row.map((cell) => normalizeCellValue(cell).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase());
-    const hasFornecedor = normalized.includes('fornecedor');
-    const hasNota = normalized.includes('nr. nota') || normalized.includes('nr nota') || normalized.includes('numero nota') || normalized.includes('número nota') || normalized.includes('nº nota');
-    const hasSerie = normalized.includes('serie') || normalized.includes('série');
-    return hasFornecedor && hasNota && hasSerie;
-  });
-}
-
 function parseCsv(content = '') {
   const lines = String(content || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim() !== '');
   if (!lines.length) return [];
@@ -302,7 +305,7 @@ function parseOdsContentXml(contentXml = '') {
     for (let i = 0; i < repeatRows; i += 1) rows.push([...rowValues]);
   }
 
-  const headerIndex = detectHeaderIndex(rows);
+  const headerIndex = rows.findIndex((row) => row.some((cell) => cell === 'Fornecedor') && row.some((cell) => cell.includes('Nr. nota')));
   if (headerIndex < 0) return [];
 
   const headers = rows[headerIndex].map(normalizeCellValue);
@@ -459,7 +462,7 @@ function buildImportKey(file = null) {
 }
 
 export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = true, source = 'sync', actor = null, ip = null } = {}) {
-  ensureDir(importDir);
+  for (const dir of importDirCandidates) ensureDir(dir);
   const latest = listSupportedImportFiles()[0] || null;
   const state = readState();
 
@@ -523,16 +526,15 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)}`);
 
   const columns = [...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
-  const placeholders = columns.map(() => '?').join(', ');
   const columnSql = columns.map((column) => quoteIdentifier(column)).join(', ');
 
   for (const row of rows) {
     const values = SHEET_COLUMNS.map((column) => normalizeCellValue(row[column] ?? ''));
     values.push(sourceFileName || null);
     values.push(JSON.stringify(row));
+    const valuesSql = values.map(sqlLiteral).join(', ');
     await prisma.$executeRawUnsafe(
-      `INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${placeholders})`,
-      ...values
+      `INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${valuesSql})`
     );
   }
 }
@@ -628,15 +630,30 @@ export function getRelatorioImportStatus() {
 }
 
 export function listSupportedImportFiles() {
-  ensureDir(importDir);
-  return fs.readdirSync(importDir)
-    .map((name) => path.join(importDir, name))
-    .filter((filePath) => SUPPORTED_EXTENSIONS.has(path.extname(filePath).toLowerCase()))
-    .map((filePath) => {
-      const stats = fs.statSync(filePath);
-      return { filePath, name: path.basename(filePath), mtimeMs: stats.mtimeMs, size: stats.size };
-    })
-    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const items = [];
+  const seen = new Set();
+  for (const dir of importDirCandidates) {
+    try {
+      ensureDir(dir);
+      for (const nameBuffer of fs.readdirSync(dir, { encoding: 'buffer' })) {
+        if (!SUPPORTED_EXTENSIONS.has(extnameSafe(nameBuffer).toLowerCase())) continue;
+        const filePath = joinBufferPath(dir, nameBuffer);
+        const stats = fs.statSync(filePath);
+        const key = `${pathToDisplayName(nameBuffer)}:${stats.size}:${stats.mtimeMs}`;
+        if (seen.has(key) || !stats.isFile()) continue;
+        seen.add(key);
+        items.push({
+          filePath,
+          name: pathToDisplayName(nameBuffer),
+          rawName: Buffer.from(nameBuffer),
+          mtimeMs: stats.mtimeMs,
+          size: stats.size,
+          sourceDir: dir
+        });
+      }
+    } catch {}
+  }
+  return items.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
 export async function scanImportFolderAndProcess() {
@@ -654,7 +671,7 @@ export async function scanImportFolderAndProcess() {
 
 export function startRelatorioImportWatcher() {
   if (watcherHandle) return watcherHandle;
-  ensureDir(importDir);
+  for (const dir of importDirCandidates) ensureDir(dir);
 
   scanImportFolderAndProcess().catch((error) => {
     console.error('Falha na importação automática inicial da planilha:', error?.message || error);
@@ -672,7 +689,7 @@ export function startRelatorioImportWatcher() {
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
-    ensureDir(importDir);
+    for (const dir of importDirCandidates) ensureDir(dir);
     cb(null, importDir);
   },
   filename: (_req, file, cb) => {
@@ -693,6 +710,6 @@ export const relatorioSpreadsheetUpload = multer({
 });
 
 export function getImportDirectory() {
-  ensureDir(importDir);
+  for (const dir of importDirCandidates) ensureDir(dir);
   return importDir;
 }
