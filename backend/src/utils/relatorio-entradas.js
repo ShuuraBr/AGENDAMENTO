@@ -74,6 +74,56 @@ const SHEET_COLUMNS = [
   'CFOP'
 ];
 
+const RELATORIO_COLUMN_DEFINITIONS = {
+  'Entrada': { type: 'VARCHAR(60) NULL', parse: (value) => parseNullableString(value, 60) },
+  'Fornecedor': { type: 'VARCHAR(255) NULL', parse: (value) => parseNullableString(value, 255) },
+  'Nr. nota': { type: 'VARCHAR(60) NULL', parse: (value) => parseNullableString(value, 60) },
+  'Série': { type: 'VARCHAR(30) NULL', parse: (value) => parseNullableString(value, 30) },
+  'Data emissão': { type: 'DATE NULL', parse: parseNullableDate },
+  'Data de Entrada': { type: 'DATE NULL', parse: parseNullableDate },
+  'Data 1º vencimento': { type: 'DATE NULL', parse: parseNullableDate },
+  'Tipo custo entrada': { type: 'VARCHAR(120) NULL', parse: (value) => parseNullableString(value, 120) },
+  'Valor da nota': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Valor desconto': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Qtd. itens': { type: 'INT NULL', parse: parseNullableInt },
+  'Valor produtos': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Total frete': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Volume total': { type: 'DECIMAL(15,3) NULL', parse: (value) => parseNullableDecimal(value, 3) },
+  'Peso total': { type: 'DECIMAL(15,3) NULL', parse: (value) => parseNullableDecimal(value, 3) },
+  'Outras desp.': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Total entradas': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Status': { type: 'VARCHAR(120) NULL', parse: (value) => parseNullableString(value, 120) },
+  'Prazo médio': { type: 'INT NULL', parse: parseNullableInt },
+  'Empresa': { type: 'VARCHAR(120) NULL', parse: (value) => parseNullableString(value, 120) },
+  'Data do cadastro': { type: 'DATETIME NULL', parse: parseNullableDateTime },
+  'Total de IPI': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Base de ICMS': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Total ICMS': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Desp. extras': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Desp. extr. mad.': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Frete conhec.': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Desp. financ.': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Base de ST': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Total ST': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'DARE guia': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'DARE antecip.': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'DARE 1566': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Serviços': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'ISSQN': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Valor apropriar': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Valor custo oper.': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'ISSQN retido': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Valor ICMS diferido': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Base FCP': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Valor FCP': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Base FCP ST': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Valor FCP ST': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'Valor FEEF - MT': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'ICMS desonerado': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'ICMS descontado PIS/COFINS': { type: 'DECIMAL(15,2) NULL', parse: (value) => parseNullableDecimal(value, 2) },
+  'CFOP': { type: 'VARCHAR(20) NULL', parse: (value) => parseNullableString(value, 20) }
+};
+
 let watcherHandle = null;
 let watcherBusy = false;
 
@@ -121,6 +171,86 @@ function parseNumber(value) {
   const normalized = raw.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
   const num = Number(normalized);
   return Number.isFinite(num) ? num : 0;
+}
+
+function parseNullableString(value, maxLength = null) {
+  const raw = normalizeCellValue(value);
+  if (!raw) return null;
+  return typeof maxLength === 'number' ? raw.slice(0, maxLength) : raw;
+}
+
+function parseNullableDecimal(value, decimals = 2) {
+  const raw = normalizeCellValue(value);
+  if (!raw) return null;
+  const num = parseNumber(raw);
+  if (!Number.isFinite(num)) return null;
+  return Number(num.toFixed(decimals));
+}
+
+function parseNullableInt(value) {
+  const raw = normalizeCellValue(value);
+  if (!raw) return null;
+  const num = parseNumber(raw);
+  if (!Number.isFinite(num)) return null;
+  return Math.trunc(num);
+}
+
+function parseNullableDate(value) {
+  const raw = normalizeCellValue(value);
+  if (!raw) return null;
+
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T].*)?$/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  const br = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+  if (!br) return null;
+
+  const day = br[1].padStart(2, '0');
+  const month = br[2].padStart(2, '0');
+  const year = br[3].length === 2 ? `20${br[3]}` : br[3];
+  return `${year}-${month}-${day}`;
+}
+
+function parseNullableDateTime(value) {
+  const raw = normalizeCellValue(value);
+  if (!raw) return null;
+
+  const isoDateTime = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (isoDateTime) return `${isoDateTime[1]}-${isoDateTime[2]}-${isoDateTime[3]} ${isoDateTime[4]}:${isoDateTime[5]}:${(isoDateTime[6] || '00').padStart(2, '0')}`;
+
+  const brDateTime = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (!brDateTime) return null;
+
+  const day = brDateTime[1].padStart(2, '0');
+  const month = brDateTime[2].padStart(2, '0');
+  const year = brDateTime[3].length === 2 ? `20${brDateTime[3]}` : brDateTime[3];
+  const hour = (brDateTime[4] || '00').padStart(2, '0');
+  const minute = (brDateTime[5] || '00').padStart(2, '0');
+  const second = (brDateTime[6] || '00').padStart(2, '0');
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+}
+
+function formatDatabaseValue(value) {
+  if (value == null) return '';
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    const hour = String(value.getHours()).padStart(2, '0');
+    const minute = String(value.getMinutes()).padStart(2, '0');
+    const second = String(value.getSeconds()).padStart(2, '0');
+    if (hour === '00' && minute === '00' && second === '00') return `${day}/${month}/${year}`;
+    return `${day}/${month}/${year} ${hour}:${minute}:${second}`;
+  }
+
+  const raw = String(value).trim();
+  const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]}`;
+
+  const dateTime = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (dateTime) return `${dateTime[3]}/${dateTime[2]}/${dateTime[1]} ${dateTime[4]}:${dateTime[5]}:${dateTime[6] || '00'}`;
+
+  return normalizeCellValue(raw);
 }
 
 function toFixedNumber(value, decimals = 3) {
@@ -401,12 +531,12 @@ function writeRawFallback(rows = []) {
   fs.writeFileSync(rawFallbackFile, JSON.stringify(rows, null, 2), 'utf8');
 }
 
-async function ensureRelatorioTable() {
+function buildRelatorioTableSql() {
   const businessColumnsSql = SHEET_COLUMNS
-    .map((column) => `${quoteIdentifier(column)} TEXT NULL`)
+    .map((column) => `${quoteIdentifier(column)} ${RELATORIO_COLUMN_DEFINITIONS[column]?.type || 'TEXT NULL'}`)
     .join(',\n      ');
 
-  await prisma.$executeRawUnsafe(`
+  return `
     CREATE TABLE IF NOT EXISTS ${quoteIdentifier(TABLE_NAME)} (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
       ${businessColumnsSql},
@@ -415,17 +545,26 @@ async function ensureRelatorioTable() {
       updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       dadosOriginaisJson LONGTEXT NULL,
       INDEX idx_relatorio_fornecedor (${quoteIdentifier('Fornecedor')}(191)),
-      INDEX idx_relatorio_nf (${quoteIdentifier('Nr. nota')}(191)),
-      INDEX idx_relatorio_status (${quoteIdentifier('Status')}(191))
+      INDEX idx_relatorio_nf (${quoteIdentifier('Nr. nota')}),
+      INDEX idx_relatorio_status (${quoteIdentifier('Status')})
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
+  `;
+}
+
+async function ensureRelatorioTable({ rebuild = false } = {}) {
+  if (rebuild) {
+    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS ${quoteIdentifier(TABLE_NAME)}`);
+  }
+
+  await prisma.$executeRawUnsafe(buildRelatorioTableSql());
 
   const existingColumns = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
   const existingNames = new Set((existingColumns || []).map((item) => String(item.Field || '')));
 
   for (const column of SHEET_COLUMNS) {
     if (!existingNames.has(column)) {
-      await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN ${quoteIdentifier(column)} TEXT NULL`);
+      const columnType = RELATORIO_COLUMN_DEFINITIONS[column]?.type || 'TEXT NULL';
+      await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN ${quoteIdentifier(column)} ${columnType}`);
     }
   }
 
@@ -517,15 +656,17 @@ export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = t
 export { countRelatorioRowsInDatabase };
 
 async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
-  await ensureRelatorioTable();
-  await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)}`);
+  await ensureRelatorioTable({ rebuild: true });
 
   const columns = [...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
   const placeholders = columns.map(() => '?').join(', ');
   const columnSql = columns.map((column) => quoteIdentifier(column)).join(', ');
 
   for (const row of rows) {
-    const values = SHEET_COLUMNS.map((column) => normalizeCellValue(row[column] ?? ''));
+    const values = SHEET_COLUMNS.map((column) => {
+      const parser = RELATORIO_COLUMN_DEFINITIONS[column]?.parse;
+      return typeof parser === 'function' ? parser(row[column] ?? '') : normalizeCellValue(row[column] ?? '');
+    });
     values.push(sourceFileName || null);
     values.push(JSON.stringify(row));
     await prisma.$executeRawUnsafe(
@@ -536,9 +677,21 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
 }
 
 function parseRowFromDatabase(row = {}) {
+  const raw = (() => {
+    try {
+      return row?.dadosOriginaisJson ? JSON.parse(row.dadosOriginaisJson) : null;
+    } catch {
+      return null;
+    }
+  })();
+
   const output = {};
   for (const column of SHEET_COLUMNS) {
-    output[column] = normalizeCellValue(row[column] ?? '');
+    if (raw && Object.prototype.hasOwnProperty.call(raw, column)) {
+      output[column] = normalizeCellValue(raw[column] ?? '');
+      continue;
+    }
+    output[column] = formatDatabaseValue(row[column]);
   }
   return output;
 }
