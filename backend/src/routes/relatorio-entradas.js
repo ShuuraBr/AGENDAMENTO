@@ -3,11 +3,10 @@ import { authRequired, requireProfiles } from '../middlewares/auth.js';
 import {
   countRelatorioRowsInDatabase,
   getImportDirectory,
-  getRelatorioImportStatusDetailed,
+  getRelatorioImportStatus,
   importRelatorioSpreadsheet,
   listSupportedImportFiles,
   relatorioSpreadsheetUpload,
-  scanImportFolderAndProcess,
   syncLatestRelatorioFromFolder
 } from '../utils/relatorio-entradas.js';
 

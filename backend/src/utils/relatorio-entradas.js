@@ -9,9 +9,13 @@ import { auditLog } from './audit.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const backendRoot = path.resolve(__dirname, '../..');
+const projectRoot = path.resolve(backendRoot, '..');
 const dataDir = path.resolve(backendRoot, 'data');
 const uploadsDir = path.resolve(backendRoot, 'uploads');
 const importDir = path.join(uploadsDir, 'importacao-relatorio');
+const rootLevelImportDir = path.join(projectRoot, 'uploads', 'importacao-relatorio');
+const legacyNestedImportDir = path.join(backendRoot, 'backend', 'uploads', 'importacao-relatorio');
+const importDirectories = [...new Set([importDir, rootLevelImportDir, legacyNestedImportDir])];
 const fallbackFile = path.join(dataDir, 'fornecedores-pendentes.json');
 const rawFallbackFile = path.join(dataDir, 'relatorio-terceirizado-raw.json');
 const stateFile = path.join(dataDir, 'importacao-relatorio-state.json');
@@ -75,6 +79,10 @@ let watcherBusy = false;
 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
+}
+
+function ensureImportDirectories() {
+  importDirectories.forEach((dir) => ensureDir(dir));
 }
 
 function quoteIdentifier(value = '') {
@@ -449,7 +457,7 @@ function buildImportKey(file = null) {
 }
 
 export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = true, source = 'sync', actor = null, ip = null } = {}) {
-  ensureDir(importDir);
+  ensureImportDirectories();
   const latest = listSupportedImportFiles()[0] || null;
   const state = readState();
 
@@ -617,14 +625,34 @@ export function getRelatorioImportStatus() {
   return readState().lastImport || null;
 }
 
+export function getRelatorioImportStatusDetailed() {
+  return {
+    ultimoProcessamento: getRelatorioImportStatus(),
+    pastaMonitorada: getImportDirectory(),
+    pastasMonitoradas: importDirectories,
+    arquivosDetectados: listSupportedImportFiles().map((item) => ({
+      nome: item.name,
+      tamanho: item.size,
+      modificadoEm: new Date(item.mtimeMs).toISOString(),
+      pasta: item.directory
+    }))
+  };
+}
+
 export function listSupportedImportFiles() {
-  ensureDir(importDir);
-  return fs.readdirSync(importDir)
-    .map((name) => path.join(importDir, name))
+  ensureImportDirectories();
+  return importDirectories
+    .flatMap((dir) => {
+      try {
+        return fs.readdirSync(dir).map((name) => path.join(dir, name));
+      } catch {
+        return [];
+      }
+    })
     .filter((filePath) => SUPPORTED_EXTENSIONS.has(path.extname(filePath).toLowerCase()))
     .map((filePath) => {
       const stats = fs.statSync(filePath);
-      return { filePath, name: path.basename(filePath), mtimeMs: stats.mtimeMs, size: stats.size };
+      return { filePath, name: path.basename(filePath), mtimeMs: stats.mtimeMs, size: stats.size, directory: path.dirname(filePath) };
     })
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
@@ -644,7 +672,7 @@ export async function scanImportFolderAndProcess() {
 
 export function startRelatorioImportWatcher() {
   if (watcherHandle) return watcherHandle;
-  ensureDir(importDir);
+  ensureImportDirectories();
 
   scanImportFolderAndProcess().catch((error) => {
     console.error('Falha na importação automática inicial da planilha:', error?.message || error);
