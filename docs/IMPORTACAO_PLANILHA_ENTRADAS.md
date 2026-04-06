@@ -1,55 +1,19 @@
-# Importação automática da planilha de entradas
+Importação automática da planilha de entradas
 
-A aplicação agora consegue importar automaticamente a planilha de entradas e atualizar a base usada no agendamento.
-
-## Formatos aceitos
-- `.ods`
-- `.csv`
-- `.json`
-
-## Pasta monitorada automaticamente
-A cada 60 segundos o backend verifica a pasta:
-
+O backend monitora a pasta:
 `backend/uploads/importacao-relatorio`
 
-Se houver um arquivo novo ou alterado, ele será processado automaticamente.
+Ao iniciar o servidor, a planilha mais recente é lida automaticamente. A cada 60 segundos o sistema verifica se houve arquivo novo ou alteração.
 
-## Endpoint para upload manual
-Rota protegida para ADMIN e GESTOR:
+Nesta versão a tabela `RelatorioTerceirizado` passou a receber as linhas da planilha em nível de NF, com as colunas operacionais do documento. A tela de `Novo agendamento interno` não lê mais um resumo pré-agrupado; ela agrupa os fornecedores pendentes a partir das linhas importadas no banco.
 
-`POST /api/relatorio-entradas/importar`
+Fluxo:
+1. colocar a planilha `.ods`, `.csv` ou `.json` na pasta monitorada
+2. iniciar o backend
+3. conferir `GET /api/relatorio-entradas/status`
+4. conferir a tabela `RelatorioTerceirizado`
+5. abrir `Novo agendamento interno` e validar o fornecedor pendente
 
-Campo do formulário multipart:
-- `arquivo`
-
-## Endpoint de status
-Rota protegida:
-
-`GET /api/relatorio-entradas/status`
-
-Retorna:
-- última importação executada
-- pasta monitorada
-- arquivos detectados
-
-## Comportamento da importação
-- a planilha é tratada como fotografia atual do relatório
-- a lista de fornecedores pendentes é substituída pela última planilha importada
-- quando o banco estiver disponível, os dados são gravados na tabela `RelatorioTerceirizado`
-- quando o banco não estiver disponível, o sistema mantém fallback em `backend/data/fornecedores-pendentes.json`
-
-## Colunas utilizadas da planilha
-- Entrada
-- Fornecedor
-- Nr. nota
-- Série
-- Data emissão
-- Data de Entrada
-- Tipo custo entrada
-- Valor da nota
-- Volume total
-- Peso total
-- Transportadora
-
-## Observação operacional
-Para a importação automática funcionar sem ação manual, basta copiar a planilha nova para a pasta monitorada.
+Se o banco falhar, o sistema mantém fallback em:
+- `backend/data/relatorio-terceirizado-raw.json`
+- `backend/data/fornecedores-pendentes.json`
