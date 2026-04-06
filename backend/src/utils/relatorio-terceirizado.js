@@ -399,6 +399,16 @@ async function tableExists(client, tableName) {
   return Array.isArray(rows) && rows.length > 0;
 }
 
+async function nextBackupTableName(client) {
+  const base = `${TABLE_NAME}_backup_${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}`;
+  for (let i = 0; i < 1000; i += 1) {
+    const candidate = i === 0 ? base : `${base}_${String(i).padStart(3, '0')}`;
+    const exists = await tableExists(client, candidate);
+    if (!exists) return candidate;
+  }
+  return `${base}_${Date.now()}`;
+}
+
 async function ensureRelatorioBaseTable(client) {
   const exists = await tableExists(client, TABLE_NAME);
   if (exists) {
@@ -410,7 +420,7 @@ async function ensureRelatorioBaseTable(client) {
     const expected = desiredBaseColumns();
     const sameShape = current.length === expected.length && current.every((item, index) => item.name === expected[index].name && item.type === expected[index].type);
     if (!sameShape) {
-      const backupName = `${TABLE_NAME}_backup_${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}`;
+      const backupName = await nextBackupTableName(client);
       await client.$executeRawUnsafe(`RENAME TABLE ${qid(TABLE_NAME)} TO ${qid(backupName)}`);
     }
   }
