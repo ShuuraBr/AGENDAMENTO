@@ -73,6 +73,33 @@ const SHEET_COLUMNS = [
 let watcherHandle = null;
 let watcherBusy = false;
 
+function pathToDisplayName(filePathOrName) {
+  if (Buffer.isBuffer(filePathOrName)) {
+    const utf8 = filePathOrName.toString('utf8');
+    if (!utf8.includes('�')) return utf8;
+    return filePathOrName.toString('latin1');
+  }
+  return String(filePathOrName || '');
+}
+
+function joinBufferPath(dir, name) {
+  return Buffer.concat([Buffer.from(String(dir)), Buffer.from('/'), Buffer.isBuffer(name) ? name : Buffer.from(String(name))]);
+}
+
+function extnameSafe(filePathOrName) {
+  const value = pathToDisplayName(filePathOrName);
+  const ext = path.extname(value).toLowerCase();
+  if (ext) return ext;
+  const bytes = Buffer.isBuffer(filePathOrName) ? filePathOrName : Buffer.from(String(filePathOrName || ''));
+  const ascii = bytes.toString('latin1').toLowerCase();
+  return path.extname(ascii);
+}
+
+function buildFileKey(name, stats) {
+  const displayName = pathToDisplayName(name);
+  return `${displayName}:${stats.mtimeMs}:${stats.size}`;
+}
+
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
@@ -354,7 +381,7 @@ function readZipEntry(filePath, entryName) {
 }
 
 function parseSpreadsheetFile(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
+  const ext = extnameSafe(filePath).toLowerCase();
   if (!SUPPORTED_EXTENSIONS.has(ext)) {
     throw new Error('Formato de planilha não suportado. Use .ods, .csv ou .json.');
   }
@@ -435,79 +462,6 @@ async function ensureRelatorioTable() {
   }
 }
 
-
-async function countRelatorioRowsInDatabase() {
-  await ensureRelatorioTable();
-  const rows = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS total FROM ${quoteIdentifier(TABLE_NAME)}`);
-  const total = Number(rows?.[0]?.total ?? rows?.[0]?.['COUNT(*)'] ?? 0);
-  return Number.isFinite(total) ? total : 0;
-}
-
-function buildImportKey(file = null) {
-  if (!file) return null;
-  return `${file.name}:${file.mtimeMs}:${file.size}`;
-}
-
-export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = true, source = 'sync', actor = null, ip = null } = {}) {
-  ensureDir(importDir);
-  const latest = listSupportedImportFiles()[0] || null;
-  const state = readState();
-
-  let totalLinhasNoBanco = 0;
-  try {
-    totalLinhasNoBanco = await countRelatorioRowsInDatabase();
-  } catch (error) {
-    console.error('Falha ao contar linhas do relatório no banco:', error?.message || error);
-  }
-
-  if (!latest) {
-    return {
-      ok: true,
-      imported: false,
-      reason: 'no_file',
-      totalLinhasNoBanco
-    };
-  }
-
-  const currentKey = buildImportKey(latest);
-  const sameFileAlreadyProcessed = state.lastProcessedKey === currentKey;
-  const shouldImport = !sameFileAlreadyProcessed || (forceWhenDatabaseEmpty && totalLinhasNoBanco === 0);
-
-  if (!shouldImport) {
-    return {
-      ok: true,
-      imported: false,
-      reason: 'up_to_date',
-      fileName: latest.name,
-      totalLinhasNoBanco,
-      lastProcessedKey: state.lastProcessedKey || null
-    };
-  }
-
-  const summary = await importRelatorioSpreadsheet({
-    filePath: latest.filePath,
-    originalName: latest.name,
-    actor,
-    source,
-    ip
-  });
-
-  let totalDepois = totalLinhasNoBanco;
-  try {
-    totalDepois = await countRelatorioRowsInDatabase();
-  } catch (error) {
-    console.error('Falha ao contar linhas do relatório no banco após importação:', error?.message || error);
-  }
-
-  return {
-    ...summary,
-    imported: true,
-    totalLinhasNoBanco: totalDepois
-  };
-}
-
-export { countRelatorioRowsInDatabase };
-
 async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   await ensureRelatorioTable();
   await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)}`);
@@ -558,6 +512,7 @@ export async function listFornecedoresPendentesImportados() {
 }
 
 export async function importRelatorioSpreadsheet({ filePath, originalName = '', actor = null, source = 'manual', ip = null } = {}) {
+  const resolvedOriginalName = originalName || pathToDisplayName(Buffer.isBuffer(filePath) ? filePath.slice(filePath.lastIndexOf(Buffer.from('/')) + 1) : path.basename(String(filePath)));
   const rows = parseSpreadsheetFile(filePath);
   if (!rows.length) throw new Error('Nenhuma linha válida foi encontrada na planilha.');
 
@@ -568,7 +523,7 @@ export async function importRelatorioSpreadsheet({ filePath, originalName = '', 
   let persistedIn = 'arquivo';
 
   try {
-    await replaceDatabaseSnapshot(validRows, originalName || path.basename(filePath));
+    await replaceDatabaseSnapshot(validRows, resolvedOriginalName);
     persistedIn = 'banco';
   } catch (error) {
     console.error('Falha ao persistir planilha no banco. Mantendo fallback em arquivo:', error?.message || error);
@@ -587,7 +542,7 @@ export async function importRelatorioSpreadsheet({ filePath, originalName = '', 
     totalValorNf: toFixedNumber(groups.reduce((acc, item) => acc + Number(item.valorTotalNf || 0), 0), 2),
     persistedIn,
     source,
-    fileName: originalName || path.basename(filePath),
+    fileName: resolvedOriginalName,
     importedAt: new Date().toISOString()
   };
 
@@ -595,7 +550,7 @@ export async function importRelatorioSpreadsheet({ filePath, originalName = '', 
   writeState({
     ...readState(),
     lastImport: summary,
-    lastProcessedKey: `${summary.fileName}:${stats.mtimeMs}:${stats.size}`
+    lastProcessedKey: buildFileKey(summary.fileName, stats)
   });
 
   if (actor?.sub || actor?.id) {
@@ -609,7 +564,6 @@ export async function importRelatorioSpreadsheet({ filePath, originalName = '', 
     });
   }
 
-  console.log(`[IMPORTACAO_RELATORIO] arquivo=${summary.fileName} validas=${summary.totalLinhasValidas} fornecedores=${summary.totalFornecedores} persistedIn=${summary.persistedIn}`);
   return summary;
 }
 
@@ -617,14 +571,58 @@ export function getRelatorioImportStatus() {
   return readState().lastImport || null;
 }
 
+export async function getRelatorioRowsCount() {
+  try {
+    await ensureRelatorioTable();
+    const result = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS total FROM ${quoteIdentifier(TABLE_NAME)}`);
+    const total = Number(result?.[0]?.total || result?.[0]?.TOTAL || 0);
+    return Number.isFinite(total) ? total : 0;
+  } catch (error) {
+    console.error('Falha ao contar linhas do relatório terceirizado:', error?.message || error);
+    return 0;
+  }
+}
+
+export async function ensureLatestRelatorioImport({ forceIfEmpty = true } = {}) {
+  const latest = listSupportedImportFiles()[0];
+  if (!latest) return null;
+
+  const key = buildFileKey(latest.rawName || latest.name, latest);
+  const state = readState();
+  const totalLinhasNoBanco = await getRelatorioRowsCount();
+  const shouldReimport = state.lastProcessedKey !== key || (forceIfEmpty && totalLinhasNoBanco === 0);
+
+  if (!shouldReimport) {
+    return {
+      ok: true,
+      skipped: true,
+      motivo: 'arquivo_ja_processado',
+      fileName: latest.name,
+      totalLinhasNoBanco
+    };
+  }
+
+  return importRelatorioSpreadsheet({
+    filePath: latest.filePath,
+    originalName: latest.name,
+    source: forceIfEmpty && totalLinhasNoBanco === 0 ? 'auto-page-empty-db' : 'auto-page'
+  });
+}
+
 export function listSupportedImportFiles() {
   ensureDir(importDir);
-  return fs.readdirSync(importDir)
-    .map((name) => path.join(importDir, name))
-    .filter((filePath) => SUPPORTED_EXTENSIONS.has(path.extname(filePath).toLowerCase()))
-    .map((filePath) => {
+  return fs.readdirSync(importDir, { encoding: 'buffer' })
+    .filter((nameBuffer) => SUPPORTED_EXTENSIONS.has(extnameSafe(nameBuffer).toLowerCase()))
+    .map((nameBuffer) => {
+      const filePath = joinBufferPath(importDir, nameBuffer);
       const stats = fs.statSync(filePath);
-      return { filePath, name: path.basename(filePath), mtimeMs: stats.mtimeMs, size: stats.size };
+      return {
+        filePath,
+        name: pathToDisplayName(nameBuffer),
+        rawName: Buffer.from(nameBuffer),
+        mtimeMs: stats.mtimeMs,
+        size: stats.size
+      };
     })
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
@@ -633,10 +631,7 @@ export async function scanImportFolderAndProcess() {
   if (watcherBusy) return null;
   watcherBusy = true;
   try {
-    return await syncLatestRelatorioFromFolder({
-      forceWhenDatabaseEmpty: true,
-      source: 'watcher'
-    });
+    return await ensureLatestRelatorioImport({ forceIfEmpty: true });
   } finally {
     watcherBusy = false;
   }

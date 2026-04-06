@@ -1,0 +1,1 @@
+import { prisma } from '../../config/prisma.js'; import { createCrudController } from '../shared/crud-factory.js'; import { createSchema, updateSchema } from './veiculos.schemas.js'; const model = prisma.veiculo; export const controller = createCrudController({ model, createSchema, updateSchema });

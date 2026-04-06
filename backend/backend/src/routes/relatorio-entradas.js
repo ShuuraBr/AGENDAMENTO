@@ -1,14 +1,13 @@
 import { Router } from 'express';
 import { authRequired, requireProfiles } from '../middlewares/auth.js';
 import {
-  countRelatorioRowsInDatabase,
   getImportDirectory,
   getRelatorioImportStatus,
+  getRelatorioRowsCount,
   importRelatorioSpreadsheet,
   listSupportedImportFiles,
   relatorioSpreadsheetUpload,
-  scanImportFolderAndProcess,
-  syncLatestRelatorioFromFolder
+  scanImportFolderAndProcess
 } from '../utils/relatorio-entradas.js';
 
 const router = Router();
@@ -20,20 +19,12 @@ router.get('/status', requireProfiles('ADMIN', 'GESTOR', 'OPERADOR'), async (_re
     tamanho: item.size,
     modificadoEm: new Date(item.mtimeMs).toISOString()
   }));
-
-  let totalLinhasNoBanco = 0;
-  try {
-    totalLinhasNoBanco = await countRelatorioRowsInDatabase();
-  } catch (error) {
-    console.error('Falha ao contar linhas do relatório no status:', error?.message || error);
-  }
-
   res.json({
     ok: true,
     pastaMonitorada: getImportDirectory(),
     ultimoProcessamento: getRelatorioImportStatus(),
-    arquivosDetectados: files,
-    totalLinhasNoBanco
+    totalLinhasNoBanco: await getRelatorioRowsCount(),
+    arquivosDetectados: files
   });
 });
 
@@ -55,12 +46,10 @@ router.post('/importar', requireProfiles('ADMIN', 'GESTOR'), relatorioSpreadshee
 
 router.post('/processar-pasta', requireProfiles('ADMIN', 'GESTOR'), async (req, res) => {
   try {
-    const result = await syncLatestRelatorioFromFolder({
-      forceWhenDatabaseEmpty: true,
-      source: 'manual.processar-pasta',
-      actor: req.user,
-      ip: req.ip
-    });
+    const result = await scanImportFolderAndProcess();
+    if (!result) {
+      return res.json({ ok: true, message: 'Nenhuma planilha nova para importar.', ultimoProcessamento: getRelatorioImportStatus() });
+    }
     res.json(result);
   } catch (error) {
     res.status(400).json({ message: error?.message || 'Falha ao processar a pasta monitorada.' });
