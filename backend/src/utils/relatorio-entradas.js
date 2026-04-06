@@ -435,6 +435,17 @@ async function ensureRelatorioTable() {
   }
 }
 
+
+async function getImportedRowCount() {
+  try {
+    await ensureRelatorioTable();
+    const result = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS total FROM ${quoteIdentifier(TABLE_NAME)}`);
+    return Number(result?.[0]?.total || result?.[0]?.['COUNT(*)'] || 0);
+  } catch {
+    return 0;
+  }
+}
+
 async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   await ensureRelatorioTable();
   await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)}`);
@@ -564,12 +575,16 @@ export async function scanImportFolderAndProcess() {
 
     const key = `${latest.name}:${latest.mtimeMs}:${latest.size}`;
     const state = readState();
-    if (state.lastProcessedKey === key) return null;
+    const rowCount = await getImportedRowCount();
+    const sameFileAlreadyProcessed = state.lastProcessedKey === key;
+    const bancoOk = state?.lastImport?.persistedIn === 'banco' && rowCount > 0;
+
+    if (sameFileAlreadyProcessed && bancoOk) return null;
 
     return await importRelatorioSpreadsheet({
       filePath: latest.filePath,
       originalName: latest.name,
-      source: 'watcher'
+      source: sameFileAlreadyProcessed ? 'auto-repair' : 'watcher'
     });
   } finally {
     watcherBusy = false;
@@ -619,4 +634,9 @@ export const relatorioSpreadsheetUpload = multer({
 export function getImportDirectory() {
   ensureDir(importDir);
   return importDir;
+}
+
+
+export async function getRelatorioImportRowCount() {
+  return getImportedRowCount();
 }
