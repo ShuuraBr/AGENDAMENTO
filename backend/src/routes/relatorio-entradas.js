@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authRequired, requireProfiles } from '../middlewares/auth.js';
 import {
+  ensureRelatorioImportUpToDate,
   getImportDirectory,
   getRelatorioImportStatus,
   importRelatorioSpreadsheet,
@@ -13,6 +14,7 @@ const router = Router();
 router.use(authRequired);
 
 router.get('/status', requireProfiles('ADMIN', 'GESTOR', 'OPERADOR'), async (_req, res) => {
+  const sync = await ensureRelatorioImportUpToDate();
   const files = listSupportedImportFiles().map((item) => ({
     nome: item.name,
     tamanho: item.size,
@@ -22,6 +24,8 @@ router.get('/status', requireProfiles('ADMIN', 'GESTOR', 'OPERADOR'), async (_re
     ok: true,
     pastaMonitorada: getImportDirectory(),
     ultimoProcessamento: getRelatorioImportStatus(),
+    totalLinhasNoBanco: sync?.totalLinhasNoBanco ?? 0,
+    sincronizacaoAtual: sync,
     arquivosDetectados: files
   });
 });

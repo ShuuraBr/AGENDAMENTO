@@ -454,6 +454,56 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   }
 }
 
+async function getDatabaseRowCount() {
+  try {
+    await ensureRelatorioTable();
+    const rows = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS total FROM ${quoteIdentifier(TABLE_NAME)}`);
+    const total = Number(rows?.[0]?.total ?? rows?.[0]?.['COUNT(*)'] ?? 0);
+    return Number.isFinite(total) ? total : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function ensureRelatorioImportUpToDate() {
+  const latest = listSupportedImportFiles()[0];
+  if (!latest) {
+    return {
+      ok: true,
+      imported: false,
+      reason: 'Nenhuma planilha encontrada na pasta monitorada.',
+      totalLinhasNoBanco: await getDatabaseRowCount()
+    };
+  }
+
+  const key = `${latest.name}:${latest.mtimeMs}:${latest.size}`;
+  const state = readState();
+  const totalLinhasNoBanco = await getDatabaseRowCount();
+  const shouldImport = state.lastProcessedKey !== key || totalLinhasNoBanco === 0;
+
+  if (!shouldImport) {
+    return {
+      ok: true,
+      imported: false,
+      reason: 'Planilha já sincronizada com o banco.',
+      fileName: latest.name,
+      totalLinhasNoBanco
+    };
+  }
+
+  const summary = await importRelatorioSpreadsheet({
+    filePath: latest.filePath,
+    originalName: latest.name,
+    source: 'page-access'
+  });
+
+  return {
+    ...summary,
+    imported: true,
+    totalLinhasNoBanco: await getDatabaseRowCount()
+  };
+}
+
 function parseRowFromDatabase(row = {}) {
   const output = {};
   for (const column of SHEET_COLUMNS) {
@@ -463,6 +513,12 @@ function parseRowFromDatabase(row = {}) {
 }
 
 export async function listFornecedoresPendentesImportados() {
+  try {
+    await ensureRelatorioImportUpToDate();
+  } catch (error) {
+    console.error('Falha ao sincronizar planilha antes de listar pendências:', error?.message || error);
+  }
+
   try {
     await ensureRelatorioTable();
     const rows = await prisma.$queryRawUnsafe(
@@ -559,18 +615,8 @@ export async function scanImportFolderAndProcess() {
   if (watcherBusy) return null;
   watcherBusy = true;
   try {
-    const latest = listSupportedImportFiles()[0];
-    if (!latest) return null;
-
-    const key = `${latest.name}:${latest.mtimeMs}:${latest.size}`;
-    const state = readState();
-    if (state.lastProcessedKey === key) return null;
-
-    return await importRelatorioSpreadsheet({
-      filePath: latest.filePath,
-      originalName: latest.name,
-      source: 'watcher'
-    });
+    const result = await ensureRelatorioImportUpToDate();
+    return result?.imported ? result : null;
   } finally {
     watcherBusy = false;
   }
