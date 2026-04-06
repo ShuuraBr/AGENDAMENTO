@@ -9,11 +9,11 @@ import { auditLog } from '../utils/audit.js';
 import { calculateTotals, normalizeCpf } from '../utils/agendamento-helpers.js';
 import { sendMail } from '../utils/email.js';
 import { ensureFeedbackRequest, getFeedbackRequestByToken, maskCpf, submitFeedbackByToken } from '../utils/driver-feedback.js';
+import { listFornecedoresPendentesImportados } from '../utils/relatorio-entradas.js';
 import {
   readJanelas,
   readDocas,
   readAgendamentos,
-  readFornecedoresPendentes,
   createAgendamentoFile,
   findAgendamentoByTokenFile,
   updateAgendamentoFile
@@ -341,7 +341,7 @@ router.get('/disponibilidade', async (req, res) => {
 });
 
 router.get('/fornecedores-pendentes', async (_req, res) => {
-  res.json(readFornecedoresPendentes());
+  res.json(await listFornecedoresPendentesImportados());
 });
 
 router.post('/solicitacao', async (req, res) => {
