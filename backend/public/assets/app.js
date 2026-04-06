@@ -13,7 +13,8 @@
     scanning: false,
     internalPendingFornecedor: null,
     internalSelectedNotas: [],
-    docaOptions: []
+    docaOptions: [],
+    user: (() => { try { return JSON.parse(localStorage.getItem("user_profile") || "null"); } catch { return null; } })()
   };
 
   const CADASTRO_CONFIG = {
@@ -99,6 +100,19 @@
   };
 
   function byId(id) { return document.getElementById(id); }
+
+  const KPI_LABELS = {
+    total: 'Total',
+    pendentes: 'Pendentes',
+    aprovados: 'Aprovados',
+    chegou: 'Chegada',
+    emdescarga: 'Em descarga',
+    finalizados: 'Finalizados',
+    cancelados: 'Cancelados',
+    noshow: 'No-show',
+    pesokg: 'Peso total (kg)',
+    valortotal: 'Valor total (R$)'
+  };
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -345,15 +359,31 @@
     return Date.now() >= data.exp * 1000;
   }
 
+
+  function applyRoleRestrictions() {
+    const isAdmin = state.user?.perfil === 'ADMIN';
+    document.querySelectorAll('[data-tipo="usuarios"]').forEach((el) => {
+      el.classList.toggle('hidden', !isAdmin);
+    });
+    if (!isAdmin && state.cadastroTipo === 'usuarios') {
+      state.cadastroTipo = 'fornecedores';
+      setActiveButton('.cad-tab', document.querySelector('.cad-tab[data-tipo="fornecedores"]'));
+      renderCadastroForm();
+    }
+  }
+
   function logout() {
     localStorage.removeItem("token");
+    localStorage.removeItem("user_profile");
     state.token = "";
+    state.user = null;
     updateNav();
     showView("public-home");
   }
 
   function updateNav() {
     const logged = !!state.token && !isTokenExpired(state.token);
+    applyRoleRestrictions();
     byId("publicNav")?.classList.toggle("hidden", logged);
     byId("privateNav")?.classList.toggle("hidden", !logged);
     if (!logged && state.token) logout();
@@ -391,6 +421,61 @@
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.view === id);
     });
+  }
+
+
+  function renderAvaliacaoIntro(data) {
+    const motorista = data?.motorista || {};
+    return `
+      <div class="avaliacao-identificacao">
+        <div><span class="field-label">Motorista</span><strong>${escapeHtml(motorista.nome || '-')}</strong></div>
+        <div><span class="field-label">CPF</span><strong>${escapeHtml(motorista.cpf || '-')}</strong></div>
+        <div><span class="field-label">Placa</span><strong>${escapeHtml(motorista.placa || '-')}</strong></div>
+        <div><span class="field-label">Protocolo</span><strong>${escapeHtml(motorista.protocolo || '-')}</strong></div>
+        <div><span class="field-label">Transportadora</span><strong>${escapeHtml(motorista.transportadora || '-')}</strong></div>
+        <div><span class="field-label">Fornecedor</span><strong>${escapeHtml(motorista.fornecedor || '-')}</strong></div>
+        <div><span class="field-label">Data</span><strong>${escapeHtml(formatDateBR(motorista.dataAgendada) || '-')}</strong></div>
+        <div><span class="field-label">Horário</span><strong>${escapeHtml(formatHour(motorista.horaAgendada) || '-')}</strong></div>
+      </div>
+      <div class="warning-box mt12">Sua resposta é sigilosa e não fica visível para a equipe operacional de agendamento e descarga.</div>
+    `;
+  }
+
+  function preencherAvaliacaoForm(resposta = {}) {
+    const form = byId('avaliacaoForm');
+    if (!form) return;
+    ['atendimentoNota', 'equipeNota', 'rapidezNota', 'processoTranquilo', 'comentario'].forEach((name) => {
+      const input = form.querySelector(`[name="${name}"]`);
+      if (input) input.value = resposta?.[name] ?? '';
+    });
+  }
+
+  async function loadAvaliacaoForm(token) {
+    const form = byId('avaliacaoForm');
+    const intro = byId('avaliacaoIntro');
+    const msg = byId('avaliacaoMsg');
+    if (!form || !intro || !msg) return;
+
+    try {
+      msg.textContent = '';
+      intro.textContent = 'Carregando dados do atendimento...';
+      const data = await api(`/api/public/avaliacao/${encodeURIComponent(token)}`);
+      intro.innerHTML = renderAvaliacaoIntro(data);
+      preencherAvaliacaoForm(data.resposta || {});
+      const submitButton = form.querySelector('button[type="submit"]');
+      const bloqueado = !!data.responded;
+      form.querySelectorAll('select, textarea, button').forEach((field) => {
+        field.disabled = bloqueado;
+      });
+      if (submitButton) submitButton.textContent = bloqueado ? 'Avaliação já enviada' : 'Enviar avaliação';
+      msg.textContent = bloqueado
+        ? 'Esta avaliação já foi registrada. Obrigado pelo retorno.'
+        : 'Preencha sua avaliação abaixo.';
+    } catch (err) {
+      intro.innerHTML = '<div class="warning-box">Não foi possível carregar o formulário de avaliação.</div>';
+      form.classList.add('hidden');
+      msg.textContent = err.message;
+    }
   }
 
   function tableFromObjects(items) {
@@ -843,25 +928,34 @@
     const kpis = byId("kpis");
     if (kpis) {
       kpis.innerHTML = "";
-      Object.entries(data.kpis || {}).forEach(([k, v]) => {
-        const div = document.createElement("div");
-        div.className = "kpi";
-        const key = String(k || '').toLowerCase();
-        let formatted = v;
-        if (key.includes('valor')) formatted = Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        else if (key.includes('peso') || key.includes('volume')) formatted = formatDecimalBR(v || 0, 3);
-        else if (typeof v === 'number') formatted = formatIntegerBR(v);
-        div.innerHTML = `<strong>${escapeHtml(k)}</strong><span>${escapeHtml(formatted)}</span>`;
-        kpis.appendChild(div);
-      });
+      kpis.classList.add('kpi-grid');
+      const hiddenKpis = new Set(['documentos', 'volumes', 'origem']);
+      Object.entries(data.kpis || {})
+        .filter(([k]) => !hiddenKpis.has(String(k || '').toLowerCase()))
+        .forEach(([k, v]) => {
+          const div = document.createElement("div");
+          div.className = "kpi";
+          const key = String(k || '').toLowerCase();
+          const label = KPI_LABELS[key] || String(k || '').replaceAll('_', ' ');
+          let formatted = v;
+          if (key.includes('valor')) formatted = Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+          else if (key.includes('peso') || key.includes('volume')) formatted = formatDecimalBR(v || 0, 3);
+          else if (typeof v === 'number') formatted = formatIntegerBR(v);
+          const compactClass = String(formatted).length >= 14 ? ' kpi-value-compact' : String(formatted).length >= 10 ? ' kpi-value-tight' : '';
+          div.innerHTML = `<strong class="kpi-label">${escapeHtml(label)}</strong><span class="kpi-value${compactClass}">${escapeHtml(formatted)}</span>`;
+          kpis.appendChild(div);
+        });
     }
     renderOperationalTable(data.agendamentos || [], { targetId: 'dashboardTable', includeActions: true });
   }
 
   function semaforoClass(v) {
     const s = String(v || "").toLowerCase();
-    if (s.includes("verde")) return "verde";
-    if (s.includes("amarelo")) return "amarelo";
+    if (s.includes("verde") || s.includes("finalizado") || s.includes("livre")) return "verde";
+    if (s.includes("amarelo") || s.includes("pendente")) return "amarelo";
+    if (s.includes("azul") || s.includes("aprovado") || s.includes("chegou")) return "azul";
+    if (s.includes("laranja") || s.includes("descarga")) return "laranja";
+    if (s.includes("cinza") || s.includes("no_show") || s.includes("no show")) return "cinza";
     return "vermelho";
   }
 
@@ -941,6 +1035,13 @@
   }
 
   function renderCadastroForm(record = null) {
+    if (state.cadastroTipo === "usuarios" && state.user?.perfil !== "ADMIN") {
+      state.cadastroEditId = null;
+      byId("cadastroTitulo").textContent = "Cadastro de usuários";
+      byId("cadastroForm").innerHTML = '<div class="info-box"><strong>Acesso restrito.</strong> Apenas administradores podem gerenciar usuários.</div>';
+      byId("cadastroMsg").textContent = "";
+      return;
+    }
     const config = CADASTRO_CONFIG[state.cadastroTipo];
     if (!config) return;
     byId("cadastroTitulo").textContent = config.titulo;
@@ -992,12 +1093,20 @@
   }
 
   async function loadCadastro() {
+    if (state.cadastroTipo === "usuarios" && state.user?.perfil !== "ADMIN") {
+      renderCadastroForm();
+      byId("cadastroList").innerHTML = '<p>Acesso restrito.</p>';
+      return;
+    }
     const config = CADASTRO_CONFIG[state.cadastroTipo];
     const items = await api(config.endpoint);
     renderCadastroList(items);
   }
 
   async function saveCadastro() {
+    if (state.cadastroTipo === "usuarios" && state.user?.perfil !== "ADMIN") {
+      throw new Error("Apenas administradores podem gerenciar usuários.");
+    }
     const config = CADASTRO_CONFIG[state.cadastroTipo];
     const payload = getCadastroPayload();
     let endpoint = config.endpoint;
@@ -1033,8 +1142,8 @@
 
   async function handleOp(fn, success) {
     try {
-      await fn();
-      byId("operacaoMsg").textContent = success;
+      const response = await fn();
+      byId("operacaoMsg").textContent = response?.message || success;
       await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
     } catch (err) {
       byId("operacaoMsg").textContent = err.message;
@@ -1108,7 +1217,9 @@ Deseja liberar manualmente a descarga deste veículo?`);
         const payload = Object.fromEntries(new FormData(e.target).entries());
         const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
         state.token = data.token;
+        state.user = data.user || null;
         localStorage.setItem("token", data.token);
+        localStorage.setItem("user_profile", JSON.stringify(data.user || null));
         updateNav();
         await fillSelects();
         if (!applyCheckinRouteContext({ autoValidate: true })) {
@@ -1266,6 +1377,21 @@ Deseja liberar manualmente a descarga deste veículo?`);
       }
     });
 
+    byId("avaliacaoForm")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const params = new URLSearchParams(location.search);
+        const token = params.get('token');
+        if (!token) throw new Error('Token da avaliação não encontrado.');
+        const payload = Object.fromEntries(new FormData(e.target).entries());
+        const data = await api(`/api/public/avaliacao/${encodeURIComponent(token)}`, { method: 'POST', body: JSON.stringify(payload) });
+        byId('avaliacaoMsg').textContent = data.message;
+        await loadAvaliacaoForm(token);
+      } catch (err) {
+        byId('avaliacaoMsg').textContent = err.message;
+      }
+    });
+
     byId("checkinForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       await validateCheckin(normalizeOperationToken(new FormData(e.target).get("token")));
@@ -1292,7 +1418,10 @@ Deseja liberar manualmente a descarga deste veículo?`);
     const params = new URLSearchParams(location.search);
     const view = params.get("view");
     const token = params.get("token");
-    if (view === "checkin" || view === "checkout") {
+    if (view === "avaliacao" && token) {
+      showView("avaliacao");
+      await loadAvaliacaoForm(token);
+    } else if (view === "checkin" || view === "checkout") {
       if (state.token && !isTokenExpired(state.token)) {
         applyCheckinRouteContext({ autoValidate: false });
       } else {
@@ -1312,6 +1441,10 @@ Deseja liberar manualmente a descarga deste veículo?`);
       showView("consulta");
     } else if (view === "fornecedor") {
       showView("fornecedor");
+    } else if (view === "avaliacao") {
+      showView("avaliacao");
+      byId('avaliacaoIntro').innerHTML = '<div class="warning-box">Link de avaliação inválido ou incompleto.</div>';
+      byId('avaliacaoForm')?.classList.add('hidden');
     }
   });
 })();

@@ -137,8 +137,12 @@ function queuePriority(status) {
 }
 
 function trafficColor(status) {
-  if (["EM_DESCARGA", "CHEGOU"].includes(String(status || ""))) return "VERDE";
-  if (["APROVADO", "PENDENTE_APROVACAO"].includes(String(status || ""))) return "AMARELO";
+  const normalized = String(status || "").toUpperCase();
+  if (["LIVRE", "FINALIZADO"].includes(normalized)) return "VERDE";
+  if (["PENDENTE_APROVACAO"].includes(normalized)) return "AMARELO";
+  if (["APROVADO", "CHEGOU"].includes(normalized)) return "AZUL";
+  if (["EM_DESCARGA"].includes(normalized)) return "LARANJA";
+  if (["NO_SHOW"].includes(normalized)) return "CINZA";
   return "VERMELHO";
 }
 

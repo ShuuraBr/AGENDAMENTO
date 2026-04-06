@@ -89,13 +89,10 @@ export async function generateVoucherPdf(agendamento, options = {}) {
     ['Doca', agendamento.doca?.codigo || agendamento.doca || 'A DEFINIR'],
     ['Janela', agendamento.janela?.codigo || agendamento.janela || '-'],
     ['Token do motorista', agendamento.publicTokenMotorista || '-'],
-    ['Token do fornecedor', agendamento.publicTokenFornecedor || '-'],HEAD
-    ['Notas', formatNumberBR(agendamento.quantidadeNotas ?? 0, 0, 0)],
-    ['Volumes', formatNumberBR(agendamento.quantidadeVolumes || 0, 0, 3)],
+    ['Token do fornecedor', agendamento.publicTokenFornecedor || '-'],
+    ['Quantidade de notas', formatNumberBR(agendamento.quantidadeNotas ?? 0, 0, 0)],
+    ['Quantidade de volumes', formatNumberBR(agendamento.quantidadeVolumes || 0, 0, 3)],
     ['Peso total', formatWeightKg(agendamento.pesoTotalKg || 0)],
-    ['Quantidade de notas', String(agendamento.quantidadeNotas ?? 0)],
-    ['Quantidade de volumes', Number(agendamento.quantidadeVolumes || 0).toFixed(3)],
-    ['Peso total', `${Number(agendamento.pesoTotalKg || 0).toFixed(3)} kg`],
     ['Valor total', money(agendamento.valorTotalNf || 0)]
   ];
 
@@ -140,8 +137,7 @@ export async function generateVoucherPdf(agendamento, options = {}) {
   doc.image(qrCheckin, summaryX + 45, qrY + 40, { fit: [165, 165] });
   doc.image(qrCheckout, summaryX + 319, qrY + 40, { fit: [165, 165] });
   doc.font('Helvetica').fontSize(8.5).fillColor('#475569').text('Use este QR no recebimento para registrar a chegada do veículo.', summaryX + 16, qrY + 176, { width: 220 });
-  doc.text('Use este QR ao finalizar a operação, para registrar a saída do veículo.', summaryX + 290, qrY + 176, { width: 220 });
-  doc.text('Use este QR ao finalizar a operação e liberar a saída do veículo.', summaryX + 290, qrY + 176, { width: 220 });
+  doc.text('Use este QR ao finalizar a operação e registrar a saída do veículo.', summaryX + 290, qrY + 176, { width: 220 });
   doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#0f172a').text(`Token: ${checkinToken || '-'}`, summaryX + 16, qrY + 204, { width: 220 });
   doc.text(`Token: ${checkoutToken || '-'}`, summaryX + 290, qrY + 204, { width: 220 });
   doc.font('Helvetica').fontSize(6.5).fillColor('#64748b').text(checkinUrl, summaryX + 16, qrY + 218, { width: 220, ellipsis: true });

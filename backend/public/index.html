@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agendamento de Descarga V3.1</title>
-  <link rel="stylesheet" href="/assets/styles28.css" />
+  <link rel="stylesheet" href="/assets/styles24.css" />
   <link rel="icon" href="assets/Favicon.png" type="image">
 </head>
 <body>
@@ -121,6 +121,65 @@
         </form>
         <p id="motoristaMsg" class="msg"></p>
         <div id="motoristaResult" class="mt16"></div>
+      </div>
+    </section>
+
+    <section id="avaliacao" class="view">
+      <div class="card narrow avaliacao-card">
+        <div class="avaliacao-header">
+          <img src="/assets/Logotipo-cores-institucionais-vetorizada-removebg-preview.png" alt="Logo Objetiva" class="avaliacao-logo" />
+          <div>
+            <h2>Avaliação do atendimento</h2>
+          </div>
+        </div>
+        <div id="avaliacaoIntro" class="info-box mt12">Carregando dados do atendimento...</div>
+        <form id="avaliacaoForm" class="mt16">
+          <div class="grid2">
+            <label>Pré Check-in
+              <select name="atendimentoNota" required>
+                <option value="">Selecione</option>
+                <option value="5">5 - Excelente</option>
+                <option value="4">4 - Bom</option>
+                <option value="3">3 - Regular</option>
+                <option value="2">2 - Ruim</option>
+                <option value="1">1 - Péssimo</option>
+              </select>
+            </label>
+            <label>Equipe de recebimento
+              <select name="equipeNota" required>
+                <option value="">Selecione</option>
+                <option value="5">5 - Excelente</option>
+                <option value="4">4 - Bom</option>
+                <option value="3">3 - Regular</option>
+                <option value="2">2 - Ruim</option>
+                <option value="1">1 - Péssimo</option>
+              </select>
+            </label>
+            <label>Rapidez e eficácia
+              <select name="rapidezNota" required>
+                <option value="">Selecione</option>
+                <option value="5">5 - Excelente</option>
+                <option value="4">4 - Bom</option>
+                <option value="3">3 - Regular</option>
+                <option value="2">2 - Ruim</option>
+                <option value="1">1 - Péssimo</option>
+              </select>
+            </label>
+            <label>O processo correu tranquilo?
+              <select name="processoTranquilo" required>
+                <option value="">Selecione</option>
+                <option value="SIM">Sim</option>
+                <option value="PARCIAL">Parcialmente</option>
+                <option value="NAO">Não</option>
+              </select>
+            </label>
+          </div>
+          <label class="mt12">Comentário adicional
+            <textarea name="comentario" placeholder="Conte, se desejar, como foi o atendimento e o processo de recebimento."></textarea>
+          </label>
+          <button type="submit">Enviar avaliação</button>
+        </form>
+        <p id="avaliacaoMsg" class="msg"></p>
       </div>
     </section>
 
