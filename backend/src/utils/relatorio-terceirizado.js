@@ -291,14 +291,16 @@ function extractOdsContentXml(filePath) {
 }
 
 function extractCellValuesFromOds(xml) {
-  const tableMatch = xml.match(/<table:table\b[\s\S]*?>([\s\S]*?)<\/table:table>/i);
-  if (!tableMatch) return [];
-  const tableXml = tableMatch[1];
-  const rowRegex = /<table:table-row\b([^>]*)>([\s\S]*?)<\/table:table-row>/gi;
+  const tableRegex = /<table:table\b[^>]*>([\s\S]*?)<\/table:table>/gi;
   const rows = [];
-  let rowMatch;
+  let tableMatch;
 
-  while ((rowMatch = rowRegex.exec(tableXml))) {
+  while ((tableMatch = tableRegex.exec(xml))) {
+    const tableXml = tableMatch[1] || '';
+    const rowRegex = /<table:table-row\b([^>]*)>([\s\S]*?)<\/table:table-row>/gi;
+    let rowMatch;
+
+    while ((rowMatch = rowRegex.exec(tableXml))) {
     const rowAttrs = rowMatch[1] || '';
     const rowInner = rowMatch[2] || '';
     const rowRepeatMatch = rowAttrs.match(/table:number-rows-repeated="(\d+)"/i);
@@ -327,7 +329,8 @@ function extractCellValuesFromOds(xml) {
       for (let index = 0; index < repeat; index += 1) cells.push(value);
     }
 
-    for (let index = 0; index < rowRepeat; index += 1) rows.push([...cells]);
+      for (let index = 0; index < rowRepeat; index += 1) rows.push([...cells]);
+    }
   }
 
   return rows;
@@ -337,33 +340,7 @@ function parseOdsFile(filePath) {
   const xml = extractOdsContentXml(filePath);
   const rows = extractCellValuesFromOds(xml);
   if (!rows.length) return [];
-
-  const headerIndex = rows.findIndex((row) => {
-    const normalized = row.map((cell) => normalizeHeader(cell));
-    return normalized.includes('entrada') && normalized.includes('fornecedor') && normalized.includes('nr. nota');
-  });
-  if (headerIndex < 0) return [];
-
-  const headerRow = rows[headerIndex];
-  const positions = new Map();
-  headerRow.forEach((cell, index) => {
-    const normalized = normalizeHeader(cell);
-    if (!normalized) return;
-    const originalHeader = PLANILHA_COLUMNS.find((column) => normalizeHeader(column) === normalized);
-    if (originalHeader && !positions.has(originalHeader)) positions.set(originalHeader, index);
-  });
-
-  const missing = REQUIRED_HEADERS.filter((header) => !positions.has(header));
-  if (missing.length) throw new Error(`Cabeçalhos obrigatórios não encontrados: ${missing.join(', ')}`);
-
-  return rows.slice(headerIndex + 1).map((row) => {
-    const item = {};
-    for (const column of PLANILHA_COLUMNS) {
-      const pos = positions.get(column);
-      item[column] = normalizeText(pos == null ? '' : row[pos] || '');
-    }
-    return item;
-  });
+  return mapRowsFromDetectedHeader(rows);
 }
 
 function parseSpreadsheetFile(filePath) {
@@ -472,7 +449,18 @@ export function listImportDirectories() {
   return [...candidateImportDirs];
 }
 
-export function findLatestSpreadsheetFile() {
+export function filePriorityScore(name = '') {
+  const n = normalizeHeader(name);
+  let score = 0;
+  if (n.includes('relatorio') || n.includes('relatório')) score += 100;
+  if (n.includes('entrada')) score += 80;
+  if (n.includes('sintetico') || n.includes('sintético')) score += 60;
+  if (n.includes('terceir')) score += 20;
+  if (n.endsWith('.ods')) score += 10;
+  return score;
+}
+
+function findLatestSpreadsheetFile() {
   ensureImportDirs();
   const files = [];
   for (const dir of candidateImportDirs) {
@@ -481,14 +469,14 @@ export function findLatestSpreadsheetFile() {
       try {
         const stat = fs.statSync(fullPath);
         if (stat.isFile() && SUPPORTED_EXTENSIONS.has(path.extname(name).toLowerCase())) {
-          files.push({ name, fullPath, stat, directory: dir });
+          files.push({ name, fullPath, stat, directory: dir, score: filePriorityScore(name) });
         }
       } catch {
         // ignore unreadable file
       }
     }
   }
-  files.sort((a, b) => (b.stat.mtimeMs - a.stat.mtimeMs) || a.name.localeCompare(b.name));
+  files.sort((a, b) => (b.score - a.score) || (b.stat.mtimeMs - a.stat.mtimeMs) || a.name.localeCompare(b.name));
   return files[0] || null;
 }
 
@@ -526,8 +514,10 @@ export async function syncLatestRelatorioToDatabase({ force = false } = {}) {
     };
   }
 
+  console.log(`[RELATORIO_IMPORT] candidato=${latest.name} pasta=${latest.directory}`);
   const parsedRows = sanitizeRows(parseSpreadsheetFile(latest.fullPath));
   if (!parsedRows.length) {
+    console.warn(`[RELATORIO_IMPORT] arquivo=${latest.name} sem linhas válidas após leitura.`);
     return { ok: false, imported: false, totalRows: 0, fileName: latest.name, reason: 'A planilha foi lida, mas não contém linhas válidas.' };
   }
 

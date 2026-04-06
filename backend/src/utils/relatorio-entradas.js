@@ -217,6 +217,16 @@ function parseCsvLine(line = '', delimiter = ';') {
   return fields.map((value) => value.trim());
 }
 
+function detectHeaderIndex(rows = []) {
+  return rows.findIndex((row) => {
+    const normalized = row.map((cell) => normalizeCellValue(cell).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase());
+    const hasFornecedor = normalized.includes('fornecedor');
+    const hasNota = normalized.includes('nr. nota') || normalized.includes('nr nota') || normalized.includes('numero nota') || normalized.includes('número nota') || normalized.includes('nº nota');
+    const hasSerie = normalized.includes('serie') || normalized.includes('série');
+    return hasFornecedor && hasNota && hasSerie;
+  });
+}
+
 function parseCsv(content = '') {
   const lines = String(content || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim() !== '');
   if (!lines.length) return [];
@@ -292,7 +302,7 @@ function parseOdsContentXml(contentXml = '') {
     for (let i = 0; i < repeatRows; i += 1) rows.push([...rowValues]);
   }
 
-  const headerIndex = rows.findIndex((row) => row.some((cell) => cell === 'Fornecedor') && row.some((cell) => cell.includes('Nr. nota')));
+  const headerIndex = detectHeaderIndex(rows);
   if (headerIndex < 0) return [];
 
   const headers = rows[headerIndex].map(normalizeCellValue);
