@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id        Int            @id @default(autoincrement())
+  nome      String
+  email     String         @unique
+  senhaHash String
+  perfil    String
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  logs      LogAuditoria[]
+
+  @@map("Usuario")
+}
+
+model Fornecedor {
+  id        Int      @id @default(autoincrement())
+  nome      String
+  cnpj      String?  @unique
+  email     String?
+  telefone  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("Fornecedor")
+}
+
+model Transportadora {
+  id        Int      @id @default(autoincrement())
+  nome      String
+  cnpj      String?  @unique
+  email     String?
+  telefone  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("Transportadora")
+}
+
+model Motorista {
+  id             Int      @id @default(autoincrement())
+  nome           String
+  cpf            String?
+  telefone       String?
+  transportadora String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("Motorista")
+}
+
+model Veiculo {
+  id             Int      @id @default(autoincrement())
+  placa          String   @unique
+  tipo           String?
+  transportadora String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("Veiculo")
+}
+
+model Doca {
+  id           Int           @id @default(autoincrement())
+  codigo       String        @unique
+  descricao    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  agendamentos Agendamento[]
+
+  @@map("Doca")
+}
+
+model Janela {
+  id           Int           @id @default(autoincrement())
+  codigo       String        @unique
+  descricao    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  agendamentos Agendamento[]
+
+  @@map("Janela")
+}
+
+model Regra {
+  id                       Int      @id @default(autoincrement())
+  nome                     String
+  toleranciaAtrasoMin      Int      @default(15)
+  tempoDescargaPrevistoMin Int      @default(60)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@map("Regra")
+}
+
+model Agendamento {
+  id                    Int          @id @default(autoincrement())
+  protocolo             String       @unique
+  publicTokenMotorista  String       @unique
+  publicTokenFornecedor String       @unique
+  checkinToken          String       @unique
+  checkoutToken         String?      @unique
+  fornecedor            String
+  transportadora        String
+  motorista             String
+  cpfMotorista          String?
+  telefoneMotorista     String?
+  emailMotorista        String?
+  emailTransportadora   String?
+  placa                 String
+  docaId                Int
+  janelaId              Int
+  dataAgendada          String
+  horaAgendada          String
+  quantidadeNotas       Int          @default(0)
+  quantidadeVolumes     Int          @default(0)
+  pesoTotalKg           Float        @default(0)
+  valorTotalNf          Float        @default(0)
+  status                String       @default("PENDENTE_APROVACAO")
+  observacoes           String?
+  motivoReprovacao      String?
+  motivoCancelamento    String?
+  inicioDescargaEm      DateTime?
+  fimDescargaEm         DateTime?
+  checkinEm             DateTime?
+  lgpdConsentAt         DateTime?
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+  doca                  Doca         @relation(fields: [docaId], references: [id])
+  janela                Janela       @relation(fields: [janelaId], references: [id])
+  documentos            Documento[]
+  notasFiscais          NotaFiscal[]
+
+  @@index([docaId])
+  @@index([dataAgendada])
+  @@index([status])
+  @@index([janelaId], map: "Agendamento_janelaId_fkey")
+  @@map("Agendamento")
+}
+
+model NotaFiscal {
+  id            Int         @id @default(autoincrement())
+  agendamentoId Int
+  numeroNf      String?
+  serie         String?
+  chaveAcesso   String?
+  volumes       Int         @default(0)
+  peso          Float       @default(0)
+  valorNf       Float       @default(0)
+  observacao    String?
+  createdAt     DateTime    @default(now())
+  agendamento   Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
+
+  @@index([agendamentoId], map: "NotaFiscal_agendamentoId_fkey")
+  @@map("NotaFiscal")
+}
+
+model Documento {
+  id            Int         @id @default(autoincrement())
+  agendamentoId Int
+  tipoDocumento String
+  nomeArquivo   String
+  urlArquivo    String
+  createdAt     DateTime    @default(now())
+  agendamento   Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
+
+  @@index([agendamentoId], map: "Documento_agendamentoId_fkey")
+  @@map("Documento")
+}
+
+model LogAuditoria {
+  id         Int      @id @default(autoincrement())
+  usuarioId  Int?
+  perfil     String?
+  acao       String
+  entidade   String
+  entidadeId Int?
+  detalhes   String?  @db.LongText
+  ip         String?
+  createdAt  DateTime @default(now())
+  usuario    Usuario? @relation(fields: [usuarioId], references: [id])
+
+  @@index([entidade, entidadeId])
+  @@index([usuarioId], map: "LogAuditoria_usuarioId_fkey")
+  @@map("LogAuditoria")
+}

@@ -1,0 +1,3649 @@
+[
+  {
+    "fornecedor": "1.551 - LEF PISOS E REVESTIMENTOS S.A",
+    "notas": [
+      {
+        "numeroNf": "1205979",
+        "valorNf": 36620.49,
+        "peso": 17232.67,
+        "volumes": 3.344
+      }
+    ],
+    "valorTotalNf": 36620.49,
+    "pesoTotalKg": 17232.67,
+    "quantidadeVolumes": 3.344,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 1
+  },
+  {
+    "fornecedor": "1.855 - DEXCO S.A - LOUCAS DECA",
+    "notas": [
+      {
+        "numeroNf": "2135373",
+        "valorNf": 705.66,
+        "peso": 17.8,
+        "volumes": 0.032
+      },
+      {
+        "numeroNf": "2135372",
+        "valorNf": 1411.32,
+        "peso": 35.61,
+        "volumes": 0.065
+      },
+      {
+        "numeroNf": "2136622",
+        "valorNf": 382.92,
+        "peso": 30.56,
+        "volumes": 0.118
+      },
+      {
+        "numeroNf": "2136621",
+        "valorNf": 591.69,
+        "peso": 10.0,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "2136620",
+        "valorNf": 6508.59,
+        "peso": 110.0,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "2136619",
+        "valorNf": 1887.72,
+        "peso": 124.96,
+        "volumes": 0.262
+      },
+      {
+        "numeroNf": "2137032",
+        "valorNf": 2327.29,
+        "peso": 109.32,
+        "volumes": 0.197
+      },
+      {
+        "numeroNf": "2137031",
+        "valorNf": 14669.08,
+        "peso": 163.13,
+        "volumes": 1.062
+      },
+      {
+        "numeroNf": "2137030",
+        "valorNf": 4073.8,
+        "peso": 215.64,
+        "volumes": 0.369
+      },
+      {
+        "numeroNf": "2137634",
+        "valorNf": 1126.3,
+        "peso": 2.29,
+        "volumes": 0.044
+      },
+      {
+        "numeroNf": "2137633",
+        "valorNf": 2946.4,
+        "peso": 129.54,
+        "volumes": 0.043
+      },
+      {
+        "numeroNf": "2137631",
+        "valorNf": 563.15,
+        "peso": 1.15,
+        "volumes": 0.022
+      },
+      {
+        "numeroNf": "2137632",
+        "valorNf": 373468.66,
+        "peso": 9421.84,
+        "volumes": 71.564
+      },
+      {
+        "numeroNf": "2138121",
+        "valorNf": 1732.77,
+        "peso": 17.59,
+        "volumes": 0.052
+      },
+      {
+        "numeroNf": "2138122",
+        "valorNf": 17401.0,
+        "peso": 1329.5,
+        "volumes": 6.397
+      },
+      {
+        "numeroNf": "2138123",
+        "valorNf": 13920.8,
+        "peso": 1063.6,
+        "volumes": 5.118
+      },
+      {
+        "numeroNf": "2138138",
+        "valorNf": 560.98,
+        "peso": 28.34,
+        "volumes": 0.043
+      },
+      {
+        "numeroNf": "2138140",
+        "valorNf": 1098.8,
+        "peso": 56.67,
+        "volumes": 0.087
+      },
+      {
+        "numeroNf": "2138141",
+        "valorNf": 1214.88,
+        "peso": 56.67,
+        "volumes": 0.087
+      },
+      {
+        "numeroNf": "2138142",
+        "valorNf": 8191.38,
+        "peso": 336.77,
+        "volumes": 0.53
+      },
+      {
+        "numeroNf": "2138143",
+        "valorNf": 3635.58,
+        "peso": 124.25,
+        "volumes": 0.205
+      },
+      {
+        "numeroNf": "2138144",
+        "valorNf": 4233.96,
+        "peso": 106.82,
+        "volumes": 0.194
+      },
+      {
+        "numeroNf": "2138145",
+        "valorNf": 13994.9,
+        "peso": 1199.0,
+        "volumes": 1.231
+      },
+      {
+        "numeroNf": "2138147",
+        "valorNf": 16488.52,
+        "peso": 1405.5,
+        "volumes": 1.459
+      },
+      {
+        "numeroNf": "2138148",
+        "valorNf": 417.66,
+        "peso": 29.6,
+        "volumes": 0.135
+      },
+      {
+        "numeroNf": "2138139",
+        "valorNf": 1514.23,
+        "peso": 36.41,
+        "volumes": 0.087
+      },
+      {
+        "numeroNf": "2137775",
+        "valorNf": 448479.38,
+        "peso": 11528.66,
+        "volumes": 94.256
+      },
+      {
+        "numeroNf": "2137774",
+        "valorNf": 13956.76,
+        "peso": 487.03,
+        "volumes": 0.842
+      },
+      {
+        "numeroNf": "2137773",
+        "valorNf": 1434.28,
+        "peso": 96.48,
+        "volumes": 0.385
+      },
+      {
+        "numeroNf": "2139512",
+        "valorNf": 484.68,
+        "peso": 55.82,
+        "volumes": 0.104
+      },
+      {
+        "numeroNf": "2139510",
+        "valorNf": 1077.29,
+        "peso": 4.83,
+        "volumes": 0.003
+      },
+      {
+        "numeroNf": "2139156",
+        "valorNf": 71260.0,
+        "peso": 928.0,
+        "volumes": 7.509
+      },
+      {
+        "numeroNf": "2139157",
+        "valorNf": 1380.72,
+        "peso": 12.0,
+        "volumes": 0.099
+      }
+    ],
+    "valorTotalNf": 1033141.15,
+    "pesoTotalKg": 29275.38,
+    "quantidadeVolumes": 192.601,
+    "quantidadeNotas": 33,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 2
+  },
+  {
+    "fornecedor": "1.856 - DEXCO S.A - METAIS",
+    "notas": [
+      {
+        "numeroNf": "5030825",
+        "valorNf": 3507.05,
+        "peso": 6.15,
+        "volumes": 0.058
+      },
+      {
+        "numeroNf": "5030824",
+        "valorNf": 7014.09,
+        "peso": 12.3,
+        "volumes": 0.116
+      },
+      {
+        "numeroNf": "5030823",
+        "valorNf": 1583.66,
+        "peso": 2.46,
+        "volumes": 0.023
+      },
+      {
+        "numeroNf": "5030822",
+        "valorNf": 6244.7,
+        "peso": 5.72,
+        "volumes": 0.062
+      },
+      {
+        "numeroNf": "5030821",
+        "valorNf": 14921.7,
+        "peso": 19.33,
+        "volumes": 0.015
+      },
+      {
+        "numeroNf": "5030820",
+        "valorNf": 1440.18,
+        "peso": 5.0,
+        "volumes": 0.003
+      },
+      {
+        "numeroNf": "5030819",
+        "valorNf": 1238.82,
+        "peso": 1.94,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "5030818",
+        "valorNf": 4527.52,
+        "peso": 7.78,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "5030816",
+        "valorNf": 1193.44,
+        "peso": 4.25,
+        "volumes": 0.004
+      },
+      {
+        "numeroNf": "5030815",
+        "valorNf": 408.17,
+        "peso": 1.23,
+        "volumes": 0.012
+      },
+      {
+        "numeroNf": "5032374",
+        "valorNf": 4627.31,
+        "peso": 21.83,
+        "volumes": 0.048
+      },
+      {
+        "numeroNf": "5032373",
+        "valorNf": 13684.88,
+        "peso": 38.04,
+        "volumes": 0.312
+      },
+      {
+        "numeroNf": "5035497",
+        "valorNf": 1413.1,
+        "peso": 3.45,
+        "volumes": 0.022
+      },
+      {
+        "numeroNf": "5035485",
+        "valorNf": 835.52,
+        "peso": 0.19,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "5035484",
+        "valorNf": 842.58,
+        "peso": 0.88,
+        "volumes": 0.002
+      },
+      {
+        "numeroNf": "5035483",
+        "valorNf": 5555.01,
+        "peso": 18.23,
+        "volumes": 0.105
+      },
+      {
+        "numeroNf": "5035482",
+        "valorNf": 2480.17,
+        "peso": 2.64,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "5035481",
+        "valorNf": 9300.65,
+        "peso": 9.9,
+        "volumes": 0.004
+      },
+      {
+        "numeroNf": "5035480",
+        "valorNf": 1476.37,
+        "peso": 8.3,
+        "volumes": 0.031
+      },
+      {
+        "numeroNf": "5035479",
+        "valorNf": 317452.04,
+        "peso": 1357.69,
+        "volumes": 66.315
+      },
+      {
+        "numeroNf": "5035478",
+        "valorNf": 3316.88,
+        "peso": 3.16,
+        "volumes": 0.012
+      },
+      {
+        "numeroNf": "5042042",
+        "valorNf": 1860.13,
+        "peso": 1.98,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "5042041",
+        "valorNf": 2310.45,
+        "peso": 3.88,
+        "volumes": 0.017
+      },
+      {
+        "numeroNf": "5042040",
+        "valorNf": 2307.3,
+        "peso": 1.8,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "5042034",
+        "valorNf": 994.78,
+        "peso": 1.29,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "5042033",
+        "valorNf": 1807.32,
+        "peso": 3.66,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "5042032",
+        "valorNf": 179.45,
+        "peso": 0.29,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "5042031",
+        "valorNf": 5460.64,
+        "peso": 17.35,
+        "volumes": 0.177
+      },
+      {
+        "numeroNf": "5042030",
+        "valorNf": 871.84,
+        "peso": 3.16,
+        "volumes": 0.005
+      },
+      {
+        "numeroNf": "5042029",
+        "valorNf": 2523.77,
+        "peso": 8.8,
+        "volumes": 0.035
+      },
+      {
+        "numeroNf": "5042028",
+        "valorNf": 1560.18,
+        "peso": 4.96,
+        "volumes": 0.051
+      },
+      {
+        "numeroNf": "5042027",
+        "valorNf": 313.43,
+        "peso": 1.23,
+        "volumes": 0.012
+      },
+      {
+        "numeroNf": "5042035",
+        "valorNf": 53407.13,
+        "peso": 184.09,
+        "volumes": 9.315
+      },
+      {
+        "numeroNf": "5042036",
+        "valorNf": 7574.39,
+        "peso": 16.95,
+        "volumes": 1.703
+      },
+      {
+        "numeroNf": "5042037",
+        "valorNf": 6741.02,
+        "peso": 23.68,
+        "volumes": 0.07
+      },
+      {
+        "numeroNf": "5042038",
+        "valorNf": 36375.12,
+        "peso": 87.34,
+        "volumes": 0.065
+      },
+      {
+        "numeroNf": "5042039",
+        "valorNf": 34300.0,
+        "peso": 166.96,
+        "volumes": 0.402
+      },
+      {
+        "numeroNf": "5043396",
+        "valorNf": 1077.31,
+        "peso": 2.46,
+        "volumes": 0.023
+      },
+      {
+        "numeroNf": "5043358",
+        "valorNf": 949.86,
+        "peso": 2.7,
+        "volumes": 0.013
+      },
+      {
+        "numeroNf": "5043357",
+        "valorNf": 1344.68,
+        "peso": 2.64,
+        "volumes": 0.005
+      },
+      {
+        "numeroNf": "5043356",
+        "valorNf": 10654.39,
+        "peso": 44.15,
+        "volumes": 0.156
+      },
+      {
+        "numeroNf": "5043355",
+        "valorNf": 2279.64,
+        "peso": 0.24,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "5043354",
+        "valorNf": 19280.0,
+        "peso": 36.0,
+        "volumes": 0.117
+      },
+      {
+        "numeroNf": "5043353",
+        "valorNf": 2731.6,
+        "peso": 21.86,
+        "volumes": 0.101
+      },
+      {
+        "numeroNf": "5043352",
+        "valorNf": 18633.04,
+        "peso": 99.86,
+        "volumes": 0.051
+      },
+      {
+        "numeroNf": "5043350",
+        "valorNf": 1930.67,
+        "peso": 1.22,
+        "volumes": 0.011
+      },
+      {
+        "numeroNf": "5043351",
+        "valorNf": 1492.52,
+        "peso": 7.68,
+        "volumes": 0.068
+      },
+      {
+        "numeroNf": "5044703",
+        "valorNf": 54545.32,
+        "peso": 28.06,
+        "volumes": 0.027
+      },
+      {
+        "numeroNf": "5044704",
+        "valorNf": 12620.06,
+        "peso": 58.6,
+        "volumes": 0.057
+      },
+      {
+        "numeroNf": "5044705",
+        "valorNf": 5458.72,
+        "peso": 12.92,
+        "volumes": 0.035
+      },
+      {
+        "numeroNf": "5044706",
+        "valorNf": 2415.84,
+        "peso": 4.96,
+        "volumes": 0.009
+      },
+      {
+        "numeroNf": "5044707",
+        "valorNf": 147964.0,
+        "peso": 923.88,
+        "volumes": 4.032
+      },
+      {
+        "numeroNf": "5044708",
+        "valorNf": 2579.12,
+        "peso": 4.66,
+        "volumes": 0.007
+      },
+      {
+        "numeroNf": "5045849",
+        "valorNf": 5200.61,
+        "peso": 16.52,
+        "volumes": 0.169
+      },
+      {
+        "numeroNf": "5045850",
+        "valorNf": 120.18,
+        "peso": 1.0,
+        "volumes": 0.005
+      },
+      {
+        "numeroNf": "5045851",
+        "valorNf": 3605.29,
+        "peso": 30.0,
+        "volumes": 0.137
+      },
+      {
+        "numeroNf": "5045852",
+        "valorNf": 33869.79,
+        "peso": 426.7,
+        "volumes": 0.018
+      },
+      {
+        "numeroNf": "5045853",
+        "valorNf": 498.04,
+        "peso": 2.92,
+        "volumes": 0.003
+      },
+      {
+        "numeroNf": "5045855",
+        "valorNf": 2600.3,
+        "peso": 8.26,
+        "volumes": 0.084
+      },
+      {
+        "numeroNf": "5045856",
+        "valorNf": 7900.92,
+        "peso": 14.22,
+        "volumes": 0.021
+      },
+      {
+        "numeroNf": "5045857",
+        "valorNf": 2246.4,
+        "peso": 23.7,
+        "volumes": 0.034
+      },
+      {
+        "numeroNf": "5045858",
+        "valorNf": 27872.4,
+        "peso": 166.28,
+        "volumes": 0.236
+      },
+      {
+        "numeroNf": "5045859",
+        "valorNf": 13168.2,
+        "peso": 23.7,
+        "volumes": 0.034
+      },
+      {
+        "numeroNf": "5045846",
+        "valorNf": 9088.5,
+        "peso": 12.89,
+        "volumes": 0.01
+      },
+      {
+        "numeroNf": "5045847",
+        "valorNf": 619.83,
+        "peso": 1.16,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "5045848",
+        "valorNf": 1239.66,
+        "peso": 2.33,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "5046964",
+        "valorNf": 1800.67,
+        "peso": 6.46,
+        "volumes": 0.003
+      },
+      {
+        "numeroNf": "5046965",
+        "valorNf": 2600.3,
+        "peso": 8.26,
+        "volumes": 0.084
+      },
+      {
+        "numeroNf": "5046967",
+        "valorNf": 14383.88,
+        "peso": 67.22,
+        "volumes": 0.136
+      },
+      {
+        "numeroNf": "5046968",
+        "valorNf": 7869.07,
+        "peso": 34.56,
+        "volumes": 10.742
+      },
+      {
+        "numeroNf": "5046969",
+        "valorNf": 8743.82,
+        "peso": 11.2,
+        "volumes": 0.24
+      },
+      {
+        "numeroNf": "5048932",
+        "valorNf": 18466.84,
+        "peso": 100.8,
+        "volumes": 0.179
+      },
+      {
+        "numeroNf": "5048933",
+        "valorNf": 21764.66,
+        "peso": 68.4,
+        "volumes": 0.02
+      },
+      {
+        "numeroNf": "5048934",
+        "valorNf": 6858.07,
+        "peso": 47.25,
+        "volumes": 0.845
+      },
+      {
+        "numeroNf": "5046970",
+        "valorNf": 3811.02,
+        "peso": 25.54,
+        "volumes": 0.018
+      },
+      {
+        "numeroNf": "5048926",
+        "valorNf": 1270.34,
+        "peso": 8.51,
+        "volumes": 0.006
+      },
+      {
+        "numeroNf": "5048936",
+        "valorNf": 2941.84,
+        "peso": 19.71,
+        "volumes": 0.014
+      },
+      {
+        "numeroNf": "5046971",
+        "valorNf": 18430.4,
+        "peso": 37.2,
+        "volumes": 0.035
+      },
+      {
+        "numeroNf": "5048927",
+        "valorNf": 2204.4,
+        "peso": 39.2,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "5048928",
+        "valorNf": 10534.5,
+        "peso": 39.5,
+        "volumes": 0.057
+      },
+      {
+        "numeroNf": "5048937",
+        "valorNf": 5510.8,
+        "peso": 12.2,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "5046972",
+        "valorNf": 767.85,
+        "peso": 13.32,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "5046973",
+        "valorNf": 3071.42,
+        "peso": 53.28,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "5046974",
+        "valorNf": 13298.0,
+        "peso": 31.6,
+        "volumes": 0.046
+      },
+      {
+        "numeroNf": "5048938",
+        "valorNf": 29546.98,
+        "peso": 54.77,
+        "volumes": 0.156
+      },
+      {
+        "numeroNf": "5048931",
+        "valorNf": 2595.2,
+        "peso": 1.0,
+        "volumes": 0.014
+      },
+      {
+        "numeroNf": "5048930",
+        "valorNf": 7958.24,
+        "peso": 10.31,
+        "volumes": 0.008
+      },
+      {
+        "numeroNf": "5048929",
+        "valorNf": 12641.4,
+        "peso": 47.4,
+        "volumes": 0.069
+      },
+      {
+        "numeroNf": "5048925",
+        "valorNf": 1800.67,
+        "peso": 6.46,
+        "volumes": 0.003
+      },
+      {
+        "numeroNf": "5048935",
+        "valorNf": 1480.83,
+        "peso": 4.13,
+        "volumes": 0.042
+      },
+      {
+        "numeroNf": "5046966",
+        "valorNf": 610.53,
+        "peso": 0.92,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "5050844",
+        "valorNf": 5611.27,
+        "peso": 17.71,
+        "volumes": 0.135
+      },
+      {
+        "numeroNf": "5050871",
+        "valorNf": 746.26,
+        "peso": 3.84,
+        "volumes": 0.034
+      },
+      {
+        "numeroNf": "5050870",
+        "valorNf": 10468.52,
+        "peso": 33.04,
+        "volumes": 0.145
+      },
+      {
+        "numeroNf": "5050869",
+        "valorNf": 4298.0,
+        "peso": 15.0,
+        "volumes": 0.009
+      },
+      {
+        "numeroNf": "5050868",
+        "valorNf": 5157.6,
+        "peso": 18.0,
+        "volumes": 0.011
+      },
+      {
+        "numeroNf": "5050867",
+        "valorNf": 4749.5,
+        "peso": 15.0,
+        "volumes": 0.009
+      },
+      {
+        "numeroNf": "5050866",
+        "valorNf": 350.69,
+        "peso": 0.62,
+        "volumes": 0.006
+      },
+      {
+        "numeroNf": "5050865",
+        "valorNf": 1097.35,
+        "peso": 0.92,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "5050864",
+        "valorNf": 29796.0,
+        "peso": 122.0,
+        "volumes": 0.005
+      },
+      {
+        "numeroNf": "5050863",
+        "valorNf": 3352.32,
+        "peso": 7.81,
+        "volumes": 0.006
+      },
+      {
+        "numeroNf": "5050862",
+        "valorNf": 1759.8,
+        "peso": 11.04,
+        "volumes": 0.01
+      },
+      {
+        "numeroNf": "5050861",
+        "valorNf": 7449.0,
+        "peso": 30.5,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "5050860",
+        "valorNf": 24435.0,
+        "peso": 91.5,
+        "volumes": 0.004
+      },
+      {
+        "numeroNf": "5050859",
+        "valorNf": 3307.44,
+        "peso": 0.29,
+        "volumes": 0.031
+      },
+      {
+        "numeroNf": "5050858",
+        "valorNf": 4685.54,
+        "peso": 0.41,
+        "volumes": 0.044
+      },
+      {
+        "numeroNf": "5050857",
+        "valorNf": 1920.1,
+        "peso": 6.46,
+        "volumes": 0.003
+      },
+      {
+        "numeroNf": "5050856",
+        "valorNf": 6466.21,
+        "peso": 23.67,
+        "volumes": 0.012
+      },
+      {
+        "numeroNf": "5050855",
+        "valorNf": 3079.92,
+        "peso": 4.51,
+        "volumes": 0.002
+      },
+      {
+        "numeroNf": "5050854",
+        "valorNf": 990.45,
+        "peso": 1.94,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "5050853",
+        "valorNf": 2377.08,
+        "peso": 4.66,
+        "volumes": 0.003
+      },
+      {
+        "numeroNf": "5050852",
+        "valorNf": 5034.0,
+        "peso": 46.32,
+        "volumes": 0.014
+      },
+      {
+        "numeroNf": "5050851",
+        "valorNf": 4195.0,
+        "peso": 38.6,
+        "volumes": 0.011
+      },
+      {
+        "numeroNf": "5050849",
+        "valorNf": 587.84,
+        "peso": 2.15,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "5050848",
+        "valorNf": 738.32,
+        "peso": 1.23,
+        "volumes": 0.012
+      },
+      {
+        "numeroNf": "5050847",
+        "valorNf": 32209.2,
+        "peso": 54.46,
+        "volumes": 0.118
+      },
+      {
+        "numeroNf": "5050846",
+        "valorNf": 5627.25,
+        "peso": 16.52,
+        "volumes": 0.169
+      },
+      {
+        "numeroNf": "5050845",
+        "valorNf": 7709.47,
+        "peso": 22.6,
+        "volumes": 0.219
+      },
+      {
+        "numeroNf": "5044709",
+        "valorNf": 1184422.62,
+        "peso": 5495.47,
+        "volumes": 719.243
+      },
+      {
+        "numeroNf": "5043397",
+        "valorNf": 368657.69,
+        "peso": 2131.69,
+        "volumes": 517.412
+      }
+    ],
+    "valorTotalNf": 2887878.85,
+    "pesoTotalKg": 13006.62,
+    "quantidadeVolumes": 1334.855,
+    "quantidadeNotas": 120,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 3
+  },
+  {
+    "fornecedor": "1.871 - TRAMONTINA ELETRIK S.A.",
+    "notas": [
+      {
+        "numeroNf": "901054",
+        "valorNf": 114313.53,
+        "peso": 1673.51,
+        "volumes": 3.56
+      },
+      {
+        "numeroNf": "901056",
+        "valorNf": 106522.12,
+        "peso": 2128.13,
+        "volumes": 15029.446
+      },
+      {
+        "numeroNf": "902194",
+        "valorNf": 3635.86,
+        "peso": 98.51,
+        "volumes": 0.391
+      },
+      {
+        "numeroNf": "901399",
+        "valorNf": 8407.92,
+        "peso": 86.64,
+        "volumes": 0.159
+      },
+      {
+        "numeroNf": "900141",
+        "valorNf": 5969.96,
+        "peso": 85.68,
+        "volumes": 0.282
+      },
+      {
+        "numeroNf": "903812",
+        "valorNf": 26025.11,
+        "peso": 378.24,
+        "volumes": 0.528
+      },
+      {
+        "numeroNf": "902890",
+        "valorNf": 4350.88,
+        "peso": 39.15,
+        "volumes": 0.088
+      }
+    ],
+    "valorTotalNf": 269225.38,
+    "pesoTotalKg": 4489.86,
+    "quantidadeVolumes": 15034.454,
+    "quantidadeNotas": 7,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 4
+  },
+  {
+    "fornecedor": "10.343 - INTERLIGHT SISTEMAS DE ILUMINACAO LTDA",
+    "notas": [
+      {
+        "numeroNf": "256028",
+        "valorNf": 19515.51,
+        "peso": 0.0,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "256687",
+        "valorNf": 2755.97,
+        "peso": 0.0,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "257306",
+        "valorNf": 117632.14,
+        "peso": 13.4,
+        "volumes": 0.012
+      }
+    ],
+    "valorTotalNf": 139903.62,
+    "pesoTotalKg": 13.4,
+    "quantidadeVolumes": 0.012,
+    "quantidadeNotas": 3,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 5
+  },
+  {
+    "fornecedor": "10.718 - STELLA IMPORTACAO E EXPORTACAO DE LUMINARIAS LTDA",
+    "notas": [
+      {
+        "numeroNf": "287740",
+        "valorNf": 2430.32,
+        "peso": 0.84,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "289609",
+        "valorNf": 1873.97,
+        "peso": 6.0,
+        "volumes": 0.018
+      }
+    ],
+    "valorTotalNf": 4304.29,
+    "pesoTotalKg": 6.84,
+    "quantidadeVolumes": 0.018,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 6
+  },
+  {
+    "fornecedor": "10.927 - TIGRE MATERIAIS E SOLUCOES PARA CONSTRUCAO LTDA",
+    "notas": [
+      {
+        "numeroNf": "1992727",
+        "valorNf": 8571.25,
+        "peso": 155.5,
+        "volumes": 6.875
+      },
+      {
+        "numeroNf": "1992969",
+        "valorNf": 2051.64,
+        "peso": 24.6,
+        "volumes": 0.291
+      },
+      {
+        "numeroNf": "1998897",
+        "valorNf": 11356.12,
+        "peso": 65.4,
+        "volumes": 3.751
+      },
+      {
+        "numeroNf": "1998884",
+        "valorNf": 502.72,
+        "peso": 5.3,
+        "volumes": 0.018
+      }
+    ],
+    "valorTotalNf": 22481.73,
+    "pesoTotalKg": 250.8,
+    "quantidadeVolumes": 10.935,
+    "quantidadeNotas": 4,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 7
+  },
+  {
+    "fornecedor": "10.937 - ROBERT BOSCH LIMITADA",
+    "notas": [
+      {
+        "numeroNf": "1245369",
+        "valorNf": 60832.62,
+        "peso": 362.06,
+        "volumes": 0.831
+      }
+    ],
+    "valorTotalNf": 60832.62,
+    "pesoTotalKg": 362.06,
+    "quantidadeVolumes": 0.831,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 8
+  },
+  {
+    "fornecedor": "11.013 - PRECON INDUSTRIAL S/A AL",
+    "notas": [
+      {
+        "numeroNf": "37863",
+        "valorNf": 59407.78,
+        "peso": 7715.0,
+        "volumes": 4.108
+      }
+    ],
+    "valorTotalNf": 59407.78,
+    "pesoTotalKg": 7715.0,
+    "quantidadeVolumes": 4.108,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 9
+  },
+  {
+    "fornecedor": "11.344 - TAF INDUSTRIA DE PLASTICOS LTDA",
+    "notas": [
+      {
+        "numeroNf": "199798",
+        "valorNf": 46664.09,
+        "peso": 1987.41,
+        "volumes": 2.213
+      }
+    ],
+    "valorTotalNf": 46664.09,
+    "pesoTotalKg": 1987.41,
+    "quantidadeVolumes": 2.213,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 10
+  },
+  {
+    "fornecedor": "11.849 - SCHULZ COMPRESSORES S.A",
+    "notas": [
+      {
+        "numeroNf": "625308",
+        "valorNf": 531.33,
+        "peso": 22.8,
+        "volumes": 0.065
+      }
+    ],
+    "valorTotalNf": 531.33,
+    "pesoTotalKg": 22.8,
+    "quantidadeVolumes": 0.065,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 11
+  },
+  {
+    "fornecedor": "13.027 - THELMAR-INDUSTRIA DE ABRACADEIRAS LTDA",
+    "notas": [
+      {
+        "numeroNf": "12790",
+        "valorNf": 57166.06,
+        "peso": 2165.55,
+        "volumes": 806.139
+      }
+    ],
+    "valorTotalNf": 57166.06,
+    "pesoTotalKg": 2165.55,
+    "quantidadeVolumes": 806.139,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 12
+  },
+  {
+    "fornecedor": "13.126 - ALMA TEXTIL LTDA",
+    "notas": [
+      {
+        "numeroNf": "16238",
+        "valorNf": 11106.0,
+        "peso": 388.3,
+        "volumes": 1558.946
+      },
+      {
+        "numeroNf": "16245",
+        "valorNf": 17160.0,
+        "peso": 595.5,
+        "volumes": 2581.38
+      }
+    ],
+    "valorTotalNf": 28266.0,
+    "pesoTotalKg": 983.8,
+    "quantidadeVolumes": 4140.326,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 13
+  },
+  {
+    "fornecedor": "13.227 - J.S DE OLIVEIRA FABRICACAO DE MANGUEIRAS-ME",
+    "notas": [
+      {
+        "numeroNf": "2752",
+        "valorNf": 12258.29,
+        "peso": 925.0,
+        "volumes": 28.061
+      }
+    ],
+    "valorTotalNf": 12258.29,
+    "pesoTotalKg": 925.0,
+    "quantidadeVolumes": 28.061,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 14
+  },
+  {
+    "fornecedor": "13.600 - ANJO QUIMICA DO BRASIL LTDA",
+    "notas": [
+      {
+        "numeroNf": "474045",
+        "valorNf": 152600.97,
+        "peso": 12681.22,
+        "volumes": 78.471
+      }
+    ],
+    "valorTotalNf": 152600.97,
+    "pesoTotalKg": 12681.22,
+    "quantidadeVolumes": 78.471,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 15
+  },
+  {
+    "fornecedor": "14.186 - METALURGICA A M LTDA",
+    "notas": [
+      {
+        "numeroNf": "1715",
+        "valorNf": 12387.6,
+        "peso": 1080.0,
+        "volumes": 360004.899
+      }
+    ],
+    "valorTotalNf": 12387.6,
+    "pesoTotalKg": 1080.0,
+    "quantidadeVolumes": 360004.899,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 16
+  },
+  {
+    "fornecedor": "15.151 - NOC COMERCIO DE METAIS LTDA",
+    "notas": [
+      {
+        "numeroNf": "5025",
+        "valorNf": 27002.0,
+        "peso": 267.87,
+        "volumes": 0.101
+      }
+    ],
+    "valorTotalNf": 27002.0,
+    "pesoTotalKg": 267.87,
+    "quantidadeVolumes": 0.101,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 17
+  },
+  {
+    "fornecedor": "15.318 - CORTAG INDUSTRIA E COMERCIO LTDA.",
+    "notas": [
+      {
+        "numeroNf": "852246",
+        "valorNf": 163740.0,
+        "peso": 5526.0,
+        "volumes": 0.333
+      },
+      {
+        "numeroNf": "852245",
+        "valorNf": 141884.57,
+        "peso": 4854.93,
+        "volumes": 273.593
+      },
+      {
+        "numeroNf": "853782",
+        "valorNf": 11532.56,
+        "peso": 140.07,
+        "volumes": 0.652
+      },
+      {
+        "numeroNf": "853784",
+        "valorNf": 21151.14,
+        "peso": 1363.24,
+        "volumes": 5.632
+      },
+      {
+        "numeroNf": "853783",
+        "valorNf": 52159.18,
+        "peso": 1782.0,
+        "volumes": 17.846
+      }
+    ],
+    "valorTotalNf": 390467.45,
+    "pesoTotalKg": 13666.24,
+    "quantidadeVolumes": 298.056,
+    "quantidadeNotas": 5,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 18
+  },
+  {
+    "fornecedor": "15.652 - ARMACELL BRASIL LTDA",
+    "notas": [
+      {
+        "numeroNf": "87255",
+        "valorNf": 45873.77,
+        "peso": 4911.0,
+        "volumes": 179.33
+      }
+    ],
+    "valorTotalNf": 45873.77,
+    "pesoTotalKg": 4911.0,
+    "quantidadeVolumes": 179.33,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 19
+  },
+  {
+    "fornecedor": "15.690 - CLI CENTRAL DE LOGISTICA INTEGRADA LTDA",
+    "notas": [
+      {
+        "numeroNf": "38092",
+        "valorNf": 354.51,
+        "peso": 0.0,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 354.51,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 20
+  },
+  {
+    "fornecedor": "15.821 - DELCAFLEX INDUSTRIA E COMERCIO LTDA",
+    "notas": [
+      {
+        "numeroNf": "51557",
+        "valorNf": 9085.74,
+        "peso": 291.03,
+        "volumes": 1.072
+      }
+    ],
+    "valorTotalNf": 9085.74,
+    "pesoTotalKg": 291.03,
+    "quantidadeVolumes": 1.072,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 21
+  },
+  {
+    "fornecedor": "16.982 - PENINSULA IMPORTACAO E EXPORTACAO EIRELI",
+    "notas": [
+      {
+        "numeroNf": "27481",
+        "valorNf": 20591.88,
+        "peso": 432.88,
+        "volumes": 1.528
+      }
+    ],
+    "valorTotalNf": 20591.88,
+    "pesoTotalKg": 432.88,
+    "quantidadeVolumes": 1.528,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 22
+  },
+  {
+    "fornecedor": "17.434 - SAINT-GOBAIN DO BRASIL PRODUTOS INDUSTRIAIS PARA CONST LTDA",
+    "notas": [
+      {
+        "numeroNf": "512188",
+        "valorNf": 47490.24,
+        "peso": 2985.0,
+        "volumes": 1202.012
+      }
+    ],
+    "valorTotalNf": 47490.24,
+    "pesoTotalKg": 2985.0,
+    "quantidadeVolumes": 1202.012,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 23
+  },
+  {
+    "fornecedor": "17.748 - ACQUALIMP INDUSTRIA E COMERCIO DE MATERIAIS PLASTICOS LTDA",
+    "notas": [
+      {
+        "numeroNf": "104548",
+        "valorNf": 3053.88,
+        "peso": 39.78,
+        "volumes": 0.177
+      },
+      {
+        "numeroNf": "104561",
+        "valorNf": 6886.8,
+        "peso": 242.99,
+        "volumes": 13.963
+      },
+      {
+        "numeroNf": "104558",
+        "valorNf": 28242.05,
+        "peso": 962.75,
+        "volumes": 69.525
+      },
+      {
+        "numeroNf": "104556",
+        "valorNf": 37479.45,
+        "peso": 1186.6,
+        "volumes": 81.292
+      },
+      {
+        "numeroNf": "104546",
+        "valorNf": 16524.27,
+        "peso": 454.53,
+        "volumes": 32.059
+      }
+    ],
+    "valorTotalNf": 92186.45,
+    "pesoTotalKg": 2886.65,
+    "quantidadeVolumes": 197.016,
+    "quantidadeNotas": 5,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 24
+  },
+  {
+    "fornecedor": "19 - TRAMONTINA PLANALTO S/A",
+    "notas": [
+      {
+        "numeroNf": "702550",
+        "valorNf": 11026.31,
+        "peso": 104.0,
+        "volumes": 0.009
+      }
+    ],
+    "valorTotalNf": 11026.31,
+    "pesoTotalKg": 104.0,
+    "quantidadeVolumes": 0.009,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 25
+  },
+  {
+    "fornecedor": "2.100 - DMFLEX IND E COMERCIO DE METAIS SANITARIOS LTDA",
+    "notas": [
+      {
+        "numeroNf": "218114",
+        "valorNf": 8689.04,
+        "peso": 20.63,
+        "volumes": 0.046
+      },
+      {
+        "numeroNf": "218172",
+        "valorNf": 5592.85,
+        "peso": 31.65,
+        "volumes": 0.093
+      },
+      {
+        "numeroNf": "218277",
+        "valorNf": 3259.1,
+        "peso": 9.28,
+        "volumes": 0.051
+      },
+      {
+        "numeroNf": "218347",
+        "valorNf": 4976.6,
+        "peso": 3.4,
+        "volumes": 0.007
+      },
+      {
+        "numeroNf": "218470",
+        "valorNf": 146190.74,
+        "peso": 507.14,
+        "volumes": 1.848
+      },
+      {
+        "numeroNf": "218471",
+        "valorNf": 63446.1,
+        "peso": 206.1,
+        "volumes": 0.682
+      }
+    ],
+    "valorTotalNf": 232154.43,
+    "pesoTotalKg": 778.2,
+    "quantidadeVolumes": 2.727,
+    "quantidadeNotas": 6,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 26
+  },
+  {
+    "fornecedor": "2.486 - ROCA SANITARIOS BRASIL LTDA",
+    "notas": [
+      {
+        "numeroNf": "1340715",
+        "valorNf": 1793.25,
+        "peso": 40.35,
+        "volumes": 0.087
+      },
+      {
+        "numeroNf": "1340642",
+        "valorNf": 23210.41,
+        "peso": 51.5,
+        "volumes": 0.381
+      },
+      {
+        "numeroNf": "1341120",
+        "valorNf": 2302.96,
+        "peso": 5.5,
+        "volumes": 0.042
+      },
+      {
+        "numeroNf": "1337517",
+        "valorNf": 127.66,
+        "peso": 1.68,
+        "volumes": 0.006
+      },
+      {
+        "numeroNf": "1342299",
+        "valorNf": 464.19,
+        "peso": 0.56,
+        "volumes": 0.002
+      },
+      {
+        "numeroNf": "1344096",
+        "valorNf": 3011.76,
+        "peso": 10.56,
+        "volumes": 0.156
+      }
+    ],
+    "valorTotalNf": 30910.23,
+    "pesoTotalKg": 110.15,
+    "quantidadeVolumes": 0.674,
+    "quantidadeNotas": 6,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 27
+  },
+  {
+    "fornecedor": "2.923 - NEW LINE ILUMINACAO LTDA",
+    "notas": [
+      {
+        "numeroNf": "222864",
+        "valorNf": 2369.61,
+        "peso": 0.0,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 2369.61,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 28
+  },
+  {
+    "fornecedor": "20.189 - SPERANDIO & ALVES INDUSTRIA E COMERCIO",
+    "notas": [
+      {
+        "numeroNf": "40177",
+        "valorNf": 8518.21,
+        "peso": 27.84,
+        "volumes": 0.066
+      }
+    ],
+    "valorTotalNf": 8518.21,
+    "pesoTotalKg": 27.84,
+    "quantidadeVolumes": 0.066,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 29
+  },
+  {
+    "fornecedor": "21.329 - S & L SOUZA E LIMA FABRICACAO E COMERCIO DE LUMINARIAS LTDA",
+    "notas": [
+      {
+        "numeroNf": "46391",
+        "valorNf": 1062.08,
+        "peso": 0.0,
+        "volumes": 0.001
+      }
+    ],
+    "valorTotalNf": 1062.08,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.001,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 30
+  },
+  {
+    "fornecedor": "21.365 - EUCATEX S A INDUSTRIA E COMERCIO",
+    "notas": [
+      {
+        "numeroNf": "37479",
+        "valorNf": 6148.84,
+        "peso": 60.0,
+        "volumes": 18.122
+      }
+    ],
+    "valorTotalNf": 6148.84,
+    "pesoTotalKg": 60.0,
+    "quantidadeVolumes": 18.122,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 31
+  },
+  {
+    "fornecedor": "21.685 - INDEPENDENCE COMERCIO E IMPORTACAO LTDA",
+    "notas": [
+      {
+        "numeroNf": "20405",
+        "valorNf": 12904.8,
+        "peso": 371.52,
+        "volumes": 360.626
+      }
+    ],
+    "valorTotalNf": 12904.8,
+    "pesoTotalKg": 371.52,
+    "quantidadeVolumes": 360.626,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 32
+  },
+  {
+    "fornecedor": "22.015 - FOCO METALLO FABRICACAO E MONTAGEM DE LUMINARIAS E COMERCIO",
+    "notas": [
+      {
+        "numeroNf": "22648",
+        "valorNf": 2398.04,
+        "peso": 0.0,
+        "volumes": 0.265
+      }
+    ],
+    "valorTotalNf": 2398.04,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.265,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 33
+  },
+  {
+    "fornecedor": "22.320 - OLIVO S/A IND PROD ILUMINACAO E ELETROFERRAGENS",
+    "notas": [
+      {
+        "numeroNf": "66097",
+        "valorNf": 7574.7,
+        "peso": 12.0,
+        "volumes": 0.184
+      }
+    ],
+    "valorTotalNf": 7574.7,
+    "pesoTotalKg": 12.0,
+    "quantidadeVolumes": 0.184,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 34
+  },
+  {
+    "fornecedor": "22.715 - LUMIERE COMERCIO INTERNACIONAL LTDA",
+    "notas": [
+      {
+        "numeroNf": "73198",
+        "valorNf": 40.0,
+        "peso": 0.0,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 40.0,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 35
+  },
+  {
+    "fornecedor": "23.993 - KARCHER INDUSTRIA E COMERCIO LIMITADA",
+    "notas": [
+      {
+        "numeroNf": "1597624",
+        "valorNf": 9941.52,
+        "peso": 120.6,
+        "volumes": 1.808
+      }
+    ],
+    "valorTotalNf": 9941.52,
+    "pesoTotalKg": 120.6,
+    "quantidadeVolumes": 1.808,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 36
+  },
+  {
+    "fornecedor": "24.447 - CLAMPER INDUSTRIA E COMERCIO S.A.",
+    "notas": [
+      {
+        "numeroNf": "74072",
+        "valorNf": 96819.8,
+        "peso": 1165.5,
+        "volumes": 0.435
+      }
+    ],
+    "valorTotalNf": 96819.8,
+    "pesoTotalKg": 1165.5,
+    "quantidadeVolumes": 0.435,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 37
+  },
+  {
+    "fornecedor": "24.582 - GRUPO MARMO E HIME COMERCIO, IMPORTACAO E EXPORTACAO LTDA",
+    "notas": [
+      {
+        "numeroNf": "38307",
+        "valorNf": 176.21,
+        "peso": 0.0,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "38306",
+        "valorNf": 18789.17,
+        "peso": 0.0,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 18965.38,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 38
+  },
+  {
+    "fornecedor": "24.768 - TOPMAX ACESSORIOS PARA CONSTRUCAO LTDA",
+    "notas": [
+      {
+        "numeroNf": "12084",
+        "valorNf": 161191.57,
+        "peso": 1198.2,
+        "volumes": 2.058
+      }
+    ],
+    "valorTotalNf": 161191.57,
+    "pesoTotalKg": 1198.2,
+    "quantidadeVolumes": 2.058,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 39
+  },
+  {
+    "fornecedor": "25.941 - AQUECE METAIS FABRICACAO E MANUTENCAO LTDA",
+    "notas": [
+      {
+        "numeroNf": "10395",
+        "valorNf": 1862.04,
+        "peso": 3.0,
+        "volumes": 0.025
+      }
+    ],
+    "valorTotalNf": 1862.04,
+    "pesoTotalKg": 3.0,
+    "quantidadeVolumes": 0.025,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 40
+  },
+  {
+    "fornecedor": "26.383 - INDUSTRIA DRYKO LTDA",
+    "notas": [
+      {
+        "numeroNf": "86713",
+        "valorNf": 16556.0,
+        "peso": 3600.0,
+        "volumes": 1.6
+      }
+    ],
+    "valorTotalNf": 16556.0,
+    "pesoTotalKg": 3600.0,
+    "quantidadeVolumes": 1.6,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 41
+  },
+  {
+    "fornecedor": "26.619 - DICAN COMERCIO EXTERIOR LTDA",
+    "notas": [
+      {
+        "numeroNf": "117415",
+        "valorNf": 3352.97,
+        "peso": 0.0,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 3352.97,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 42
+  },
+  {
+    "fornecedor": "27.064 - LINNI INDUSTRIA DE ARTEFATOS DE ALUMINIO LTDA",
+    "notas": [
+      {
+        "numeroNf": "3625",
+        "valorNf": 25446.05,
+        "peso": 122.07,
+        "volumes": 850.004
+      },
+      {
+        "numeroNf": "3632",
+        "valorNf": 17241.99,
+        "peso": 104.3,
+        "volumes": 3.253
+      },
+      {
+        "numeroNf": "3631",
+        "valorNf": 15991.81,
+        "peso": 56.95,
+        "volumes": 0.231
+      }
+    ],
+    "valorTotalNf": 58679.85,
+    "pesoTotalKg": 283.32,
+    "quantidadeVolumes": 853.488,
+    "quantidadeNotas": 3,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 43
+  },
+  {
+    "fornecedor": "27.570 - DOCOL INDUSTRIA E COMERCIO LTDA",
+    "notas": [
+      {
+        "numeroNf": "16255",
+        "valorNf": 5.43,
+        "peso": 0.3,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 5.43,
+    "pesoTotalKg": 0.3,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 44
+  },
+  {
+    "fornecedor": "29.089 - OTTO BAUMGART INDUSTRIA E COMERCIO S A",
+    "notas": [
+      {
+        "numeroNf": "202119",
+        "valorNf": 2321.89,
+        "peso": 92.0,
+        "volumes": 0.013
+      },
+      {
+        "numeroNf": "202378",
+        "valorNf": 106469.75,
+        "peso": 18950.4,
+        "volumes": 32.935
+      }
+    ],
+    "valorTotalNf": 108791.64,
+    "pesoTotalKg": 19042.4,
+    "quantidadeVolumes": 32.948,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 45
+  },
+  {
+    "fornecedor": "29.659 - WHIRLPOOL S.A",
+    "notas": [
+      {
+        "numeroNf": "5148697",
+        "valorNf": 154527.24,
+        "peso": 458.0,
+        "volumes": 1.518
+      }
+    ],
+    "valorTotalNf": 154527.24,
+    "pesoTotalKg": 458.0,
+    "quantidadeVolumes": 1.518,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 46
+  },
+  {
+    "fornecedor": "29.771 - SIEMENS INFRAESTRUTURA E INDUSTRIA LTDA.",
+    "notas": [
+      {
+        "numeroNf": "338929",
+        "valorNf": 718118.03,
+        "peso": 8711.02,
+        "volumes": 2618.683
+      }
+    ],
+    "valorTotalNf": 718118.03,
+    "pesoTotalKg": 8711.02,
+    "quantidadeVolumes": 2618.683,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 47
+  },
+  {
+    "fornecedor": "3.166 - ITW PPF BRASIL ADESIVOS LTDA.",
+    "notas": [
+      {
+        "numeroNf": "209760",
+        "valorNf": 8793.25,
+        "peso": 175.44,
+        "volumes": 264.224
+      },
+      {
+        "numeroNf": "210030",
+        "valorNf": 89957.7,
+        "peso": 1691.4,
+        "volumes": 3482.027
+      },
+      {
+        "numeroNf": "210153",
+        "valorNf": 12750.0,
+        "peso": 75.0,
+        "volumes": 0.75
+      },
+      {
+        "numeroNf": "210114",
+        "valorNf": 23615.81,
+        "peso": 903.84,
+        "volumes": 1.008
+      }
+    ],
+    "valorTotalNf": 135116.76,
+    "pesoTotalKg": 2845.68,
+    "quantidadeVolumes": 3748.009,
+    "quantidadeNotas": 4,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 48
+  },
+  {
+    "fornecedor": "3.404 - VENTISOL INDUSTRIA E COMERCIO LTDA",
+    "notas": [
+      {
+        "numeroNf": "1227181",
+        "valorNf": 23716.25,
+        "peso": 530.0,
+        "volumes": 0.586
+      }
+    ],
+    "valorTotalNf": 23716.25,
+    "pesoTotalKg": 530.0,
+    "quantidadeVolumes": 0.586,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 49
+  },
+  {
+    "fornecedor": "3.599 - KADESH CALCADOS PROFISSIONAIS LTDA",
+    "notas": [
+      {
+        "numeroNf": "332972",
+        "valorNf": 23603.13,
+        "peso": 249.05,
+        "volumes": 1.221
+      }
+    ],
+    "valorTotalNf": 23603.13,
+    "pesoTotalKg": 249.05,
+    "quantidadeVolumes": 1.221,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 50
+  },
+  {
+    "fornecedor": "3.659 - GERIS INDUSTRIA COM. IMPORT. E EXPORT. DE FERRAGENS LTDA.",
+    "notas": [
+      {
+        "numeroNf": "95364",
+        "valorNf": 67501.06,
+        "peso": 243.0,
+        "volumes": 2.828
+      }
+    ],
+    "valorTotalNf": 67501.06,
+    "pesoTotalKg": 243.0,
+    "quantidadeVolumes": 2.828,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 51
+  },
+  {
+    "fornecedor": "32.363 - TRAMONTINA ELETRIK S.A.",
+    "notas": [
+      {
+        "numeroNf": "6141",
+        "valorNf": 8736.05,
+        "peso": 570.0,
+        "volumes": 3.034
+      },
+      {
+        "numeroNf": "6139",
+        "valorNf": 81196.15,
+        "peso": 4689.0,
+        "volumes": 26.177
+      },
+      {
+        "numeroNf": "6140",
+        "valorNf": 96760.74,
+        "peso": 5665.0,
+        "volumes": 20.858
+      }
+    ],
+    "valorTotalNf": 186692.94,
+    "pesoTotalKg": 10924.0,
+    "quantidadeVolumes": 50.069,
+    "quantidadeNotas": 3,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 52
+  },
+  {
+    "fornecedor": "32.660 - DEXCO S.A",
+    "notas": [
+      {
+        "numeroNf": "39770",
+        "valorNf": 9127.68,
+        "peso": 550.34,
+        "volumes": 1.631
+      },
+      {
+        "numeroNf": "39765",
+        "valorNf": 93985.14,
+        "peso": 3821.05,
+        "volumes": 8.758
+      },
+      {
+        "numeroNf": "40586",
+        "valorNf": 103125.6,
+        "peso": 5223.6,
+        "volumes": 23.895
+      },
+      {
+        "numeroNf": "40585",
+        "valorNf": 97809.01,
+        "peso": 4866.32,
+        "volumes": 20.898
+      },
+      {
+        "numeroNf": "40220",
+        "valorNf": 976.51,
+        "peso": 47.08,
+        "volumes": 0.969
+      },
+      {
+        "numeroNf": "41216",
+        "valorNf": 15264.99,
+        "peso": 759.48,
+        "volumes": 3.261
+      },
+      {
+        "numeroNf": "41217",
+        "valorNf": 168706.7,
+        "peso": 7715.39,
+        "volumes": 18.878
+      },
+      {
+        "numeroNf": "41218",
+        "valorNf": 15050.64,
+        "peso": 988.32,
+        "volumes": 0.003
+      },
+      {
+        "numeroNf": "41219",
+        "valorNf": 75253.2,
+        "peso": 4941.6,
+        "volumes": 0.017
+      },
+      {
+        "numeroNf": "41220",
+        "valorNf": 260524.8,
+        "peso": 14177.76,
+        "volumes": 37.599
+      },
+      {
+        "numeroNf": "41316",
+        "valorNf": 46843.32,
+        "peso": 1482.11,
+        "volumes": 2.958
+      },
+      {
+        "numeroNf": "41315",
+        "valorNf": 25781.4,
+        "peso": 1305.9,
+        "volumes": 5.974
+      },
+      {
+        "numeroNf": "41314",
+        "valorNf": 70469.16,
+        "peso": 3569.46,
+        "volumes": 16.328
+      },
+      {
+        "numeroNf": "41442",
+        "valorNf": 91162.0,
+        "peso": 4800.0,
+        "volumes": 16.872
+      },
+      {
+        "numeroNf": "41441",
+        "valorNf": 18232.4,
+        "peso": 960.0,
+        "volumes": 3.374
+      },
+      {
+        "numeroNf": "41440",
+        "valorNf": 72929.6,
+        "peso": 3840.0,
+        "volumes": 13.498
+      },
+      {
+        "numeroNf": "41540",
+        "valorNf": 131987.46,
+        "peso": 1727.93,
+        "volumes": 9.543
+      },
+      {
+        "numeroNf": "41543",
+        "valorNf": 11056.74,
+        "peso": 88.51,
+        "volumes": 1.063
+      },
+      {
+        "numeroNf": "41582",
+        "valorNf": 3359.28,
+        "peso": 22.7,
+        "volumes": 0.537
+      },
+      {
+        "numeroNf": "41583",
+        "valorNf": 36933.65,
+        "peso": 206.4,
+        "volumes": 0.179
+      },
+      {
+        "numeroNf": "41545",
+        "valorNf": 21705.79,
+        "peso": 9.02,
+        "volumes": 0.154
+      },
+      {
+        "numeroNf": "41563",
+        "valorNf": 5009.08,
+        "peso": 2.92,
+        "volumes": 0.154
+      },
+      {
+        "numeroNf": "41475",
+        "valorNf": 4635.08,
+        "peso": 133.16,
+        "volumes": 0.36
+      },
+      {
+        "numeroNf": "41476",
+        "valorNf": 13905.24,
+        "peso": 399.47,
+        "volumes": 1.08
+      },
+      {
+        "numeroNf": "41477",
+        "valorNf": 164091.6,
+        "peso": 8640.0,
+        "volumes": 30.37
+      },
+      {
+        "numeroNf": "41546",
+        "valorNf": 15817.83,
+        "peso": 6.1,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 1573743.9,
+    "pesoTotalKg": 70284.62,
+    "quantidadeVolumes": 218.353,
+    "quantidadeNotas": 26,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 53
+  },
+  {
+    "fornecedor": "33.829 - STUDIO LAMPLUZ COMERCIO E SERVICOS LTDA",
+    "notas": [
+      {
+        "numeroNf": "518",
+        "valorNf": 1770.95,
+        "peso": 4.0,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 1770.95,
+    "pesoTotalKg": 4.0,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 54
+  },
+  {
+    "fornecedor": "34.321 - SALVABRAS SOLUCOES EM PROTECAO LTDA",
+    "notas": [
+      {
+        "numeroNf": "15482",
+        "valorNf": 32862.0,
+        "peso": 1260.0,
+        "volumes": 22.089
+      },
+      {
+        "numeroNf": "15557",
+        "valorNf": 32862.0,
+        "peso": 1260.0,
+        "volumes": 22.089
+      },
+      {
+        "numeroNf": "15556",
+        "valorNf": 32862.0,
+        "peso": 1260.0,
+        "volumes": 22.089
+      },
+      {
+        "numeroNf": "15586",
+        "valorNf": 32862.0,
+        "peso": 1260.0,
+        "volumes": 22.089
+      }
+    ],
+    "valorTotalNf": 131448.0,
+    "pesoTotalKg": 5040.0,
+    "quantidadeVolumes": 88.356,
+    "quantidadeNotas": 4,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 55
+  },
+  {
+    "fornecedor": "34.619 - STECK INDUSTRIA ELETRICA LTDA",
+    "notas": [
+      {
+        "numeroNf": "60359",
+        "valorNf": 866.21,
+        "peso": 1.17,
+        "volumes": 0.015
+      },
+      {
+        "numeroNf": "71037",
+        "valorNf": 5367.14,
+        "peso": 25.0,
+        "volumes": 0.368
+      }
+    ],
+    "valorTotalNf": 6233.35,
+    "pesoTotalKg": 26.17,
+    "quantidadeVolumes": 0.383,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 56
+  },
+  {
+    "fornecedor": "34.949 - ITW CHEMICAL PRODUCTS LTDA",
+    "notas": [
+      {
+        "numeroNf": "314261",
+        "valorNf": 2218.8,
+        "peso": 27.36,
+        "volumes": 0.042
+      },
+      {
+        "numeroNf": "314257",
+        "valorNf": 2206.44,
+        "peso": 25.52,
+        "volumes": 0.029
+      }
+    ],
+    "valorTotalNf": 4425.24,
+    "pesoTotalKg": 52.88,
+    "quantidadeVolumes": 0.071,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 57
+  },
+  {
+    "fornecedor": "35.075 - STARRETT INDUSTRIA E COMERCIO LTDA",
+    "notas": [
+      {
+        "numeroNf": "52989",
+        "valorNf": 552.83,
+        "peso": 0.01,
+        "volumes": 0.004
+      },
+      {
+        "numeroNf": "53271",
+        "valorNf": 1290.24,
+        "peso": 0.96,
+        "volumes": 0.276
+      }
+    ],
+    "valorTotalNf": 1843.07,
+    "pesoTotalKg": 0.97,
+    "quantidadeVolumes": 0.28,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 58
+  },
+  {
+    "fornecedor": "35.307 - I.F.C. INDUSTRIA E COMERCIO DE CONDUTORES ELETRICOS LTDA",
+    "notas": [
+      {
+        "numeroNf": "469980",
+        "valorNf": 294944.59,
+        "peso": 4551.7,
+        "volumes": 477.776
+      },
+      {
+        "numeroNf": "469976",
+        "valorNf": 183357.82,
+        "peso": 3312.78,
+        "volumes": 109.656
+      }
+    ],
+    "valorTotalNf": 478302.41,
+    "pesoTotalKg": 7864.48,
+    "quantidadeVolumes": 587.432,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 59
+  },
+  {
+    "fornecedor": "36.576 - GRUPO METAL DESIGN LTDA",
+    "notas": [
+      {
+        "numeroNf": "553",
+        "valorNf": 32599.23,
+        "peso": 0.0,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 32599.23,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 60
+  },
+  {
+    "fornecedor": "37.340 - MINOX INDUSTRIA E COMERCIO DE ACESSORIOS DOM EM METAL LTDA",
+    "notas": [
+      {
+        "numeroNf": "44",
+        "valorNf": 13369.5,
+        "peso": 163.05,
+        "volumes": 0.064
+      },
+      {
+        "numeroNf": "43",
+        "valorNf": 13369.5,
+        "peso": 163.05,
+        "volumes": 0.064
+      },
+      {
+        "numeroNf": "186",
+        "valorNf": 600.75,
+        "peso": 7.53,
+        "volumes": 0.003
+      }
+    ],
+    "valorTotalNf": 27339.75,
+    "pesoTotalKg": 333.63,
+    "quantidadeVolumes": 0.131,
+    "quantidadeNotas": 3,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 61
+  },
+  {
+    "fornecedor": "37.716 - ELLFAS DO BRASIL LTDA",
+    "notas": [
+      {
+        "numeroNf": "5982",
+        "valorNf": 23719.68,
+        "peso": 800.0,
+        "volumes": 1.461
+      }
+    ],
+    "valorTotalNf": 23719.68,
+    "pesoTotalKg": 800.0,
+    "quantidadeVolumes": 1.461,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 62
+  },
+  {
+    "fornecedor": "37.759 - SKYLIGHT COMERCIO E IMPORTACAO LTDA",
+    "notas": [
+      {
+        "numeroNf": "11538",
+        "valorNf": 1438.46,
+        "peso": 0.0,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "11537",
+        "valorNf": 1798.08,
+        "peso": 0.0,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 3236.54,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 63
+  },
+  {
+    "fornecedor": "4.003 - JAPI SA INDUSTRIA E COMERCIO",
+    "notas": [
+      {
+        "numeroNf": "765491",
+        "valorNf": 1743.51,
+        "peso": 0.0,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 1743.51,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 64
+  },
+  {
+    "fornecedor": "4.107 - PRYSMIAN CABOS E SISTEMAS DO BRASIL S.A.",
+    "notas": [
+      {
+        "numeroNf": "557625",
+        "valorNf": 9656.72,
+        "peso": 153.0,
+        "volumes": 16.187
+      },
+      {
+        "numeroNf": "557866",
+        "valorNf": 5312.66,
+        "peso": 0.0,
+        "volumes": 0.004
+      },
+      {
+        "numeroNf": "557918",
+        "valorNf": 35404.3,
+        "peso": 325.4,
+        "volumes": 24.438
+      },
+      {
+        "numeroNf": "557619",
+        "valorNf": 38470.25,
+        "peso": 660.5,
+        "volumes": 36.818
+      },
+      {
+        "numeroNf": "557919",
+        "valorNf": 15281.52,
+        "peso": 231.0,
+        "volumes": 22.937
+      }
+    ],
+    "valorTotalNf": 104125.45,
+    "pesoTotalKg": 1369.9,
+    "quantidadeVolumes": 100.384,
+    "quantidadeNotas": 5,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 65
+  },
+  {
+    "fornecedor": "4.376 - ELETRO ZAGONEL LTDA.",
+    "notas": [
+      {
+        "numeroNf": "640258",
+        "valorNf": 21981.09,
+        "peso": 105.0,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "639686",
+        "valorNf": 6312.6,
+        "peso": 58.8,
+        "volumes": 3.504
+      },
+      {
+        "numeroNf": "643537",
+        "valorNf": 2396.52,
+        "peso": 28.08,
+        "volumes": 0.367
+      }
+    ],
+    "valorTotalNf": 30690.21,
+    "pesoTotalKg": 191.88,
+    "quantidadeVolumes": 3.871,
+    "quantidadeNotas": 3,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 66
+  },
+  {
+    "fornecedor": "4.646 - ASTRA S.A INDUSTRIA E COMERCIO",
+    "notas": [
+      {
+        "numeroNf": "2273698",
+        "valorNf": 2517.84,
+        "peso": 0.41,
+        "volumes": 0.223
+      },
+      {
+        "numeroNf": "2275242",
+        "valorNf": 1723.49,
+        "peso": 10.0,
+        "volumes": 0.197
+      },
+      {
+        "numeroNf": "2277121",
+        "valorNf": 4338.29,
+        "peso": 252.1,
+        "volumes": 0.141
+      }
+    ],
+    "valorTotalNf": 8579.62,
+    "pesoTotalKg": 262.51,
+    "quantidadeVolumes": 0.561,
+    "quantidadeNotas": 3,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 67
+  },
+  {
+    "fornecedor": "5.002 - ELETRICA DANUBIO IND E COM DE MAT ELET LTDA",
+    "notas": [
+      {
+        "numeroNf": "483259",
+        "valorNf": 380294.74,
+        "peso": 8389.4,
+        "volumes": 25243.21
+      }
+    ],
+    "valorTotalNf": 380294.74,
+    "pesoTotalKg": 8389.4,
+    "quantidadeVolumes": 25243.21,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 68
+  },
+  {
+    "fornecedor": "5.460 - BLACK & DECKER DO BRASIL LTDA",
+    "notas": [
+      {
+        "numeroNf": "2362503",
+        "valorNf": 110249.17,
+        "peso": 542.38,
+        "volumes": 62.474
+      }
+    ],
+    "valorTotalNf": 110249.17,
+    "pesoTotalKg": 542.38,
+    "quantidadeVolumes": 62.474,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 69
+  },
+  {
+    "fornecedor": "5.467 - DVG INDUSTRIAL S.A.",
+    "notas": [
+      {
+        "numeroNf": "104320",
+        "valorNf": 6800.0,
+        "peso": 8000.0,
+        "volumes": 8.91
+      },
+      {
+        "numeroNf": "104319",
+        "valorNf": 5600.0,
+        "peso": 8000.0,
+        "volumes": 8.91
+      }
+    ],
+    "valorTotalNf": 12400.0,
+    "pesoTotalKg": 16000.0,
+    "quantidadeVolumes": 17.82,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 70
+  },
+  {
+    "fornecedor": "5.700 - MARSCHALL IND. COM. IMP. EXP. LTDA",
+    "notas": [
+      {
+        "numeroNf": "696560",
+        "valorNf": 1225.43,
+        "peso": 0.0,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 1225.43,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 71
+  },
+  {
+    "fornecedor": "5.932 - ECTX S/A - EUCATEX",
+    "notas": [
+      {
+        "numeroNf": "58177",
+        "valorNf": 31382.82,
+        "peso": 3571.2,
+        "volumes": 4.895
+      },
+      {
+        "numeroNf": "58310",
+        "valorNf": 50334.48,
+        "peso": 5778.72,
+        "volumes": 8.467
+      }
+    ],
+    "valorTotalNf": 81717.3,
+    "pesoTotalKg": 9349.92,
+    "quantidadeVolumes": 13.362,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 72
+  },
+  {
+    "fornecedor": "5.940 - BLUMENAU ILUMINACAO LTDA",
+    "notas": [
+      {
+        "numeroNf": "807836",
+        "valorNf": 8355.14,
+        "peso": 768.0,
+        "volumes": 0.263
+      },
+      {
+        "numeroNf": "807645",
+        "valorNf": 397593.9,
+        "peso": 16594.76,
+        "volumes": 29.843
+      }
+    ],
+    "valorTotalNf": 405949.04,
+    "pesoTotalKg": 17362.76,
+    "quantidadeVolumes": 30.106,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 73
+  },
+  {
+    "fornecedor": "547 - LORENZETTI S/A INDU.BRASILEIRAS ELETROMETALURGICAS",
+    "notas": [
+      {
+        "numeroNf": "2852829",
+        "valorNf": 14729.4,
+        "peso": 125.7,
+        "volumes": 0.084
+      },
+      {
+        "numeroNf": "2948955",
+        "valorNf": 28084.47,
+        "peso": 300.78,
+        "volumes": 0.738
+      },
+      {
+        "numeroNf": "2953066",
+        "valorNf": 43660.79,
+        "peso": 134.22,
+        "volumes": 0.116
+      },
+      {
+        "numeroNf": "2952540",
+        "valorNf": 65928.38,
+        "peso": 139.35,
+        "volumes": 0.63
+      }
+    ],
+    "valorTotalNf": 152403.04,
+    "pesoTotalKg": 700.05,
+    "quantidadeVolumes": 1.568,
+    "quantidadeNotas": 4,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 74
+  },
+  {
+    "fornecedor": "570 - TRAMONTINA MULTI S/A",
+    "notas": [
+      {
+        "numeroNf": "1181069",
+        "valorNf": 19434.06,
+        "peso": 505.26,
+        "volumes": 43.836
+      }
+    ],
+    "valorTotalNf": 19434.06,
+    "pesoTotalKg": 505.26,
+    "quantidadeVolumes": 43.836,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 75
+  },
+  {
+    "fornecedor": "571 - MAX METALURGICA",
+    "notas": [
+      {
+        "numeroNf": "178301",
+        "valorNf": 10627.58,
+        "peso": 375.7,
+        "volumes": 36.935
+      },
+      {
+        "numeroNf": "178436",
+        "valorNf": 13081.76,
+        "peso": 604.75,
+        "volumes": 49.46
+      }
+    ],
+    "valorTotalNf": 23709.34,
+    "pesoTotalKg": 980.45,
+    "quantidadeVolumes": 86.395,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 76
+  },
+  {
+    "fornecedor": "589 - MONTANA HIDROTECNICA LTDA",
+    "notas": [
+      {
+        "numeroNf": "52381",
+        "valorNf": 51300.91,
+        "peso": 248.2,
+        "volumes": 11.848
+      }
+    ],
+    "valorTotalNf": 51300.91,
+    "pesoTotalKg": 248.2,
+    "quantidadeVolumes": 11.848,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 77
+  },
+  {
+    "fornecedor": "6.601 - SIKA SA",
+    "notas": [
+      {
+        "numeroNf": "83495",
+        "valorNf": 369.28,
+        "peso": 36.8,
+        "volumes": 0.049
+      }
+    ],
+    "valorTotalNf": 369.28,
+    "pesoTotalKg": 36.8,
+    "quantidadeVolumes": 0.049,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 78
+  },
+  {
+    "fornecedor": "6.848 - LEGRAND BRASIL LTDA",
+    "notas": [
+      {
+        "numeroNf": "861311",
+        "valorNf": 1011.46,
+        "peso": 1.68,
+        "volumes": 0.012
+      },
+      {
+        "numeroNf": "861312",
+        "valorNf": 1501.46,
+        "peso": 0.52,
+        "volumes": 0.017
+      },
+      {
+        "numeroNf": "861369",
+        "valorNf": 2157.93,
+        "peso": 3.6,
+        "volumes": 0.028
+      },
+      {
+        "numeroNf": "861328",
+        "valorNf": 3665.65,
+        "peso": 29.7,
+        "volumes": 0.076
+      },
+      {
+        "numeroNf": "861630",
+        "valorNf": 1505.13,
+        "peso": 6.12,
+        "volumes": 0.024
+      },
+      {
+        "numeroNf": "862375",
+        "valorNf": 29032.08,
+        "peso": 25.73,
+        "volumes": 0.211
+      },
+      {
+        "numeroNf": "862554",
+        "valorNf": 2846.48,
+        "peso": 15.14,
+        "volumes": 0.043
+      },
+      {
+        "numeroNf": "862332",
+        "valorNf": 2719.61,
+        "peso": 0.1,
+        "volumes": 0.004
+      },
+      {
+        "numeroNf": "862317",
+        "valorNf": 11051.88,
+        "peso": 131.2,
+        "volumes": 0.649
+      },
+      {
+        "numeroNf": "862316",
+        "valorNf": 8864.78,
+        "peso": 71.34,
+        "volumes": 0.086
+      },
+      {
+        "numeroNf": "862706",
+        "valorNf": 5483.11,
+        "peso": 20.0,
+        "volumes": 0.063
+      },
+      {
+        "numeroNf": "861093",
+        "valorNf": 15796.71,
+        "peso": 128.14,
+        "volumes": 0.471
+      }
+    ],
+    "valorTotalNf": 85636.28,
+    "pesoTotalKg": 433.27,
+    "quantidadeVolumes": 1.684,
+    "quantidadeNotas": 12,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 79
+  },
+  {
+    "fornecedor": "6.891 - STUDIOLUCE ILUMINACAO IMPORTACAO E EXPORTACAO LTDA",
+    "notas": [
+      {
+        "numeroNf": "103417",
+        "valorNf": 2368.75,
+        "peso": 0.0,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 2368.75,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 80
+  },
+  {
+    "fornecedor": "6.898 - BETALUB INDUSTRIA DE PROD. DIVER. DE PET. LTDA EPP",
+    "notas": [
+      {
+        "numeroNf": "1224",
+        "valorNf": 7234.19,
+        "peso": 237.07,
+        "volumes": 0.388
+      }
+    ],
+    "valorTotalNf": 7234.19,
+    "pesoTotalKg": 237.07,
+    "quantidadeVolumes": 0.388,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 81
+  },
+  {
+    "fornecedor": "602 - DECORLUX MATERIAL ELETRICO LTDA",
+    "notas": [
+      {
+        "numeroNf": "199975",
+        "valorNf": 5069.75,
+        "peso": 97.58,
+        "volumes": 75.545
+      }
+    ],
+    "valorTotalNf": 5069.75,
+    "pesoTotalKg": 97.58,
+    "quantidadeVolumes": 75.545,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 82
+  },
+  {
+    "fornecedor": "612 - GP CABOS IND. E COMERCIO LTDA",
+    "notas": [
+      {
+        "numeroNf": "80488",
+        "valorNf": 31692.83,
+        "peso": 8398.84,
+        "volumes": 731.785
+      }
+    ],
+    "valorTotalNf": 31692.83,
+    "pesoTotalKg": 8398.84,
+    "quantidadeVolumes": 731.785,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 83
+  },
+  {
+    "fornecedor": "629 - PLASTCOR DO BRASIL LTDA",
+    "notas": [
+      {
+        "numeroNf": "368769",
+        "valorNf": 48615.71,
+        "peso": 1905.66,
+        "volumes": 9.875
+      }
+    ],
+    "valorTotalNf": 48615.71,
+    "pesoTotalKg": 1905.66,
+    "quantidadeVolumes": 9.875,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 84
+  },
+  {
+    "fornecedor": "669 - BLUKIT INDUSTRIA DE PLASTICOS LTDA",
+    "notas": [
+      {
+        "numeroNf": "748603",
+        "valorNf": 2049.43,
+        "peso": 12.34,
+        "volumes": 0.195
+      },
+      {
+        "numeroNf": "749329",
+        "valorNf": 58742.17,
+        "peso": 685.36,
+        "volumes": 5.387
+      }
+    ],
+    "valorTotalNf": 60791.6,
+    "pesoTotalKg": 697.7,
+    "quantidadeVolumes": 5.582,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 85
+  },
+  {
+    "fornecedor": "670 - INDUSTRIA DE FORJADOS SAO ROMAO LTDA",
+    "notas": [
+      {
+        "numeroNf": "57411",
+        "valorNf": 32254.11,
+        "peso": 1603.69,
+        "volumes": 0.969
+      }
+    ],
+    "valorTotalNf": 32254.11,
+    "pesoTotalKg": 1603.69,
+    "quantidadeVolumes": 0.969,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 86
+  },
+  {
+    "fornecedor": "674 - ESFERA ESTAMPARIA DE FERRO E ACO LTDA",
+    "notas": [
+      {
+        "numeroNf": "145372",
+        "valorNf": 46186.56,
+        "peso": 3551.1,
+        "volumes": 82.193
+      }
+    ],
+    "valorTotalNf": 46186.56,
+    "pesoTotalKg": 3551.1,
+    "quantidadeVolumes": 82.193,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 87
+  },
+  {
+    "fornecedor": "693 - MAKITA DO BRASIL FERRAMENTAS ELETRICAS LTDA",
+    "notas": [
+      {
+        "numeroNf": "713952",
+        "valorNf": 241985.18,
+        "peso": 2238.2,
+        "volumes": 11.4
+      },
+      {
+        "numeroNf": "717081",
+        "valorNf": 11095.23,
+        "peso": 90.5,
+        "volumes": 0.263
+      }
+    ],
+    "valorTotalNf": 253080.41,
+    "pesoTotalKg": 2328.7,
+    "quantidadeVolumes": 11.663,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 88
+  },
+  {
+    "fornecedor": "7.071 - PARANAPANEMA S/A",
+    "notas": [
+      {
+        "numeroNf": "597562",
+        "valorNf": 3413.03,
+        "peso": 60.37,
+        "volumes": 0.049
+      }
+    ],
+    "valorTotalNf": 3413.03,
+    "pesoTotalKg": 60.37,
+    "quantidadeVolumes": 0.049,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 89
+  },
+  {
+    "fornecedor": "7.087 - VELLORE S/A",
+    "notas": [
+      {
+        "numeroNf": "401213",
+        "valorNf": 6260.86,
+        "peso": 78.92,
+        "volumes": 0.573
+      }
+    ],
+    "valorTotalNf": 6260.86,
+    "pesoTotalKg": 78.92,
+    "quantidadeVolumes": 0.573,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 90
+  },
+  {
+    "fornecedor": "750 - COPLAS INDUSTRIA DE PLASTICOS LTDA",
+    "notas": [
+      {
+        "numeroNf": "198287",
+        "valorNf": 7482.53,
+        "peso": 0.0,
+        "volumes": 0.0
+      }
+    ],
+    "valorTotalNf": 7482.53,
+    "pesoTotalKg": 0.0,
+    "quantidadeVolumes": 0.0,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 91
+  },
+  {
+    "fornecedor": "760 - WESTAFLEX TUBOS FLEXIVEIS LTDA",
+    "notas": [
+      {
+        "numeroNf": "181783",
+        "valorNf": 67273.92,
+        "peso": 313.54,
+        "volumes": 1.458
+      }
+    ],
+    "valorTotalNf": 67273.92,
+    "pesoTotalKg": 313.54,
+    "quantidadeVolumes": 1.458,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 92
+  },
+  {
+    "fornecedor": "761 - DOCOL FV IND.E COM. DE METAIS SANITARIOS LTDA",
+    "notas": [
+      {
+        "numeroNf": "583381",
+        "valorNf": 1144.54,
+        "peso": 1.5,
+        "volumes": 0.005
+      },
+      {
+        "numeroNf": "586934",
+        "valorNf": 881.42,
+        "peso": 0.58,
+        "volumes": 0.002
+      },
+      {
+        "numeroNf": "594090",
+        "valorNf": 2185.73,
+        "peso": 2.98,
+        "volumes": 0.004
+      },
+      {
+        "numeroNf": "593998",
+        "valorNf": 2020.06,
+        "peso": 0.25,
+        "volumes": 0.015
+      },
+      {
+        "numeroNf": "586286",
+        "valorNf": 2329.86,
+        "peso": 2.28,
+        "volumes": 0.013
+      },
+      {
+        "numeroNf": "590686",
+        "valorNf": 728.01,
+        "peso": 4.72,
+        "volumes": 0.015
+      },
+      {
+        "numeroNf": "595499",
+        "valorNf": 1096.29,
+        "peso": 0.49,
+        "volumes": 0.003
+      },
+      {
+        "numeroNf": "595498",
+        "valorNf": 1096.29,
+        "peso": 0.49,
+        "volumes": 0.003
+      },
+      {
+        "numeroNf": "594700",
+        "valorNf": 3050.6,
+        "peso": 8.4,
+        "volumes": 0.007
+      },
+      {
+        "numeroNf": "596625",
+        "valorNf": 891.38,
+        "peso": 0.72,
+        "volumes": 0.001
+      },
+      {
+        "numeroNf": "596690",
+        "valorNf": 1588.2,
+        "peso": 0.22,
+        "volumes": 0.013
+      },
+      {
+        "numeroNf": "596743",
+        "valorNf": 208.94,
+        "peso": 0.12,
+        "volumes": 0.002
+      },
+      {
+        "numeroNf": "598512",
+        "valorNf": 697.89,
+        "peso": 0.96,
+        "volumes": 0.008
+      },
+      {
+        "numeroNf": "598397",
+        "valorNf": 5235.54,
+        "peso": 19.0,
+        "volumes": 0.017
+      },
+      {
+        "numeroNf": "598340",
+        "valorNf": 11598.2,
+        "peso": 25.48,
+        "volumes": 0.053
+      },
+      {
+        "numeroNf": "598195",
+        "valorNf": 914.02,
+        "peso": 1.12,
+        "volumes": 0.004
+      },
+      {
+        "numeroNf": "600189",
+        "valorNf": 600.74,
+        "peso": 1.03,
+        "volumes": 0.003
+      },
+      {
+        "numeroNf": "600145",
+        "valorNf": 1924.45,
+        "peso": 4.2,
+        "volumes": 0.008
+      },
+      {
+        "numeroNf": "599715",
+        "valorNf": 8577.74,
+        "peso": 21.2,
+        "volumes": 0.031
+      },
+      {
+        "numeroNf": "599512",
+        "valorNf": 12307.41,
+        "peso": 40.0,
+        "volumes": 0.005
+      },
+      {
+        "numeroNf": "600313",
+        "valorNf": 1925.32,
+        "peso": 4.46,
+        "volumes": 0.007
+      },
+      {
+        "numeroNf": "602854",
+        "valorNf": 10076.6,
+        "peso": 11.2,
+        "volumes": 0.063
+      },
+      {
+        "numeroNf": "602789",
+        "valorNf": 625.47,
+        "peso": 0.12,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "602733",
+        "valorNf": 3281.38,
+        "peso": 2.97,
+        "volumes": 0.008
+      },
+      {
+        "numeroNf": "602478",
+        "valorNf": 2853.76,
+        "peso": 1.3,
+        "volumes": 0.021
+      },
+      {
+        "numeroNf": "602366",
+        "valorNf": 3792.15,
+        "peso": 0.66,
+        "volumes": 0.023
+      },
+      {
+        "numeroNf": "601447",
+        "valorNf": 2528.14,
+        "peso": 0.44,
+        "volumes": 0.015
+      },
+      {
+        "numeroNf": "601382",
+        "valorNf": 4900.62,
+        "peso": 9.24,
+        "volumes": 0.068
+      },
+      {
+        "numeroNf": "600855",
+        "valorNf": 3021.5,
+        "peso": 20.5,
+        "volumes": 0.016
+      },
+      {
+        "numeroNf": "603927",
+        "valorNf": 13959.9,
+        "peso": 43.5,
+        "volumes": 0.166
+      },
+      {
+        "numeroNf": "603432",
+        "valorNf": 4116.32,
+        "peso": 3.52,
+        "volumes": 0.01
+      },
+      {
+        "numeroNf": "596928",
+        "valorNf": 3493.6,
+        "peso": 5.0,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "604224",
+        "valorNf": 5246.77,
+        "peso": 7.0,
+        "volumes": 0.046
+      },
+      {
+        "numeroNf": "603982",
+        "valorNf": 6871.53,
+        "peso": 7.0,
+        "volumes": 0.046
+      },
+      {
+        "numeroNf": "603983",
+        "valorNf": 5366.08,
+        "peso": 4.19,
+        "volumes": 0.006
+      }
+    ],
+    "valorTotalNf": 131136.45,
+    "pesoTotalKg": 256.84,
+    "quantidadeVolumes": 0.707,
+    "quantidadeNotas": 35,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 93
+  },
+  {
+    "fornecedor": "775 - BLUKIT METALURGICA LTDA",
+    "notas": [
+      {
+        "numeroNf": "859378",
+        "valorNf": 24133.88,
+        "peso": 113.07,
+        "volumes": 0.581
+      },
+      {
+        "numeroNf": "860878",
+        "valorNf": 4632.0,
+        "peso": 44.93,
+        "volumes": 0.302
+      },
+      {
+        "numeroNf": "860879",
+        "valorNf": 34314.59,
+        "peso": 448.22,
+        "volumes": 1.932
+      }
+    ],
+    "valorTotalNf": 63080.47,
+    "pesoTotalKg": 606.22,
+    "quantidadeVolumes": 2.815,
+    "quantidadeNotas": 3,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 94
+  },
+  {
+    "fornecedor": "785 - MEBER METAIS S/A",
+    "notas": [
+      {
+        "numeroNf": "316439",
+        "valorNf": 72559.12,
+        "peso": 298.93,
+        "volumes": 3.73
+      }
+    ],
+    "valorTotalNf": 72559.12,
+    "pesoTotalKg": 298.93,
+    "quantidadeVolumes": 3.73,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 95
+  },
+  {
+    "fornecedor": "789 - TRAMONTINA GARIBALDI SA INDUSTRIA METALURGICA",
+    "notas": [
+      {
+        "numeroNf": "1312133",
+        "valorNf": 2310.76,
+        "peso": 18.22,
+        "volumes": 0.033
+      }
+    ],
+    "valorTotalNf": 2310.76,
+    "pesoTotalKg": 18.22,
+    "quantidadeVolumes": 0.033,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 96
+  },
+  {
+    "fornecedor": "9.753 - VOTORANTIM CIMENTOS S/A",
+    "notas": [
+      {
+        "numeroNf": "1430018",
+        "valorNf": 108.79,
+        "peso": 3425.1,
+        "volumes": 30.0
+      },
+      {
+        "numeroNf": "1436701",
+        "valorNf": 37150.0,
+        "peso": 38200.0,
+        "volumes": 35.443
+      }
+    ],
+    "valorTotalNf": 37258.79,
+    "pesoTotalKg": 41625.1,
+    "quantidadeVolumes": 65.443,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 97
+  },
+  {
+    "fornecedor": "9.942 - EMBRAMACO EMP.BRAS. DE MATS.P/ CONSTR.LTDA",
+    "notas": [
+      {
+        "numeroNf": "1857105",
+        "valorNf": 13452.96,
+        "peso": 9600.24,
+        "volumes": 4.446
+      },
+      {
+        "numeroNf": "1857573",
+        "valorNf": 34835.66,
+        "peso": 37119.96,
+        "volumes": 6.819
+      },
+      {
+        "numeroNf": "1858746",
+        "valorNf": 34317.22,
+        "peso": 34560.54,
+        "volumes": 9.549
+      },
+      {
+        "numeroNf": "1859238",
+        "valorNf": 20683.84,
+        "peso": 9063.99,
+        "volumes": 3.353
+      },
+      {
+        "numeroNf": "1859237",
+        "valorNf": 32889.24,
+        "peso": 34175.98,
+        "volumes": 7.665
+      },
+      {
+        "numeroNf": "1859245",
+        "valorNf": 2690.6,
+        "peso": 1920.05,
+        "volumes": 0.889
+      },
+      {
+        "numeroNf": "1859246",
+        "valorNf": 57310.96,
+        "peso": 30119.99,
+        "volumes": 254.925
+      },
+      {
+        "numeroNf": "1859350",
+        "valorNf": 75732.25,
+        "peso": 40607.72,
+        "volumes": 12.999
+      },
+      {
+        "numeroNf": "1859419",
+        "valorNf": 18018.44,
+        "peso": 19199.98,
+        "volumes": 3.527
+      },
+      {
+        "numeroNf": "1860952",
+        "valorNf": 22823.36,
+        "peso": 24319.98,
+        "volumes": 4.468
+      },
+      {
+        "numeroNf": "1860953",
+        "valorNf": 2183.32,
+        "peso": 1280.0,
+        "volumes": 0.301
+      }
+    ],
+    "valorTotalNf": 314937.85,
+    "pesoTotalKg": 241968.43,
+    "quantidadeVolumes": 308.941,
+    "quantidadeNotas": 11,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 98
+  },
+  {
+    "fornecedor": "9.951 - QUALITRONIX TECNOLOGIA LTDA",
+    "notas": [
+      {
+        "numeroNf": "128397",
+        "valorNf": 2910.24,
+        "peso": 22.5,
+        "volumes": 18.107
+      }
+    ],
+    "valorTotalNf": 2910.24,
+    "pesoTotalKg": 22.5,
+    "quantidadeVolumes": 18.107,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 99
+  },
+  {
+    "fornecedor": "928 - ADERE PRODUTOS AUTO ADESIVOS LTDA",
+    "notas": [
+      {
+        "numeroNf": "685075",
+        "valorNf": 150033.78,
+        "peso": 10542.66,
+        "volumes": 25.724
+      }
+    ],
+    "valorTotalNf": 150033.78,
+    "pesoTotalKg": 10542.66,
+    "quantidadeVolumes": 25.724,
+    "quantidadeNotas": 1,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 100
+  },
+  {
+    "fornecedor": "937 - TYROLIT DO BRASIL LTDA",
+    "notas": [
+      {
+        "numeroNf": "252310",
+        "valorNf": 24335.4,
+        "peso": 1919.25,
+        "volumes": 1.646
+      },
+      {
+        "numeroNf": "252569",
+        "valorNf": 1637.0,
+        "peso": 6.0,
+        "volumes": 0.001
+      }
+    ],
+    "valorTotalNf": 25972.4,
+    "pesoTotalKg": 1925.25,
+    "quantidadeVolumes": 1.647,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 101
+  },
+  {
+    "fornecedor": "983 - AKZO NOBEL LTDA",
+    "notas": [
+      {
+        "numeroNf": "1947352",
+        "valorNf": 135011.59,
+        "peso": 17743.99,
+        "volumes": 74.834
+      },
+      {
+        "numeroNf": "1947809",
+        "valorNf": 2779.32,
+        "peso": 412.0,
+        "volumes": 0.404
+      },
+      {
+        "numeroNf": "1947810",
+        "valorNf": 3611.52,
+        "peso": 153.0,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "1948146",
+        "valorNf": 50492.47,
+        "peso": 2701.63,
+        "volumes": 0.574
+      },
+      {
+        "numeroNf": "1948145",
+        "valorNf": 1479.48,
+        "peso": 102.53,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "1948144",
+        "valorNf": 37334.22,
+        "peso": 4290.76,
+        "volumes": 3.994
+      },
+      {
+        "numeroNf": "1948143",
+        "valorNf": 9745.6,
+        "peso": 1509.8,
+        "volumes": 1.404
+      },
+      {
+        "numeroNf": "1948142",
+        "valorNf": 268332.05,
+        "peso": 15877.09,
+        "volumes": 5.958
+      },
+      {
+        "numeroNf": "1947808",
+        "valorNf": 370622.29,
+        "peso": 27036.37,
+        "volumes": 9.017
+      },
+      {
+        "numeroNf": "1947807",
+        "valorNf": 37428.12,
+        "peso": 2330.6,
+        "volumes": 0.0
+      },
+      {
+        "numeroNf": "1952111",
+        "valorNf": 13145.38,
+        "peso": 112.7,
+        "volumes": 0.707
+      },
+      {
+        "numeroNf": "1952112",
+        "valorNf": 13815.68,
+        "peso": 1124.52,
+        "volumes": 0.445
+      },
+      {
+        "numeroNf": "1952110",
+        "valorNf": 2165.1,
+        "peso": 56.31,
+        "volumes": 0.069
+      },
+      {
+        "numeroNf": "1954696",
+        "valorNf": 776.77,
+        "peso": 204.0,
+        "volumes": 0.198
+      }
+    ],
+    "valorTotalNf": 946739.59,
+    "pesoTotalKg": 73655.3,
+    "quantidadeVolumes": 97.604,
+    "quantidadeNotas": 14,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 102
+  },
+  {
+    "fornecedor": "986 - PADO S A INDUSTRIAL COMERCIAL E IMPORTADORA",
+    "notas": [
+      {
+        "numeroNf": "1254193",
+        "valorNf": 52707.94,
+        "peso": 546.72,
+        "volumes": 6.671
+      },
+      {
+        "numeroNf": "1255820",
+        "valorNf": 8370.87,
+        "peso": 100.96,
+        "volumes": 0.141
+      }
+    ],
+    "valorTotalNf": 61078.81,
+    "pesoTotalKg": 647.68,
+    "quantidadeVolumes": 6.812,
+    "quantidadeNotas": 2,
+    "statusRelatorio": "Aguardando Chegada",
+    "id": 103
+  }
+]

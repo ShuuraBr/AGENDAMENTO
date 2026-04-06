@@ -1,0 +1,34 @@
+*{box-sizing:border-box} body{margin:0;font-family:Inter,Arial,sans-serif;background:#f4f7fb;color:#17212f}
+a{color:#0b57d0;text-decoration:none}
+.layout{display:grid;grid-template-columns:260px 1fr;min-height:100vh}
+.sidebar{background:#10233f;color:#fff;padding:24px}
+.sidebar h1{font-size:20px;margin:0 0 16px}
+.sidebar nav{display:flex;flex-direction:column;gap:8px}
+.sidebar a,.sidebar button{border:0;background:rgba(255,255,255,.08);color:#fff;padding:10px 12px;border-radius:10px;text-align:left;cursor:pointer}
+.content{padding:24px}
+.page-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.muted{color:#5a6b7f;font-size:14px}
+.grid{display:grid;gap:16px}
+.grid-4{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+.card{background:#fff;border-radius:16px;padding:18px;box-shadow:0 4px 20px rgba(16,35,63,.08)}
+.kpi-value{font-size:34px;font-weight:700;margin-top:8px}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+label{display:flex;flex-direction:column;gap:6px;font-size:14px}
+input,select,textarea{border:1px solid #d6dfeb;border-radius:10px;padding:10px 12px;font:inherit;background:#fff}
+button{border:0;border-radius:10px;padding:10px 14px;background:#163a70;color:#fff;cursor:pointer}
+button.secondary{background:#dfe8f5;color:#123}
+button.success{background:#107c41}
+button.danger{background:#c6382d}
+button:disabled{opacity:.5;cursor:not-allowed}
+.actions{display:flex;gap:8px;align-items:center}
+.actions.wrap{flex-wrap:wrap}
+.table{width:100%;border-collapse:collapse;margin-top:12px}
+.table th,.table td{padding:10px;border-bottom:1px solid #e9eef5;text-align:left;font-size:14px;vertical-align:top}
+.badge{display:inline-flex;padding:6px 10px;border-radius:999px;background:#edf3ff;color:#174ea6;font-size:12px;font-weight:600}
+.notice{background:#eef9f0;border:1px solid #ccebd2;color:#0c5a2b;padding:12px 14px;border-radius:12px;margin-bottom:16px}
+.approval-box{border-radius:12px;padding:12px 14px}
+.approval-box.ok{background:#eef9f0;border:1px solid #ccebd2}
+.approval-box.warn{background:#fff6e8;border:1px solid #f4d39a}
+.login-shell{min-height:100vh;display:grid;place-items:center;padding:24px}
+.login-card{width:min(420px,100%);background:#fff;padding:24px;border-radius:18px;box-shadow:0 10px 30px rgba(16,35,63,.08)}
+@media(max-width:900px){.layout{grid-template-columns:1fr}.sidebar{padding:16px}.content{padding:16px}}
