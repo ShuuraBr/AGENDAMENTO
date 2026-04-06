@@ -339,7 +339,6 @@ router.get('/disponibilidade', async (req, res) => {
     return res.json({ agenda, meta: { dias, origem: 'arquivo' } });
   }
 });
-
 router.get('/fornecedores-pendentes', async (req, res) => {
   try {
     await syncLatestRelatorioFromFolder({
@@ -351,7 +350,6 @@ router.get('/fornecedores-pendentes', async (req, res) => {
   } catch (error) {
     console.error('Falha ao sincronizar planilha ao listar fornecedores pendentes:', error?.message || error);
   }
-
   res.json(await listFornecedoresPendentesImportados());
 });
 

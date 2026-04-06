@@ -3,7 +3,7 @@ import { authRequired, requireProfiles } from '../middlewares/auth.js';
 import {
   countRelatorioRowsInDatabase,
   getImportDirectory,
-  getRelatorioImportStatus,
+  getRelatorioImportStatusDetailed,
   importRelatorioSpreadsheet,
   listSupportedImportFiles,
   relatorioSpreadsheetUpload,
@@ -34,6 +34,7 @@ router.get('/status', requireProfiles('ADMIN', 'GESTOR', 'OPERADOR'), async (_re
     ultimoProcessamento: getRelatorioImportStatus(),
     arquivosDetectados: files,
     totalLinhasNoBanco
+
   });
 });
 
