@@ -1,6 +1,5 @@
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { getPrismaClient } from './prisma.js';
@@ -9,14 +8,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const backendRoot = path.resolve(__dirname, '../..');
 const primaryUploadsDir = path.join(backendRoot, 'uploads', 'importacao-relatorio');
-const importDirCandidates = [...new Set([
-  primaryUploadsDir,
-  path.join(backendRoot, 'backend', 'uploads', 'importacao-relatorio'),
-  path.resolve(process.cwd(), 'uploads', 'importacao-relatorio'),
-  path.resolve(process.cwd(), 'backend', 'uploads', 'importacao-relatorio')
-])];
+const legacyUploadsDir = path.join(backendRoot, 'backend', 'uploads', 'importacao-relatorio');
+const candidateImportDirs = [primaryUploadsDir, legacyUploadsDir];
 const statePath = path.join(backendRoot, 'data', 'importacao-relatorio-state.json');
 const TABLE_NAME = 'RelatorioTerceirizado';
+const LINK_TABLE_NAME = 'RelatorioTerceirizadoVinculo';
+const WATCH_INTERVAL_MS = 60 * 1000;
 
 const PLANILHA_COLUMNS = [
   'Entrada',
@@ -70,83 +67,66 @@ const PLANILHA_COLUMNS = [
 
 const REQUIRED_HEADERS = ['Fornecedor', 'Nr. nota', 'Série'];
 const SUPPORTED_EXTENSIONS = new Set(['.ods', '.csv']);
-const COLUMN_DEFINITIONS = {
-  'Entrada': 'VARCHAR(50)',
-  'Fornecedor': 'VARCHAR(255)',
-  'Nr. nota': 'VARCHAR(80)',
-  'Série': 'VARCHAR(30)',
-  'Data emissão': 'DATE',
-  'Data de Entrada': 'DATE',
-  'Data 1º vencimento': 'DATE',
-  'Tipo custo entrada': 'VARCHAR(120)',
-  'Valor da nota': 'DECIMAL(15,2)',
-  'Valor desconto': 'DECIMAL(15,2)',
-  'Qtd. itens': 'INT',
-  'Valor produtos': 'DECIMAL(15,2)',
-  'Total frete': 'DECIMAL(15,2)',
-  'Volume total': 'DECIMAL(15,3)',
-  'Peso total': 'DECIMAL(15,3)',
-  'Outras desp.': 'DECIMAL(15,2)',
-  'Total entradas': 'DECIMAL(15,2)',
-  'Status': 'VARCHAR(80)',
-  'Prazo médio': 'VARCHAR(40)',
-  'Empresa': 'VARCHAR(120)',
-  'Data do cadastro': 'DATETIME',
-  'Total de IPI': 'DECIMAL(15,2)',
-  'Base de ICMS': 'DECIMAL(15,2)',
-  'Total ICMS': 'DECIMAL(15,2)',
-  'Desp. extras': 'DECIMAL(15,2)',
-  'Desp. extr. mad.': 'DECIMAL(15,2)',
-  'Frete conhec.': 'DECIMAL(15,2)',
-  'Desp. financ.': 'DECIMAL(15,2)',
-  'Base de ST': 'DECIMAL(15,2)',
-  'Total ST': 'DECIMAL(15,2)',
-  'DARE guia': 'DECIMAL(15,2)',
-  'DARE antecip.': 'DECIMAL(15,2)',
-  'DARE 1566': 'DECIMAL(15,2)',
-  'Serviços': 'DECIMAL(15,2)',
-  'ISSQN': 'DECIMAL(15,2)',
-  'Valor apropriar': 'DECIMAL(15,2)',
-  'Valor custo oper.': 'DECIMAL(15,2)',
-  'ISSQN retido': 'DECIMAL(15,2)',
-  'Valor ICMS diferido': 'DECIMAL(15,2)',
-  'Base FCP': 'DECIMAL(15,2)',
-  'Valor FCP': 'DECIMAL(15,2)',
-  'Base FCP ST': 'DECIMAL(15,2)',
-  'Valor FCP ST': 'DECIMAL(15,2)',
-  'Valor FEEF - MT': 'DECIMAL(15,2)',
-  'ICMS desonerado': 'DECIMAL(15,2)',
-  'ICMS descontado PIS/COFINS': 'DECIMAL(15,2)',
-  'CFOP': 'VARCHAR(20)'
+
+const COLUMN_DEFS = {
+  'Entrada': { type: 'VARCHAR(100)', kind: 'text' },
+  'Fornecedor': { type: 'VARCHAR(255)', kind: 'text' },
+  'Nr. nota': { type: 'VARCHAR(100)', kind: 'text' },
+  'Série': { type: 'VARCHAR(50)', kind: 'text' },
+  'Data emissão': { type: 'DATE', kind: 'date' },
+  'Data de Entrada': { type: 'DATE', kind: 'date' },
+  'Data 1º vencimento': { type: 'DATE', kind: 'date' },
+  'Tipo custo entrada': { type: 'VARCHAR(120)', kind: 'text' },
+  'Valor da nota': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Valor desconto': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Qtd. itens': { type: 'INT', kind: 'int' },
+  'Valor produtos': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Total frete': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Volume total': { type: 'DECIMAL(15,3)', kind: 'decimal' },
+  'Peso total': { type: 'DECIMAL(15,3)', kind: 'decimal' },
+  'Outras desp.': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Total entradas': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Status': { type: 'VARCHAR(100)', kind: 'text' },
+  'Prazo médio': { type: 'DECIMAL(10,2)', kind: 'decimal' },
+  'Empresa': { type: 'VARCHAR(100)', kind: 'text' },
+  'Data do cadastro': { type: 'DATE', kind: 'date' },
+  'Total de IPI': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Base de ICMS': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Total ICMS': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Desp. extras': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Desp. extr. mad.': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Frete conhec.': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Desp. financ.': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Base de ST': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Total ST': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'DARE guia': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'DARE antecip.': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'DARE 1566': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Serviços': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'ISSQN': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Valor apropriar': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Valor custo oper.': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'ISSQN retido': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Valor ICMS diferido': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Base FCP': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Valor FCP': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Base FCP ST': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Valor FCP ST': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'Valor FEEF - MT': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'ICMS desonerado': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'ICMS descontado PIS/COFINS': { type: 'DECIMAL(15,2)', kind: 'decimal' },
+  'CFOP': { type: 'VARCHAR(20)', kind: 'text' }
 };
 
-const DECIMAL_SCALE = {
-  'Volume total': 3,
-  'Peso total': 3
-};
-
-const TEXT_COLUMNS = new Set(Object.entries(COLUMN_DEFINITIONS).filter(([, sql]) => /^VARCHAR/i.test(sql)).map(([name]) => name));
-const DATE_COLUMNS = new Set(Object.entries(COLUMN_DEFINITIONS).filter(([, sql]) => /^DATE$/i.test(sql)).map(([name]) => name));
-const DATETIME_COLUMNS = new Set(Object.entries(COLUMN_DEFINITIONS).filter(([, sql]) => /^DATETIME$/i.test(sql)).map(([name]) => name));
-const INT_COLUMNS = new Set(Object.entries(COLUMN_DEFINITIONS).filter(([, sql]) => /^INT$/i.test(sql)).map(([name]) => name));
-const DECIMAL_COLUMNS = new Set(Object.entries(COLUMN_DEFINITIONS).filter(([, sql]) => /^DECIMAL/i.test(sql)).map(([name]) => name));
+let watcherHandle = null;
+let watcherBusy = false;
 
 function qid(name) {
   return `\`${String(name).replace(/`/g, '``')}\``;
 }
 
-function ensureImportDir() {
-  fs.mkdirSync(primaryUploadsDir, { recursive: true });
-}
-
-function existingImportDirs() {
-  return importDirCandidates.filter((dir) => {
-    try {
-      return fs.existsSync(dir) && fs.statSync(dir).isDirectory();
-    } catch {
-      return false;
-    }
-  });
+function ensureImportDirs() {
+  for (const dir of candidateImportDirs) fs.mkdirSync(dir, { recursive: true });
 }
 
 function readState() {
@@ -195,107 +175,48 @@ function normalizeText(value = '') {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
 }
 
-function parseDecimalForDb(value, scale = 2) {
-  if (value == null) return null;
-  if (typeof value === 'number' && Number.isFinite(value)) return Number(value.toFixed(scale));
-  const raw = normalizeText(value);
-  if (!raw) return null;
-  const normalized = raw.replace(/\./g, '').replace(/,/g, '.').replace(/[^\d.-]/g, '');
-  if (!normalized || normalized === '-' || normalized === '.') return null;
-  const number = Number(normalized);
-  return Number.isFinite(number) ? Number(number.toFixed(scale)) : null;
-}
-
-function parseIntegerForDb(value) {
-  const number = parseDecimalForDb(value, 0);
-  return Number.isFinite(number) ? Number(number) : null;
-}
-
-function parseDateForDb(value) {
-  const raw = normalizeText(value);
-  if (!raw) return null;
-  const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (dmy) {
-    const day = dmy[1].padStart(2, '0');
-    const month = dmy[2].padStart(2, '0');
-    return `${dmy[3]}-${month}-${day}`;
-  }
-  const ymd = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (ymd) return raw;
-  const iso = new Date(raw);
-  if (!Number.isNaN(iso.getTime())) return iso.toISOString().slice(0, 10);
-  return null;
-}
-
-function parseDateTimeForDb(value) {
-  const raw = normalizeText(value);
-  if (!raw) return null;
-  const dateOnly = parseDateForDb(raw);
-  if (dateOnly && !raw.includes(':')) return `${dateOnly} 00:00:00`;
-  const dmyhm = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-  if (dmyhm) {
-    const day = dmyhm[1].padStart(2, '0');
-    const month = dmyhm[2].padStart(2, '0');
-    const hh = String(dmyhm[4] || '00').padStart(2, '0');
-    const mm = String(dmyhm[5] || '00').padStart(2, '0');
-    const ss = String(dmyhm[6] || '00').padStart(2, '0');
-    return `${dmyhm[3]}-${month}-${day} ${hh}:${mm}:${ss}`;
-  }
-  const iso = new Date(raw);
-  if (!Number.isNaN(iso.getTime())) return iso.toISOString().slice(0, 19).replace('T', ' ');
-  return null;
-}
-
-function coerceColumnValue(column, value) {
-  if (TEXT_COLUMNS.has(column)) {
-    const text = normalizeText(value);
-    return text || null;
-  }
-  if (DATE_COLUMNS.has(column)) return parseDateForDb(value);
-  if (DATETIME_COLUMNS.has(column)) return parseDateTimeForDb(value);
-  if (INT_COLUMNS.has(column)) return parseIntegerForDb(value);
-  if (DECIMAL_COLUMNS.has(column)) return parseDecimalForDb(value, DECIMAL_SCALE[column] || 2);
-  const text = normalizeText(value);
-  return text || null;
-}
-
-function formatDateForApp(value) {
-  if (!value) return '';
-  const date = value instanceof Date ? value : new Date(String(value));
-  if (Number.isNaN(date.getTime())) return normalizeText(value);
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const year = date.getUTCFullYear();
-  return `${day}/${month}/${year}`;
-}
-
-function formatDateTimeForApp(value) {
-  if (!value) return '';
-  const date = value instanceof Date ? value : new Date(String(value));
-  if (Number.isNaN(date.getTime())) return normalizeText(value);
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const year = date.getUTCFullYear();
-  const hh = String(date.getUTCHours()).padStart(2, '0');
-  const mm = String(date.getUTCMinutes()).padStart(2, '0');
-  const ss = String(date.getUTCSeconds()).padStart(2, '0');
-  return `${day}/${month}/${year} ${hh}:${mm}:${ss}`;
-}
-
-function formatColumnValueForApp(column, value) {
-  if (value == null) return '';
-  if (DATE_COLUMNS.has(column)) return formatDateForApp(value);
-  if (DATETIME_COLUMNS.has(column)) return formatDateTimeForApp(value);
-  return normalizeText(value);
+function normalizeMatchText(value = '') {
+  return normalizeText(value).toLowerCase();
 }
 
 function parseNumberLike(value) {
-  if (value == null) return 0;
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   const raw = String(value).trim();
-  if (!raw) return 0;
-  const normalized = raw.replace(/\./g, '').replace(/,/g, '.');
+  if (!raw) return null;
+  const normalized = raw.replace(/\.(?=\d{3}(?:\D|$))/g, '').replace(/,/g, '.');
   const number = Number(normalized);
-  return Number.isFinite(number) ? number : 0;
+  return Number.isFinite(number) ? number : null;
+}
+
+function parseIntegerLike(value) {
+  const number = parseNumberLike(value);
+  if (number == null) return null;
+  return Math.trunc(number);
+}
+
+function parseDateLike(value) {
+  if (value == null || value === '') return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const raw = normalizeText(value);
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  const dt = new Date(raw);
+  if (!Number.isNaN(dt.getTime())) return dt.toISOString().slice(0, 10);
+  return null;
+}
+
+function convertValueForColumn(column, value) {
+  const kind = COLUMN_DEFS[column]?.kind || 'text';
+  if (kind === 'date') return parseDateLike(value);
+  if (kind === 'decimal') return parseNumberLike(value);
+  if (kind === 'int') return parseIntegerLike(value);
+  const text = normalizeText(value);
+  return text || null;
 }
 
 function csvSplitLine(line, delimiter) {
@@ -449,74 +370,109 @@ function sanitizeRows(rows = []) {
     .filter((row) => row['Fornecedor'] || row['Nr. nota'] || row['Entrada']);
 }
 
-function rowHash(row) {
-  return crypto.createHash('sha256').update(JSON.stringify(PLANILHA_COLUMNS.map((column) => row?.[column] || ''))).digest('hex');
+function desiredBaseColumns() {
+  return PLANILHA_COLUMNS.map((column) => ({
+    name: column,
+    type: String(COLUMN_DEFS[column]?.type || 'TEXT').toLowerCase()
+  }));
+}
+
+function normalizeMysqlType(type = '') {
+  return String(type || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+async function tableExists(client, tableName) {
+  const rows = await client.$queryRawUnsafe(`SHOW TABLES LIKE ?`, tableName);
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+async function ensureRelatorioBaseTable(client) {
+  const exists = await tableExists(client, TABLE_NAME);
+  if (exists) {
+    const currentColumns = await client.$queryRawUnsafe(`SHOW COLUMNS FROM ${qid(TABLE_NAME)}`);
+    const current = (currentColumns || []).map((item) => ({
+      name: String(item.Field || ''),
+      type: normalizeMysqlType(item.Type || '')
+    }));
+    const expected = desiredBaseColumns();
+    const sameShape = current.length === expected.length && current.every((item, index) => item.name === expected[index].name && item.type === expected[index].type);
+    if (!sameShape) {
+      const backupName = `${TABLE_NAME}_backup_${new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14)}`;
+      await client.$executeRawUnsafe(`RENAME TABLE ${qid(TABLE_NAME)} TO ${qid(backupName)}`);
+    }
+  }
+
+  const baseColumnsSql = PLANILHA_COLUMNS
+    .map((column) => `${qid(column)} ${COLUMN_DEFS[column].type} NULL`)
+    .join(',\n      ');
+
+  await client.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS ${qid(TABLE_NAME)} (
+      ${baseColumnsSql},
+      INDEX ${qid('idx_relatorio_fornecedor')} (${qid('Fornecedor')}(191)),
+      INDEX ${qid('idx_relatorio_nf')} (${qid('Nr. nota')}),
+      INDEX ${qid('idx_relatorio_serie')} (${qid('Série')}),
+      INDEX ${qid('idx_relatorio_status')} (${qid('Status')})
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+async function ensureRelatorioLinkTable(client) {
+  await client.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS ${qid(LINK_TABLE_NAME)} (
+      ${qid('id')} INT NOT NULL AUTO_INCREMENT,
+      ${qid('fornecedor')} VARCHAR(191) NOT NULL,
+      ${qid('nrNota')} VARCHAR(100) NOT NULL,
+      ${qid('serie')} VARCHAR(50) NULL,
+      ${qid('agendamentoId')} INT NOT NULL,
+      ${qid('createdAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      ${qid('updatedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (${qid('id')}),
+      UNIQUE KEY ${qid('uk_relatorio_vinculo')} (${qid('fornecedor')}, ${qid('nrNota')}, ${qid('serie')}),
+      KEY ${qid('idx_relatorio_vinculo_agendamento')} (${qid('agendamentoId')})
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+}
+
+async function ensureSchema(client) {
+  await ensureRelatorioBaseTable(client);
+  await ensureRelatorioLinkTable(client);
 }
 
 export function getImportDirectory() {
-  ensureImportDir();
-  return uploadsDir;
+  ensureImportDirs();
+  return primaryUploadsDir;
+}
+
+export function listImportDirectories() {
+  ensureImportDirs();
+  return [...candidateImportDirs];
 }
 
 export function findLatestSpreadsheetFile() {
-  ensureImportDir();
+  ensureImportDirs();
   const files = [];
-  for (const dir of existingImportDirs()) {
+  for (const dir of candidateImportDirs) {
     for (const name of fs.readdirSync(dir)) {
       const fullPath = path.join(dir, name);
       try {
         const stat = fs.statSync(fullPath);
-        if (!stat.isFile() || !SUPPORTED_EXTENSIONS.has(path.extname(name).toLowerCase())) continue;
-        files.push({ name, fullPath, stat, directory: dir });
-      } catch {}
+        if (stat.isFile() && SUPPORTED_EXTENSIONS.has(path.extname(name).toLowerCase())) {
+          files.push({ name, fullPath, stat, directory: dir });
+        }
+      } catch {
+        // ignore unreadable file
+      }
     }
   }
   files.sort((a, b) => (b.stat.mtimeMs - a.stat.mtimeMs) || a.name.localeCompare(b.name));
   return files[0] || null;
 }
 
-async function ensureRelatorioTable(client) {
-  const sql = `
-    CREATE TABLE IF NOT EXISTS ${qid(TABLE_NAME)} (
-      ${qid('id')} INT NOT NULL AUTO_INCREMENT,
-      ${qid('rowHash')} VARCHAR(64) NOT NULL,
-      ${qid('agendamentoId')} INT NULL,
-      ${qid('origemArquivo')} VARCHAR(255) NULL,
-      ${PLANILHA_COLUMNS.map((column) => `${qid(column)} ${COLUMN_DEFINITIONS[column] || 'TEXT'} NULL`).join(',\n      ')},
-      ${qid('importedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      ${qid('updatedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (${qid('id')}),
-      UNIQUE KEY ${qid('uk_relatorio_rowhash')} (${qid('rowHash')}),
-      KEY ${qid('idx_relatorio_agendamento')} (${qid('agendamentoId')}),
-      KEY ${qid('idx_relatorio_fornecedor')} (${qid('Fornecedor')}),
-      KEY ${qid('idx_relatorio_nota')} (${qid('Nr. nota')})
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-  `;
-  await client.$executeRawUnsafe(sql);
-
-  const existing = await client.$queryRawUnsafe(`SHOW COLUMNS FROM ${qid(TABLE_NAME)}`);
-  const existingNames = new Set((existing || []).map((item) => String(item.Field || '')));
-
-  for (const column of PLANILHA_COLUMNS) {
-    const columnType = COLUMN_DEFINITIONS[column] || 'TEXT';
-    if (!existingNames.has(column)) {
-      await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} ADD COLUMN ${qid(column)} ${columnType} NULL`);
-    } else {
-      await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} MODIFY COLUMN ${qid(column)} ${columnType} NULL`);
-    }
-  }
-
-  if (!existingNames.has('origemArquivo')) await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} ADD COLUMN ${qid('origemArquivo')} VARCHAR(255) NULL`);
-  if (!existingNames.has('importedAt')) await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} ADD COLUMN ${qid('importedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`);
-  if (!existingNames.has('updatedAt')) await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} ADD COLUMN ${qid('updatedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`);
-  if (!existingNames.has('rowHash')) await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} ADD COLUMN ${qid('rowHash')} VARCHAR(64) NOT NULL`);
-  if (!existingNames.has('agendamentoId')) await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} ADD COLUMN ${qid('agendamentoId')} INT NULL`);
-}
-
 export async function countRelatorioRows() {
   try {
     const client = await getPrismaClient();
-    await ensureRelatorioTable(client);
+    await ensureSchema(client);
     const rows = await client.$queryRawUnsafe(`SELECT COUNT(*) AS total FROM ${qid(TABLE_NAME)}`);
     return Number(rows?.[0]?.total || rows?.[0]?.TOTAL || 0);
   } catch {
@@ -553,11 +509,10 @@ export async function syncLatestRelatorioToDatabase({ force = false } = {}) {
   }
 
   const client = await getPrismaClient();
-  await ensureRelatorioTable(client);
-  await client.$executeRawUnsafe(`DELETE FROM ${qid(TABLE_NAME)} WHERE ${qid('agendamentoId')} IS NULL`);
+  await ensureSchema(client);
+  await client.$executeRawUnsafe(`DELETE FROM ${qid(TABLE_NAME)}`);
 
-  const columnsForInsert = ['rowHash', 'agendamentoId', 'origemArquivo', ...PLANILHA_COLUMNS];
-  const updateAssignments = ['origemArquivo', ...PLANILHA_COLUMNS].map((column) => `${qid(column)} = VALUES(${qid(column)})`).join(', ');
+  const columnsForInsert = [...PLANILHA_COLUMNS];
   const chunkSize = 100;
 
   for (let offset = 0; offset < parsedRows.length; offset += chunkSize) {
@@ -566,11 +521,10 @@ export async function syncLatestRelatorioToDatabase({ force = false } = {}) {
     const sql = `
       INSERT INTO ${qid(TABLE_NAME)} (${columnsForInsert.map(qid).join(', ')})
       VALUES ${placeholders}
-      ON DUPLICATE KEY UPDATE ${updateAssignments}, ${qid('updatedAt')} = CURRENT_TIMESTAMP
     `;
     const args = [];
     for (const row of chunk) {
-      args.push(rowHash(row), null, latest.name, ...PLANILHA_COLUMNS.map((column) => coerceColumnValue(column, row[column])));
+      args.push(...columnsForInsert.map((column) => convertValueForColumn(column, row[column])));
     }
     await client.$executeRawUnsafe(sql, ...args);
   }
@@ -580,6 +534,7 @@ export async function syncLatestRelatorioToDatabase({ force = false } = {}) {
     fileName: latest.name,
     fileSize: latest.stat.size,
     fileMtimeMs: latest.stat.mtimeMs,
+    directory: latest.directory,
     importedAt: new Date().toISOString(),
     totalRows
   });
@@ -590,21 +545,25 @@ export async function syncLatestRelatorioToDatabase({ force = false } = {}) {
 
 export async function fetchPendingFornecedoresFromDatabase() {
   const client = await getPrismaClient();
-  await ensureRelatorioTable(client);
+  await ensureSchema(client);
   const rows = await client.$queryRawUnsafe(`
-    SELECT *
-    FROM ${qid(TABLE_NAME)}
-    WHERE ${qid('agendamentoId')} IS NULL
-    ORDER BY ${qid('Fornecedor')} ASC, ${qid('Nr. nota')} ASC, ${qid('Série')} ASC
+    SELECT r.*
+    FROM ${qid(TABLE_NAME)} r
+    LEFT JOIN ${qid(LINK_TABLE_NAME)} l
+      ON LOWER(TRIM(r.${qid('Fornecedor')})) = LOWER(TRIM(l.${qid('fornecedor')}))
+      AND TRIM(r.${qid('Nr. nota')}) = TRIM(l.${qid('nrNota')})
+      AND COALESCE(TRIM(r.${qid('Série')}), '') = COALESCE(TRIM(l.${qid('serie')}), '')
+    WHERE l.${qid('id')} IS NULL
+    ORDER BY r.${qid('Fornecedor')} ASC, r.${qid('Nr. nota')} ASC, r.${qid('Série')} ASC
   `);
 
   const grouped = new Map();
   for (const row of rows || []) {
     const fornecedor = normalizeText(row?.Fornecedor || row?.['Fornecedor']);
     if (!fornecedor) continue;
-    const key = fornecedor.toLowerCase();
+    const key = normalizeMatchText(fornecedor);
     const current = grouped.get(key) || {
-      id: row.id,
+      id: key,
       fornecedor,
       transportadora: '',
       motorista: '',
@@ -618,13 +577,12 @@ export async function fetchPendingFornecedoresFromDatabase() {
     };
 
     const nota = {
-      relatorioId: row.id,
       numeroNf: normalizeText(row['Nr. nota']),
       serie: normalizeText(row['Série']),
       chaveAcesso: '',
-      volumes: parseNumberLike(row['Volume total']),
-      peso: parseNumberLike(row['Peso total']),
-      valorNf: parseNumberLike(row['Valor da nota']),
+      volumes: Number(parseNumberLike(row['Volume total']) || 0),
+      peso: Number(parseNumberLike(row['Peso total']) || 0),
+      valorNf: Number(parseNumberLike(row['Valor da nota']) || 0),
       observacao: normalizeText(row['Status']) ? `Status planilha: ${normalizeText(row['Status'])}` : ''
     };
 
@@ -647,28 +605,23 @@ export async function fetchPendingFornecedoresFromDatabase() {
 export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, notas = []) {
   if (!agendamentoId || !fornecedor || !Array.isArray(notas) || !notas.length) return;
   const client = await getPrismaClient();
-  await ensureRelatorioTable(client);
+  await ensureSchema(client);
 
   for (const nota of notas) {
     const numeroNf = normalizeText(nota?.numeroNf || nota?.numero_nf || '');
     if (!numeroNf) continue;
     const serie = normalizeText(nota?.serie || '');
-    const conditions = [
-      `${qid('agendamentoId')} IS NULL`,
-      `LOWER(TRIM(${qid('Fornecedor')})) = LOWER(?)`,
-      `TRIM(${qid('Nr. nota')}) = ?`
-    ];
-    const args = [Number(agendamentoId), fornecedor, numeroNf];
-    if (serie) {
-      conditions.push(`TRIM(${qid('Série')}) = ?`);
-      args.push(serie);
-    }
-    const sql = `
-      UPDATE ${qid(TABLE_NAME)}
-      SET ${qid('agendamentoId')} = ?
-      WHERE ${conditions.join(' AND ')}
-    `;
-    await client.$executeRawUnsafe(sql, ...args);
+    await client.$executeRawUnsafe(
+      `
+        INSERT INTO ${qid(LINK_TABLE_NAME)} (${qid('fornecedor')}, ${qid('nrNota')}, ${qid('serie')}, ${qid('agendamentoId')})
+        VALUES (?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE ${qid('agendamentoId')} = VALUES(${qid('agendamentoId')}), ${qid('updatedAt')} = CURRENT_TIMESTAMP
+      `,
+      fornecedor,
+      numeroNf,
+      serie || null,
+      Number(agendamentoId)
+    );
   }
 }
 
@@ -678,10 +631,35 @@ export async function getRelatorioStatus() {
   const state = readState();
   return {
     importDirectory: primaryUploadsDir,
-    importDirectoriesScan: existingImportDirs(),
+    importDirectories: listImportDirectories(),
     arquivoMaisRecente: latest ? latest.name : null,
     atualizadoEm: latest ? new Date(latest.stat.mtimeMs).toISOString() : null,
     totalLinhasNoBanco,
     state
   };
+}
+
+export async function scanImportFolderAndProcess() {
+  if (watcherBusy) return null;
+  watcherBusy = true;
+  try {
+    return await syncLatestRelatorioToDatabase();
+  } finally {
+    watcherBusy = false;
+  }
+}
+
+export function startRelatorioImportWatcher() {
+  if (watcherHandle) return watcherHandle;
+  ensureImportDirs();
+  scanImportFolderAndProcess().catch((error) => {
+    console.error('[RELATORIO_IMPORT] Falha na importação automática inicial:', error?.message || error);
+  });
+  watcherHandle = setInterval(() => {
+    scanImportFolderAndProcess().catch((error) => {
+      console.error('[RELATORIO_IMPORT] Falha na varredura automática:', error?.message || error);
+    });
+  }, WATCH_INTERVAL_MS);
+  watcherHandle.unref?.();
+  return watcherHandle;
 }

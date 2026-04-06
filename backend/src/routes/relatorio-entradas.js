@@ -33,7 +33,6 @@ router.get('/status', requireProfiles('ADMIN', 'GESTOR', 'OPERADOR'), async (_re
     ok: true,
     pastaMonitorada: getImportDirectory(),
     ultimoProcessamento: getRelatorioImportStatus(),
-  detalheProcessamento: getRelatorioImportStatusDetailed(),
     arquivosDetectados: files,
     totalLinhasNoBanco
 
