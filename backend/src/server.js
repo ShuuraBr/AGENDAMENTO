@@ -21,18 +21,30 @@ if (!process.env.DATABASE_URL && process.env.DB_HOST) {
 
 // 3. Importar o app só depois do ambiente pronto
 const { default: app } = await import("./app.js");
-const { startRelatorioImportWatcher } = await import("./utils/relatorio-entradas.js");
+const { syncLatestRelatorioToDatabase } = await import("./utils/relatorio-terceirizado.js");
 
 const PORT = Number(process.env.PORT || 3000);
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`[OK] Servidor rodando na porta ${PORT}`);
-  try {
-    startRelatorioImportWatcher();
-    console.log("[OK] Monitor automático da planilha de entradas ativado.");
-  } catch (error) {
-    console.error("[WARN] Falha ao ativar monitor da planilha de entradas:", error?.message || error);
-  }
+
+  const runRelatorioSync = async () => {
+    try {
+      const result = await syncLatestRelatorioToDatabase();
+      if (result?.ok) {
+        console.log(`[OK] Sincronização automática da planilha pronta. imported=${Boolean(result.imported)} total=${Number(result.totalRows || 0)} arquivo=${result.fileName || 'nenhum'}`);
+      } else {
+        console.warn(`[AVISO] Sincronização automática da planilha sem carga: ${result?.reason || 'sem detalhes'}`);
+      }
+    } catch (error) {
+      console.error('[ERRO] Falha na sincronização automática da planilha:', error?.message || error);
+    }
+  };
+
+  runRelatorioSync();
+  const relatorioTimer = setInterval(runRelatorioSync, 60 * 1000);
+  relatorioTimer.unref?.();
+  console.log('[OK] Monitor automático da planilha de entradas ativado.');
 });
 
 server.on("error", (err) => {

@@ -8,7 +8,13 @@ import { getPrismaClient } from './prisma.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const backendRoot = path.resolve(__dirname, '../..');
-const uploadsDir = path.join(backendRoot, 'uploads', 'importacao-relatorio');
+const primaryUploadsDir = path.join(backendRoot, 'uploads', 'importacao-relatorio');
+const importDirCandidates = [...new Set([
+  primaryUploadsDir,
+  path.join(backendRoot, 'backend', 'uploads', 'importacao-relatorio'),
+  path.resolve(process.cwd(), 'uploads', 'importacao-relatorio'),
+  path.resolve(process.cwd(), 'backend', 'uploads', 'importacao-relatorio')
+])];
 const statePath = path.join(backendRoot, 'data', 'importacao-relatorio-state.json');
 const TABLE_NAME = 'RelatorioTerceirizado';
 
@@ -64,13 +70,83 @@ const PLANILHA_COLUMNS = [
 
 const REQUIRED_HEADERS = ['Fornecedor', 'Nr. nota', 'Série'];
 const SUPPORTED_EXTENSIONS = new Set(['.ods', '.csv']);
+const COLUMN_DEFINITIONS = {
+  'Entrada': 'VARCHAR(50)',
+  'Fornecedor': 'VARCHAR(255)',
+  'Nr. nota': 'VARCHAR(80)',
+  'Série': 'VARCHAR(30)',
+  'Data emissão': 'DATE',
+  'Data de Entrada': 'DATE',
+  'Data 1º vencimento': 'DATE',
+  'Tipo custo entrada': 'VARCHAR(120)',
+  'Valor da nota': 'DECIMAL(15,2)',
+  'Valor desconto': 'DECIMAL(15,2)',
+  'Qtd. itens': 'INT',
+  'Valor produtos': 'DECIMAL(15,2)',
+  'Total frete': 'DECIMAL(15,2)',
+  'Volume total': 'DECIMAL(15,3)',
+  'Peso total': 'DECIMAL(15,3)',
+  'Outras desp.': 'DECIMAL(15,2)',
+  'Total entradas': 'DECIMAL(15,2)',
+  'Status': 'VARCHAR(80)',
+  'Prazo médio': 'VARCHAR(40)',
+  'Empresa': 'VARCHAR(120)',
+  'Data do cadastro': 'DATETIME',
+  'Total de IPI': 'DECIMAL(15,2)',
+  'Base de ICMS': 'DECIMAL(15,2)',
+  'Total ICMS': 'DECIMAL(15,2)',
+  'Desp. extras': 'DECIMAL(15,2)',
+  'Desp. extr. mad.': 'DECIMAL(15,2)',
+  'Frete conhec.': 'DECIMAL(15,2)',
+  'Desp. financ.': 'DECIMAL(15,2)',
+  'Base de ST': 'DECIMAL(15,2)',
+  'Total ST': 'DECIMAL(15,2)',
+  'DARE guia': 'DECIMAL(15,2)',
+  'DARE antecip.': 'DECIMAL(15,2)',
+  'DARE 1566': 'DECIMAL(15,2)',
+  'Serviços': 'DECIMAL(15,2)',
+  'ISSQN': 'DECIMAL(15,2)',
+  'Valor apropriar': 'DECIMAL(15,2)',
+  'Valor custo oper.': 'DECIMAL(15,2)',
+  'ISSQN retido': 'DECIMAL(15,2)',
+  'Valor ICMS diferido': 'DECIMAL(15,2)',
+  'Base FCP': 'DECIMAL(15,2)',
+  'Valor FCP': 'DECIMAL(15,2)',
+  'Base FCP ST': 'DECIMAL(15,2)',
+  'Valor FCP ST': 'DECIMAL(15,2)',
+  'Valor FEEF - MT': 'DECIMAL(15,2)',
+  'ICMS desonerado': 'DECIMAL(15,2)',
+  'ICMS descontado PIS/COFINS': 'DECIMAL(15,2)',
+  'CFOP': 'VARCHAR(20)'
+};
+
+const DECIMAL_SCALE = {
+  'Volume total': 3,
+  'Peso total': 3
+};
+
+const TEXT_COLUMNS = new Set(Object.entries(COLUMN_DEFINITIONS).filter(([, sql]) => /^VARCHAR/i.test(sql)).map(([name]) => name));
+const DATE_COLUMNS = new Set(Object.entries(COLUMN_DEFINITIONS).filter(([, sql]) => /^DATE$/i.test(sql)).map(([name]) => name));
+const DATETIME_COLUMNS = new Set(Object.entries(COLUMN_DEFINITIONS).filter(([, sql]) => /^DATETIME$/i.test(sql)).map(([name]) => name));
+const INT_COLUMNS = new Set(Object.entries(COLUMN_DEFINITIONS).filter(([, sql]) => /^INT$/i.test(sql)).map(([name]) => name));
+const DECIMAL_COLUMNS = new Set(Object.entries(COLUMN_DEFINITIONS).filter(([, sql]) => /^DECIMAL/i.test(sql)).map(([name]) => name));
 
 function qid(name) {
   return `\`${String(name).replace(/`/g, '``')}\``;
 }
 
 function ensureImportDir() {
-  fs.mkdirSync(uploadsDir, { recursive: true });
+  fs.mkdirSync(primaryUploadsDir, { recursive: true });
+}
+
+function existingImportDirs() {
+  return importDirCandidates.filter((dir) => {
+    try {
+      return fs.existsSync(dir) && fs.statSync(dir).isDirectory();
+    } catch {
+      return false;
+    }
+  });
 }
 
 function readState() {
@@ -117,6 +193,100 @@ function normalizeHeader(value = '') {
 
 function normalizeText(value = '') {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function parseDecimalForDb(value, scale = 2) {
+  if (value == null) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return Number(value.toFixed(scale));
+  const raw = normalizeText(value);
+  if (!raw) return null;
+  const normalized = raw.replace(/\./g, '').replace(/,/g, '.').replace(/[^\d.-]/g, '');
+  if (!normalized || normalized === '-' || normalized === '.') return null;
+  const number = Number(normalized);
+  return Number.isFinite(number) ? Number(number.toFixed(scale)) : null;
+}
+
+function parseIntegerForDb(value) {
+  const number = parseDecimalForDb(value, 0);
+  return Number.isFinite(number) ? Number(number) : null;
+}
+
+function parseDateForDb(value) {
+  const raw = normalizeText(value);
+  if (!raw) return null;
+  const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmy) {
+    const day = dmy[1].padStart(2, '0');
+    const month = dmy[2].padStart(2, '0');
+    return `${dmy[3]}-${month}-${day}`;
+  }
+  const ymd = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (ymd) return raw;
+  const iso = new Date(raw);
+  if (!Number.isNaN(iso.getTime())) return iso.toISOString().slice(0, 10);
+  return null;
+}
+
+function parseDateTimeForDb(value) {
+  const raw = normalizeText(value);
+  if (!raw) return null;
+  const dateOnly = parseDateForDb(raw);
+  if (dateOnly && !raw.includes(':')) return `${dateOnly} 00:00:00`;
+  const dmyhm = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (dmyhm) {
+    const day = dmyhm[1].padStart(2, '0');
+    const month = dmyhm[2].padStart(2, '0');
+    const hh = String(dmyhm[4] || '00').padStart(2, '0');
+    const mm = String(dmyhm[5] || '00').padStart(2, '0');
+    const ss = String(dmyhm[6] || '00').padStart(2, '0');
+    return `${dmyhm[3]}-${month}-${day} ${hh}:${mm}:${ss}`;
+  }
+  const iso = new Date(raw);
+  if (!Number.isNaN(iso.getTime())) return iso.toISOString().slice(0, 19).replace('T', ' ');
+  return null;
+}
+
+function coerceColumnValue(column, value) {
+  if (TEXT_COLUMNS.has(column)) {
+    const text = normalizeText(value);
+    return text || null;
+  }
+  if (DATE_COLUMNS.has(column)) return parseDateForDb(value);
+  if (DATETIME_COLUMNS.has(column)) return parseDateTimeForDb(value);
+  if (INT_COLUMNS.has(column)) return parseIntegerForDb(value);
+  if (DECIMAL_COLUMNS.has(column)) return parseDecimalForDb(value, DECIMAL_SCALE[column] || 2);
+  const text = normalizeText(value);
+  return text || null;
+}
+
+function formatDateForApp(value) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return normalizeText(value);
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  return `${day}/${month}/${year}`;
+}
+
+function formatDateTimeForApp(value) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return normalizeText(value);
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  const hh = String(date.getUTCHours()).padStart(2, '0');
+  const mm = String(date.getUTCMinutes()).padStart(2, '0');
+  const ss = String(date.getUTCSeconds()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hh}:${mm}:${ss}`;
+}
+
+function formatColumnValueForApp(column, value) {
+  if (value == null) return '';
+  if (DATE_COLUMNS.has(column)) return formatDateForApp(value);
+  if (DATETIME_COLUMNS.has(column)) return formatDateTimeForApp(value);
+  return normalizeText(value);
 }
 
 function parseNumberLike(value) {
@@ -290,18 +460,18 @@ export function getImportDirectory() {
 
 export function findLatestSpreadsheetFile() {
   ensureImportDir();
-  const files = fs.readdirSync(uploadsDir)
-    .map((name) => ({ name, fullPath: path.join(uploadsDir, name) }))
-    .filter((item) => {
+  const files = [];
+  for (const dir of existingImportDirs()) {
+    for (const name of fs.readdirSync(dir)) {
+      const fullPath = path.join(dir, name);
       try {
-        const stat = fs.statSync(item.fullPath);
-        item.stat = stat;
-        return stat.isFile() && SUPPORTED_EXTENSIONS.has(path.extname(item.name).toLowerCase());
-      } catch {
-        return false;
-      }
-    })
-    .sort((a, b) => (b.stat.mtimeMs - a.stat.mtimeMs) || a.name.localeCompare(b.name));
+        const stat = fs.statSync(fullPath);
+        if (!stat.isFile() || !SUPPORTED_EXTENSIONS.has(path.extname(name).toLowerCase())) continue;
+        files.push({ name, fullPath, stat, directory: dir });
+      } catch {}
+    }
+  }
+  files.sort((a, b) => (b.stat.mtimeMs - a.stat.mtimeMs) || a.name.localeCompare(b.name));
   return files[0] || null;
 }
 
@@ -312,17 +482,35 @@ async function ensureRelatorioTable(client) {
       ${qid('rowHash')} VARCHAR(64) NOT NULL,
       ${qid('agendamentoId')} INT NULL,
       ${qid('origemArquivo')} VARCHAR(255) NULL,
-      ${PLANILHA_COLUMNS.map((column) => `${qid(column)} TEXT NULL`).join(',\n      ')},
+      ${PLANILHA_COLUMNS.map((column) => `${qid(column)} ${COLUMN_DEFINITIONS[column] || 'TEXT'} NULL`).join(',\n      ')},
       ${qid('importedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       ${qid('updatedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (${qid('id')}),
       UNIQUE KEY ${qid('uk_relatorio_rowhash')} (${qid('rowHash')}),
       KEY ${qid('idx_relatorio_agendamento')} (${qid('agendamentoId')}),
-      KEY ${qid('idx_relatorio_fornecedor')} (${qid('Fornecedor')}(191)),
-      KEY ${qid('idx_relatorio_nota')} (${qid('Nr. nota')}(191))
+      KEY ${qid('idx_relatorio_fornecedor')} (${qid('Fornecedor')}),
+      KEY ${qid('idx_relatorio_nota')} (${qid('Nr. nota')})
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `;
   await client.$executeRawUnsafe(sql);
+
+  const existing = await client.$queryRawUnsafe(`SHOW COLUMNS FROM ${qid(TABLE_NAME)}`);
+  const existingNames = new Set((existing || []).map((item) => String(item.Field || '')));
+
+  for (const column of PLANILHA_COLUMNS) {
+    const columnType = COLUMN_DEFINITIONS[column] || 'TEXT';
+    if (!existingNames.has(column)) {
+      await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} ADD COLUMN ${qid(column)} ${columnType} NULL`);
+    } else {
+      await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} MODIFY COLUMN ${qid(column)} ${columnType} NULL`);
+    }
+  }
+
+  if (!existingNames.has('origemArquivo')) await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} ADD COLUMN ${qid('origemArquivo')} VARCHAR(255) NULL`);
+  if (!existingNames.has('importedAt')) await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} ADD COLUMN ${qid('importedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`);
+  if (!existingNames.has('updatedAt')) await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} ADD COLUMN ${qid('updatedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`);
+  if (!existingNames.has('rowHash')) await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} ADD COLUMN ${qid('rowHash')} VARCHAR(64) NOT NULL`);
+  if (!existingNames.has('agendamentoId')) await client.$executeRawUnsafe(`ALTER TABLE ${qid(TABLE_NAME)} ADD COLUMN ${qid('agendamentoId')} INT NULL`);
 }
 
 export async function countRelatorioRows() {
@@ -382,7 +570,7 @@ export async function syncLatestRelatorioToDatabase({ force = false } = {}) {
     `;
     const args = [];
     for (const row of chunk) {
-      args.push(rowHash(row), null, latest.name, ...PLANILHA_COLUMNS.map((column) => row[column] || null));
+      args.push(rowHash(row), null, latest.name, ...PLANILHA_COLUMNS.map((column) => coerceColumnValue(column, row[column])));
     }
     await client.$executeRawUnsafe(sql, ...args);
   }
@@ -489,7 +677,8 @@ export async function getRelatorioStatus() {
   const totalLinhasNoBanco = await countRelatorioRows();
   const state = readState();
   return {
-    importDirectory: uploadsDir,
+    importDirectory: primaryUploadsDir,
+    importDirectoriesScan: existingImportDirs(),
     arquivoMaisRecente: latest ? latest.name : null,
     atualizadoEm: latest ? new Date(latest.stat.mtimeMs).toISOString() : null,
     totalLinhasNoBanco,
