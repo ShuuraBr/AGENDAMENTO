@@ -137,6 +137,7 @@ model Agendamento {
   janela                Janela       @relation(fields: [janelaId], references: [id])
   documentos            Documento[]
   notasFiscais          NotaFiscal[]
+  avaliacaoAtendimento  AvaliacaoAtendimento?
 
   @@index([docaId])
   @@index([dataAgendada])
@@ -173,6 +174,28 @@ model Documento {
 
   @@index([agendamentoId], map: "Documento_agendamentoId_fkey")
   @@map("Documento")
+}
+
+
+model AvaliacaoAtendimento {
+  id                    Int         @id @default(autoincrement())
+  agendamentoId         Int         @unique
+  token                 String      @unique
+  protocolo             String?
+  emailMotorista        String?
+  notaAtendimento       Int?
+  notaEquipeRecebimento Int?
+  processoTranquilo     Boolean?
+  processoRapido        Boolean?
+  comentario            String?     @db.LongText
+  enviadoEm             DateTime?
+  respondidoEm          DateTime?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  agendamento           Agendamento @relation(fields: [agendamentoId], references: [id], onDelete: Cascade)
+
+  @@index([respondidoEm])
+  @@map("AvaliacaoAtendimento")
 }
 
 model LogAuditoria {

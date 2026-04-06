@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { authRequired } from "../middlewares/auth.js";
+import { authRequired, requireProfiles } from "../middlewares/auth.js";
 import { prisma } from "../utils/prisma.js";
-import { docaPainel } from "../utils/operations.js";
+import { docaPainel, trafficColor } from "../utils/operations.js";
 import { fetchAgendamentosRaw, fetchDocaPainelRaw } from "../utils/db-fallback.js";
-import { readAgendamentos, readDocumentos, buildDocaPainelFromFiles } from "../utils/file-store.js";
+import { readAgendamentos, readDocumentos, buildDocaPainelFromFiles, readLogsAuditoria, readUsuarios } from "../utils/file-store.js";
 import { withComputedTotals } from "../utils/agendamento-helpers.js";
 
 const router = Router();
@@ -21,10 +21,15 @@ function filterItems(all, q = {}) {
   });
 }
 
-function buildKpis(all, docs, origem) {
+function withStatusMeta(item = {}) {
+  return { ...item, semaforo: trafficColor(item.status) };
+}
+
+function buildKpis(all, docs) {
   const enriched = all.map(withComputedTotals);
   return {
     total: enriched.length,
+<<<<<<< HEAD
     pendentes: enriched.filter(x => x.status === "PENDENTE_APROVACAO").length,
     aprovados: enriched.filter(x => x.status === "APROVADO").length,
     chegou: enriched.filter(x => x.status === "CHEGOU").length,
@@ -34,6 +39,47 @@ function buildKpis(all, docs, origem) {
     noShow: enriched.filter(x => x.status === "NO_SHOW").length,
     pesoKg: Number(enriched.reduce((a, b) => a + Number(b.pesoTotalKg || 0), 0).toFixed(3)),
     valorTotal: Number(enriched.reduce((a, b) => a + Number(b.valorTotalNf || 0), 0).toFixed(2))
+=======
+    pendentes: enriched.filter((x) => x.status === "PENDENTE_APROVACAO").length,
+    aprovados: enriched.filter((x) => x.status === "APROVADO").length,
+    chegou: enriched.filter((x) => x.status === "CHEGOU").length,
+    emDescarga: enriched.filter((x) => x.status === "EM_DESCARGA").length,
+    finalizados: enriched.filter((x) => x.status === "FINALIZADO").length,
+    cancelados: enriched.filter((x) => x.status === "CANCELADO").length,
+    noShow: enriched.filter((x) => x.status === "NO_SHOW").length,
+    documentos: docs,
+    volumes: enriched.reduce((a, b) => a + Number(b.quantidadeVolumes || 0), 0),
+    pesoKg: Number(enriched.reduce((a, b) => a + Number(b.pesoTotalKg || 0), 0).toFixed(3)),
+    valorTotal: Number(enriched.reduce((a, b) => a + Number(b.valorTotalNf || 0), 0).toFixed(2))
+  };
+}
+
+function parseDetalhes(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return { raw: String(value) };
+  }
+}
+
+function normalizeAuditLog(item = {}, usersById = new Map()) {
+  const usuarioId = item.usuarioId != null ? Number(item.usuarioId) : null;
+  const usuario = item.usuario || (usuarioId ? usersById.get(usuarioId) : null) || null;
+  return {
+    id: item.id,
+    createdAt: item.createdAt,
+    acao: item.acao,
+    entidade: item.entidade,
+    entidadeId: item.entidadeId != null ? Number(item.entidadeId) : null,
+    perfil: item.perfil || usuario?.perfil || null,
+    ip: item.ip || null,
+    usuarioId,
+    usuarioNome: usuario?.nome || null,
+    usuarioEmail: usuario?.email || null,
+    detalhes: parseDetalhes(item.detalhes)
+>>>>>>> e5083df4985759e952079d5f891cc01c38f2a41d
   };
 }
 
@@ -55,7 +101,11 @@ router.get("/operacional", async (req, res) => {
       prisma.agendamento.findMany({ include: { notasFiscais: true } }),
       docaPainel(q.dataAgendada || null)
     ]);
-    return res.json({ kpis: buildKpis(all, docs, 'database'), agendamentos: agendamentos.map(withComputedTotals), painelDocas });
+    return res.json({
+      kpis: buildKpis(all, docs),
+      agendamentos: agendamentos.map((item) => withStatusMeta(withComputedTotals(item))),
+      painelDocas
+    });
   } catch (error) {
     console.error('Erro em /dashboard/operacional. Tentando fallback SQL/arquivo:', error?.message || error);
     try {
@@ -64,14 +114,18 @@ router.get("/operacional", async (req, res) => {
         fetchDocaPainelRaw(q.dataAgendada || null)
       ]);
       return res.json({
-        kpis: buildKpis(agendamentos, 0, 'database-raw'),
-        agendamentos: agendamentos.map(withComputedTotals),
+        kpis: buildKpis(agendamentos, 0),
+        agendamentos: agendamentos.map((item) => withStatusMeta(withComputedTotals(item))),
         painelDocas
       });
     } catch (rawError) {
       console.error('Erro no fallback SQL de /dashboard/operacional. Usando arquivo:', rawError?.message || rawError);
       const all = readAgendamentos();
-      return res.json({ kpis: buildKpis(all, readDocumentos().length, 'arquivo'), agendamentos: filterItems(all, q), painelDocas: buildDocaPainelFromFiles(q.dataAgendada || null) });
+      return res.json({
+        kpis: buildKpis(all, readDocumentos().length),
+        agendamentos: filterItems(all, q).map(withStatusMeta),
+        painelDocas: buildDocaPainelFromFiles(q.dataAgendada || null)
+      });
     }
   }
 });
@@ -87,6 +141,35 @@ router.get("/docas", async (req, res) => {
       console.error('Erro no fallback SQL de /dashboard/docas. Usando arquivo:', rawError?.message || rawError);
       return res.json(buildDocaPainelFromFiles(req.query?.dataAgendada || null));
     }
+  }
+});
+
+router.get("/auditoria", requireProfiles("ADMIN"), async (req, res) => {
+  const limit = Math.max(1, Math.min(500, Number(req.query?.limit || 200)));
+  const entidadeId = req.query?.entidadeId ? Number(req.query.entidadeId) : null;
+  const entidade = req.query?.entidade ? String(req.query.entidade) : null;
+
+  try {
+    const rows = await prisma.logAuditoria.findMany({
+      where: {
+        ...(entidade ? { entidade } : {}),
+        ...(entidadeId ? { entidadeId } : {})
+      },
+      include: { usuario: true },
+      orderBy: { createdAt: "desc" },
+      take: limit
+    });
+    return res.json(rows.map((row) => normalizeAuditLog(row)));
+  } catch (error) {
+    console.error('Erro em /dashboard/auditoria. Usando arquivo:', error?.message || error);
+    const users = readUsuarios();
+    const usersById = new Map(users.map((user) => [Number(user.id), user]));
+    const rows = readLogsAuditoria()
+      .filter((row) => (!entidade || String(row.entidade || '') === entidade) && (!entidadeId || Number(row.entidadeId || 0) === entidadeId))
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+      .slice(0, limit)
+      .map((row) => normalizeAuditLog(row, usersById));
+    return res.json(rows);
   }
 });
 
