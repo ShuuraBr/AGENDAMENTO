@@ -125,6 +125,19 @@ function qid(name) {
   return `\`${String(name).replace(/`/g, '``')}\``;
 }
 
+function sqlLiteral(value) {
+  if (value == null) return 'NULL';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'NULL';
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `'${value.toISOString().slice(0, 19).replace('T', ' ')}'`;
+  }
+  const text = String(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "''");
+  return `'${text}'`;
+}
+
 function ensureImportDirs() {
   for (const dir of candidateImportDirs) fs.mkdirSync(dir, { recursive: true });
 }
@@ -382,7 +395,7 @@ function normalizeMysqlType(type = '') {
 }
 
 async function tableExists(client, tableName) {
-  const rows = await client.$queryRawUnsafe(`SHOW TABLES LIKE ?`, tableName);
+  const rows = await client.$queryRawUnsafe(`SHOW TABLES LIKE ${sqlLiteral(tableName)}`);
   return Array.isArray(rows) && rows.length > 0;
 }
 
@@ -517,16 +530,14 @@ export async function syncLatestRelatorioToDatabase({ force = false } = {}) {
 
   for (let offset = 0; offset < parsedRows.length; offset += chunkSize) {
     const chunk = parsedRows.slice(offset, offset + chunkSize);
-    const placeholders = chunk.map(() => `(${columnsForInsert.map(() => '?').join(', ')})`).join(', ');
+    const valuesSql = chunk.map((row) => `(${columnsForInsert
+      .map((column) => sqlLiteral(convertValueForColumn(column, row[column])))
+      .join(', ')})`).join(', ');
     const sql = `
       INSERT INTO ${qid(TABLE_NAME)} (${columnsForInsert.map(qid).join(', ')})
-      VALUES ${placeholders}
+      VALUES ${valuesSql}
     `;
-    const args = [];
-    for (const row of chunk) {
-      args.push(...columnsForInsert.map((column) => convertValueForColumn(column, row[column])));
-    }
-    await client.$executeRawUnsafe(sql, ...args);
+    await client.$executeRawUnsafe(sql);
   }
 
   const totalRows = await countRelatorioRows();
@@ -611,17 +622,12 @@ export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, 
     const numeroNf = normalizeText(nota?.numeroNf || nota?.numero_nf || '');
     if (!numeroNf) continue;
     const serie = normalizeText(nota?.serie || '');
-    await client.$executeRawUnsafe(
-      `
-        INSERT INTO ${qid(LINK_TABLE_NAME)} (${qid('fornecedor')}, ${qid('nrNota')}, ${qid('serie')}, ${qid('agendamentoId')})
-        VALUES (?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE ${qid('agendamentoId')} = VALUES(${qid('agendamentoId')}), ${qid('updatedAt')} = CURRENT_TIMESTAMP
-      `,
-      fornecedor,
-      numeroNf,
-      serie || null,
-      Number(agendamentoId)
-    );
+    const sql = `
+      INSERT INTO ${qid(LINK_TABLE_NAME)} (${qid('fornecedor')}, ${qid('nrNota')}, ${qid('serie')}, ${qid('agendamentoId')})
+      VALUES (${sqlLiteral(fornecedor)}, ${sqlLiteral(numeroNf)}, ${sqlLiteral(serie || null)}, ${sqlLiteral(Number(agendamentoId))})
+      ON DUPLICATE KEY UPDATE ${qid('agendamentoId')} = VALUES(${qid('agendamentoId')}), ${qid('updatedAt')} = CURRENT_TIMESTAMP
+    `;
+    await client.$executeRawUnsafe(sql);
   }
 }
 
