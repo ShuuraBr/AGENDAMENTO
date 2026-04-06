@@ -588,13 +588,19 @@ router.post('/checkout/:token', async (req, res) => {
   try {
     const updated = await prisma.agendamento.update({ where: { id: item.id }, data: { status: 'FINALIZADO', fimDescargaEm: new Date() } });
     await registerQrAudit(req, updated, 'CHECKOUT_QR', { statusAnterior: item.status });
-    await dispatchDriverFeedbackEmail(req, { ...item, ...updated });
-    return res.json({ ok: true, message: 'Check-out realizado com sucesso.', agendamento: updated });
+    const feedback = await dispatchDriverFeedbackEmail(req, { ...item, ...updated });
+    const message = feedback?.sent
+      ? 'Check-out realizado com sucesso. Formulário enviado ao motorista e doca liberada.'
+      : `Check-out realizado com sucesso. Doca liberada. Formulário não enviado: ${feedback?.reason || 'falha no envio'}.`;
+    return res.json({ ok: true, message, agendamento: updated, feedback });
   } catch {
     const updated = updateAgendamentoFile(item.id, { status: 'FINALIZADO', fimDescargaEm: new Date().toISOString() });
     await registerQrAudit(req, updated, 'CHECKOUT_QR', { statusAnterior: item.status, origem: 'arquivo' });
-    await dispatchDriverFeedbackEmail(req, { ...item, ...updated });
-    return res.json({ ok: true, message: 'Check-out realizado com sucesso.', agendamento: updated });
+    const feedback = await dispatchDriverFeedbackEmail(req, { ...item, ...updated });
+    const message = feedback?.sent
+      ? 'Check-out realizado com sucesso. Formulário enviado ao motorista e doca liberada.'
+      : `Check-out realizado com sucesso. Doca liberada. Formulário não enviado: ${feedback?.reason || 'falha no envio'}.`;
+    return res.json({ ok: true, message, agendamento: updated, feedback });
   }
 });
 

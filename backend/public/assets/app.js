@@ -951,8 +951,11 @@
 
   function semaforoClass(v) {
     const s = String(v || "").toLowerCase();
-    if (s.includes("verde")) return "verde";
-    if (s.includes("amarelo")) return "amarelo";
+    if (s.includes("verde") || s.includes("finalizado") || s.includes("livre")) return "verde";
+    if (s.includes("amarelo") || s.includes("pendente")) return "amarelo";
+    if (s.includes("azul") || s.includes("aprovado") || s.includes("chegou")) return "azul";
+    if (s.includes("laranja") || s.includes("descarga")) return "laranja";
+    if (s.includes("cinza") || s.includes("no_show") || s.includes("no show")) return "cinza";
     return "vermelho";
   }
 
@@ -1139,8 +1142,8 @@
 
   async function handleOp(fn, success) {
     try {
-      await fn();
-      byId("operacaoMsg").textContent = success;
+      const response = await fn();
+      byId("operacaoMsg").textContent = response?.message || success;
       await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
     } catch (err) {
       byId("operacaoMsg").textContent = err.message;

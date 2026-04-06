@@ -150,9 +150,13 @@ export function buildDocaPainelFromFiles(dataAgendada = null) {
   const agendamentos = readAgendamentos().filter((item) => !dataAgendada || String(item.dataAgendada) === String(dataAgendada));
   const priority = { CHEGOU: 1, EM_DESCARGA: 2, APROVADO: 3, PENDENTE_APROVACAO: 4 };
   const color = (status) => {
-    if (["EM_DESCARGA", "CHEGOU"].includes(status)) return 'VERDE';
-    if (["APROVADO", "PENDENTE_APROVACAO"].includes(status)) return 'AMARELO';
-    return 'VERDE';
+    const normalized = String(status || '').toUpperCase();
+    if (["LIVRE", "FINALIZADO"].includes(normalized)) return 'VERDE';
+    if (["PENDENTE_APROVACAO"].includes(normalized)) return 'AMARELO';
+    if (["APROVADO", "CHEGOU"].includes(normalized)) return 'AZUL';
+    if (["EM_DESCARGA"].includes(normalized)) return 'LARANJA';
+    if (["NO_SHOW"].includes(normalized)) return 'CINZA';
+    return 'VERMELHO';
   };
 
   return docas.map((doca) => {

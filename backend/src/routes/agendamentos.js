@@ -15,6 +15,7 @@ import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js
 import { auditLog } from "../utils/audit.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
+import { ensureFeedbackRequest } from "../utils/driver-feedback.js";
 
 const router = Router();
 router.use(authRequired);
@@ -52,6 +53,64 @@ function formatDateBR(value) {
 
 function buildScheduleIntro(item) {
   return `O agendamento foi efetuado para o dia ${formatDateBR(item.dataAgendada)}, às ${item.horaAgendada || "-"}. Solicitamos chegada com 10 minutos de antecedência.`;
+}
+
+function buildFeedbackLink(req, token) {
+  return `${getBaseUrl(req)}/?view=avaliacao&token=${encodeURIComponent(token)}`;
+}
+
+async function dispatchDriverFeedbackEmail(req, agendamento) {
+  if (!String(agendamento?.emailMotorista || '').trim()) {
+    await auditLog({
+      usuarioId: req.user?.sub || null,
+      perfil: req.user?.perfil || null,
+      acao: 'ENVIAR_AVALIACAO_MOTORISTA',
+      entidade: 'AGENDAMENTO',
+      entidadeId: agendamento?.id || null,
+      detalhes: { motivo: 'Sem e-mail do motorista cadastrado.', sent: false },
+      ip: req.ip
+    });
+    return { sent: false, reason: 'Sem e-mail do motorista cadastrado.' };
+  }
+
+  const feedback = await ensureFeedbackRequest(agendamento);
+  const formLink = buildFeedbackLink(req, feedback.token);
+  const subject = `Avaliação do atendimento - protocolo ${agendamento.protocolo}`;
+  const text = [
+    `Olá, ${agendamento.motorista || 'motorista'}.`,
+    '',
+    `Seu recebimento referente ao protocolo ${agendamento.protocolo} foi finalizado.`,
+    'Gostaríamos de receber sua avaliação sobre o atendimento, a equipe de recebimento e a agilidade do processo.',
+    `Responda pelo link: ${formLink}`,
+    '',
+    'Agradecemos pelo retorno.'
+  ].join('\n');
+  const html = `
+    <div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;line-height:1.6">
+      <p>Olá, <strong>${agendamento.motorista || 'motorista'}</strong>.</p>
+      <p>Seu recebimento referente ao protocolo <strong>${agendamento.protocolo}</strong> foi finalizado.</p>
+      <p>Gostaríamos de receber sua avaliação sobre o atendimento, a equipe de recebimento e a agilidade do processo.</p>
+      <p>
+        <a href="${formLink}" style="display:inline-block;padding:12px 18px;border-radius:10px;background:#1d4ed8;color:#ffffff;text-decoration:none;font-weight:700">
+          Responder avaliação
+        </a>
+      </p>
+      <p>Se preferir, copie e cole este link no navegador:<br/><span style="color:#475569">${formLink}</span></p>
+      <p>Agradecemos pelo retorno.</p>
+    </div>
+  `;
+
+  const sent = await sendMail({ to: agendamento.emailMotorista, subject, text, html });
+  await auditLog({
+    usuarioId: req.user?.sub || null,
+    perfil: req.user?.perfil || null,
+    acao: 'ENVIAR_AVALIACAO_MOTORISTA',
+    entidade: 'AGENDAMENTO',
+    entidadeId: agendamento?.id || null,
+    detalhes: { to: agendamento.emailMotorista, sent: Boolean(sent.sent), reason: sent.reason || null },
+    ip: req.ip
+  });
+  return sent;
 }
 
 async function full(id) {
@@ -326,7 +385,17 @@ async function transition(id, target, data = {}, req) {
   }
 
   await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: target, entidade: "AGENDAMENTO", entidadeId: updated.id, detalhes: data, ip: req.ip });
-  return updated;
+
+  let message = null;
+  if (target === "FINALIZADO" && found.status !== "FINALIZADO") {
+    const current = await full(updated.id) || updated;
+    const feedbackDispatch = await dispatchDriverFeedbackEmail(req, current);
+    message = feedbackDispatch?.sent
+      ? "Agendamento finalizado. Formulário enviado ao motorista e doca liberada."
+      : `Agendamento finalizado. Doca liberada. Formulário não enviado: ${feedbackDispatch?.reason || 'falha no envio'}.`;
+  }
+
+  return message ? { ...(await full(updated.id) || updated), message } : updated;
 }
 
 router.post("/:id/definir-doca", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
