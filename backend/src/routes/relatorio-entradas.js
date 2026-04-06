@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authRequired, requireProfiles } from '../middlewares/auth.js';
 import {
   getImportDirectory,
-  getRelatorioImportStatus,
+  getRelatorioImportStatusDetailed,
   importRelatorioSpreadsheet,
   listSupportedImportFiles,
   relatorioSpreadsheetUpload,
@@ -21,7 +21,7 @@ router.get('/status', requireProfiles('ADMIN', 'GESTOR', 'OPERADOR'), async (_re
   res.json({
     ok: true,
     pastaMonitorada: getImportDirectory(),
-    ultimoProcessamento: getRelatorioImportStatus(),
+    ultimoProcessamento: await getRelatorioImportStatusDetailed(),
     arquivosDetectados: files
   });
 });

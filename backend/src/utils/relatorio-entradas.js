@@ -435,6 +435,16 @@ async function ensureRelatorioTable() {
   }
 }
 
+async function getDatabaseRowCount() {
+  try {
+    await ensureRelatorioTable();
+    const rows = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS total FROM ${quoteIdentifier(TABLE_NAME)}`);
+    return Number(rows?.[0]?.total || rows?.[0]?.['COUNT(*)'] || 0);
+  } catch {
+    return 0;
+  }
+}
+
 async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   await ensureRelatorioTable();
   await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)}`);
@@ -543,6 +553,12 @@ export function getRelatorioImportStatus() {
   return readState().lastImport || null;
 }
 
+export async function getRelatorioImportStatusDetailed() {
+  const base = getRelatorioImportStatus();
+  const totalLinhasNoBanco = await getDatabaseRowCount();
+  return { ...(base || {}), totalLinhasNoBanco };
+}
+
 export function listSupportedImportFiles() {
   ensureDir(importDir);
   return fs.readdirSync(importDir)
@@ -555,7 +571,9 @@ export function listSupportedImportFiles() {
     .sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
 
-export async function scanImportFolderAndProcess() {
+export async function scanImportFolderAndProcess(options = {}) {
+  const { force = false, forceIfDatabaseEmpty = false } = options || {};
+
   if (watcherBusy) return null;
   watcherBusy = true;
   try {
@@ -564,16 +582,25 @@ export async function scanImportFolderAndProcess() {
 
     const key = `${latest.name}:${latest.mtimeMs}:${latest.size}`;
     const state = readState();
-    if (state.lastProcessedKey === key) return null;
+    const totalLinhasNoBanco = forceIfDatabaseEmpty ? await getDatabaseRowCount() : null;
+    const sameFileAlreadyProcessed = state.lastProcessedKey === key;
+
+    if (!force && sameFileAlreadyProcessed && !(forceIfDatabaseEmpty && totalLinhasNoBanco === 0)) {
+      return null;
+    }
 
     return await importRelatorioSpreadsheet({
       filePath: latest.filePath,
       originalName: latest.name,
-      source: 'watcher'
+      source: force ? 'manual-force' : (sameFileAlreadyProcessed && totalLinhasNoBanco === 0 ? 'auto-reimport-db-empty' : 'watcher')
     });
   } finally {
     watcherBusy = false;
   }
+}
+
+export async function syncRelatorioImportOnPageAccess() {
+  return scanImportFolderAndProcess({ forceIfDatabaseEmpty: true });
 }
 
 export function startRelatorioImportWatcher() {
