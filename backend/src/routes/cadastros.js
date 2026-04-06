@@ -42,9 +42,6 @@ router.post("/:tipo", requireProfiles("ADMIN", "GESTOR"), async (req, res) => {
     const tipo = req.params.tipo;
     const m = model(tipo);
     if (!m) return res.status(400).json({ message: "Tipo inválido." });
-    if (tipo === "usuarios" && req.user?.perfil !== "ADMIN") {
-      return res.status(403).json({ message: "Apenas administradores podem cadastrar usuários." });
-    }
 
     const data = { ...req.body };
     if (tipo === "usuarios") {
@@ -74,9 +71,6 @@ router.put("/:tipo/:id", requireProfiles("ADMIN", "GESTOR"), async (req, res) =>
     const tipo = req.params.tipo;
     const m = model(tipo);
     if (!m) return res.status(400).json({ message: "Tipo inválido." });
-    if (tipo === "usuarios" && req.user?.perfil !== "ADMIN") {
-      return res.status(403).json({ message: "Apenas administradores podem alterar usuários." });
-    }
 
     const data = { ...req.body };
     if (tipo === "usuarios" && data?.perfil) validateProfile(data.perfil);
