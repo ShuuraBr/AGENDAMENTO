@@ -550,9 +550,19 @@ function parseRowFromDatabase(row = {}) {
 export async function listFornecedoresPendentesImportados() {
   try {
     await ensureRelatorioTable();
-    const rows = await prisma.$queryRawUnsafe(
-      `SELECT * FROM ${quoteIdentifier(TABLE_NAME)} ORDER BY ${quoteIdentifier('Fornecedor')} ASC, id ASC`
-    );
+    const existingColumns = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
+    const existingNames = new Set((existingColumns || []).map((item) => String(item.Field || '')));
+
+    const orderBy = [];
+    if (existingNames.has('Fornecedor')) orderBy.push(`${quoteIdentifier('Fornecedor')} ASC`);
+    if (existingNames.has('Nr. nota')) orderBy.push(`${quoteIdentifier('Nr. nota')} ASC`);
+    if (existingNames.has('Série')) orderBy.push(`${quoteIdentifier('Série')} ASC`);
+    if (existingNames.has('importedAt')) orderBy.push(`importedAt ASC`);
+    if (existingNames.has('updatedAt')) orderBy.push(`updatedAt ASC`);
+    if (existingNames.has('id')) orderBy.push(`id ASC`);
+
+    const sql = `SELECT * FROM ${quoteIdentifier(TABLE_NAME)}${orderBy.length ? ` ORDER BY ${orderBy.join(', ')}` : ''}`;
+    const rows = await prisma.$queryRawUnsafe(sql);
 
     if (Array.isArray(rows) && rows.length) {
       return normalizeImportedItems(rows.map(parseRowFromDatabase));
@@ -628,6 +638,16 @@ export async function importRelatorioSpreadsheet({ filePath, originalName = '', 
 export function getRelatorioImportStatus() {
   return readState().lastImport || null;
 }
+
+export function getRelatorioImportStatusDetailed() {
+  const state = readState();
+  return {
+    ultimoProcessamento: state.lastImport || null,
+    lastProcessedKey: state.lastProcessedKey || null,
+    pastasMonitoradas: [...importDirCandidates]
+  };
+}
+
 
 export async function getRelatorioRowsCount() {
   try {
