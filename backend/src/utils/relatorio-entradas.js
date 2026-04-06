@@ -629,6 +629,47 @@ export function getRelatorioImportStatus() {
   return readState().lastImport || null;
 }
 
+export async function getRelatorioRowsCount() {
+  try {
+    await ensureRelatorioTable();
+    const result = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS total FROM ${quoteIdentifier(TABLE_NAME)}`);
+    const total = Number(result?.[0]?.total || result?.[0]?.TOTAL || 0);
+    return Number.isFinite(total) ? total : 0;
+  } catch (error) {
+    console.error('Falha ao contar linhas do relatório terceirizado:', error?.message || error);
+    return 0;
+  }
+}
+
+export async function ensureLatestRelatorioImport({ forceIfEmpty = true } = {}) {
+  const latest = listSupportedImportFiles()[0];
+  if (!latest) {
+    console.log(`[RELATORIO_IMPORT] Nenhuma planilha encontrada nas pastas monitoradas: ${importDirCandidates.join(' | ')}`);
+    return null;
+  }
+
+  const key = `${latest.name}:${latest.mtimeMs}:${latest.size}`;
+  const state = readState();
+  const totalLinhasNoBanco = await getRelatorioRowsCount();
+  const shouldReimport = state.lastProcessedKey !== key || (forceIfEmpty && totalLinhasNoBanco === 0);
+
+  if (!shouldReimport) {
+    return {
+      ok: true,
+      skipped: true,
+      motivo: 'arquivo_ja_processado',
+      fileName: latest.name,
+      totalLinhasNoBanco
+    };
+  }
+
+  return importRelatorioSpreadsheet({
+    filePath: latest.filePath,
+    originalName: latest.name,
+    source: forceIfEmpty && totalLinhasNoBanco === 0 ? 'auto-page-empty-db' : 'auto-page'
+  });
+}
+
 export function listSupportedImportFiles() {
   const items = [];
   const seen = new Set();
