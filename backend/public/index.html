@@ -296,6 +296,17 @@
         </div>
 
         <div class="card">
+          <h2>Painel de consulta por NF</h2>
+          <form id="consultaNfForm" class="consulta-nf-form mt12">
+            <div class="consulta-nf-toolbar">
+              <label class="form-group-full">Número da NF<input name="numeroNf" type="text" inputmode="numeric" placeholder="Digite o número da NF" required /></label>
+              <button type="submit">Consultar NF</button>
+            </div>
+          </form>
+          <div id="consultaNfResult" class="mt16"></div>
+        </div>
+
+        <div class="card">
           <h2>Workflow operacional</h2>
           <div class="row gap8">
             <button id="loadAgendamentos">Atualizar lista</button>
