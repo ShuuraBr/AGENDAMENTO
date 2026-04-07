@@ -89,7 +89,7 @@ export async function generateVoucherPdf(agendamento, options = {}) {
     ['Doca', agendamento.doca?.codigo || agendamento.doca || 'A DEFINIR'],
     ['Janela', agendamento.janela?.codigo || agendamento.janela || '-'],
     ['Token do motorista', agendamento.publicTokenMotorista || '-'],
-    ['Token do fornecedor', agendamento.publicTokenFornecedor || '-'],HEAD
+    ['Token do fornecedor', agendamento.publicTokenFornecedor || '-'],
     ['Notas', formatNumberBR(agendamento.quantidadeNotas ?? 0, 0, 0)],
     ['Volumes', formatNumberBR(agendamento.quantidadeVolumes || 0, 0, 3)],
     ['Peso total', formatWeightKg(agendamento.pesoTotalKg || 0)],

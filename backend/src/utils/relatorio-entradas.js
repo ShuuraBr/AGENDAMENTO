@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
@@ -81,6 +82,36 @@ const SHEET_COLUMNS = [
 let watcherHandle = null;
 let watcherBusy = false;
 
+
+function pathToDisplayName(filePathOrName) {
+  if (Buffer.isBuffer(filePathOrName)) {
+    const utf8 = filePathOrName.toString('utf8');
+    if (!utf8.includes('�')) return utf8;
+    return filePathOrName.toString('latin1');
+  }
+  return String(filePathOrName || '');
+}
+
+function joinBufferPath(dir, name) {
+  return Buffer.concat([
+    Buffer.from(String(dir)),
+    Buffer.from('/'),
+    Buffer.isBuffer(name) ? name : Buffer.from(String(name || ''))
+  ]);
+}
+
+function extnameSafe(filePathOrName) {
+  const display = pathToDisplayName(filePathOrName);
+  const ext = path.extname(display).toLowerCase();
+  if (ext) return ext;
+  const bytes = Buffer.isBuffer(filePathOrName) ? filePathOrName : Buffer.from(String(filePathOrName || ''));
+  return path.extname(bytes.toString('latin1')).toLowerCase();
+}
+
+function buildFileKey(name, stats = {}) {
+  return `${pathToDisplayName(name)}:${Number(stats?.mtimeMs || 0)}:${Number(stats?.size || 0)}`;
+}
+
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
@@ -132,6 +163,11 @@ function toFixedNumber(value, decimals = 3) {
   return Number(Number(value || 0).toFixed(decimals));
 }
 
+function buildRowHash(row = {}) {
+  const payload = SHEET_COLUMNS.map((column) => normalizeCellValue(row[column] ?? '')).join('|');
+  return crypto.createHash('sha256').update(payload).digest('hex');
+}
+
 function buildNoteObservation(row = {}) {
   const parts = [];
   if (row['Entrada']) parts.push(`Entrada ${row['Entrada']}`);
@@ -159,8 +195,9 @@ function normalizeImportedItems(rows = []) {
   const groups = new Map();
 
   for (const row of rows) {
-    const fornecedor = normalizeCellValue(row['Fornecedor']);
-    const numeroNf = normalizeCellValue(row['Nr. nota']);
+    const normalizedRow = normalizeSpreadsheetRow(row);
+    const fornecedor = normalizeCellValue(normalizedRow['Fornecedor']);
+    const numeroNf = normalizeCellValue(normalizedRow['Nr. nota']);
     if (!fornecedor || !numeroNf) continue;
 
     if (!groups.has(fornecedor)) {
@@ -175,19 +212,25 @@ function normalizeImportedItems(rows = []) {
         pesoTotalKg: 0,
         valorTotalNf: 0,
         status: 'AGUARDANDO_CHEGADA',
-        statusRelatorio: 'Aguardando Chegada'
+        statusRelatorio: 'Aguardando Chegada',
+        _seenNotaKeys: new Set()
       });
     }
 
     const current = groups.get(fornecedor);
     const note = {
+      rowHash: normalizeCellValue(row?.rowHash || '') || buildRowHash(normalizedRow),
       numeroNf,
-      serie: normalizeCellValue(row['Série']),
-      volumes: toFixedNumber(parseNumber(row['Volume total']), 3),
-      peso: toFixedNumber(parseNumber(row['Peso total']), 3),
-      valorNf: toFixedNumber(parseNumber(row['Valor da nota']), 2),
-      observacao: buildNoteObservation(row)
+      serie: normalizeCellValue(normalizedRow['Série']),
+      volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
+      peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
+      valorNf: toFixedNumber(parseNumber(normalizedRow['Valor da nota']), 2),
+      observacao: buildNoteObservation(normalizedRow)
     };
+
+    const noteKey = note.rowHash || `${note.numeroNf}::${note.serie}::${note.valorNf}::${note.peso}::${note.volumes}`;
+    if (!noteKey || current._seenNotaKeys.has(noteKey)) continue;
+    current._seenNotaKeys.add(noteKey);
 
     current.notas.push(note);
     current.notasFiscais = current.notas;
@@ -197,7 +240,79 @@ function normalizeImportedItems(rows = []) {
     current.valorTotalNf = toFixedNumber(current.valorTotalNf + Number(note.valorNf || 0), 2);
   }
 
-  return [...groups.values()].sort((a, b) => String(a.fornecedor || '').localeCompare(String(b.fornecedor || ''), 'pt-BR'));
+  return [...groups.values()]
+    .map((item) => {
+      delete item._seenNotaKeys;
+      return item;
+    })
+    .sort((a, b) => String(a.fornecedor || '').localeCompare(String(b.fornecedor || ''), 'pt-BR'));
+}
+
+function normalizeSelectedNota(nota = {}) {
+  return {
+    rowHash: normalizeCellValue(nota?.rowHash || ''),
+    numeroNf: normalizeCellValue(nota?.numeroNf || nota?.numero_nf || ''),
+    serie: normalizeCellValue(nota?.serie || ''),
+    chaveAcesso: normalizeCellValue(nota?.chaveAcesso || ''),
+    volumes: toFixedNumber(parseNumber(nota?.volumes || 0), 3),
+    peso: toFixedNumber(parseNumber(nota?.peso || 0), 3),
+    valorNf: toFixedNumber(parseNumber(nota?.valorNf || 0), 2),
+    observacao: normalizeCellValue(nota?.observacao || '')
+  };
+}
+
+function normalizeNoteFromSpreadsheetRow(row = {}) {
+  const normalizedRow = normalizeSpreadsheetRow(row);
+  return {
+    rowHash: normalizeCellValue(row?.rowHash || '') || buildRowHash(normalizedRow),
+    numeroNf: normalizeCellValue(normalizedRow['Nr. nota']),
+    serie: normalizeCellValue(normalizedRow['Série']),
+    chaveAcesso: '',
+    volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
+    peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
+    valorNf: toFixedNumber(parseNumber(normalizedRow['Valor da nota']), 2),
+    observacao: buildNoteObservation(normalizedRow)
+  };
+}
+
+export async function canonicalizeNotasSelecionadasComRelatorio(fornecedor, notas = []) {
+  const normalizedSelection = Array.isArray(notas) ? notas.map(normalizeSelectedNota).filter((nota) => nota.numeroNf || nota.rowHash) : [];
+  if (!normalizedSelection.length) return [];
+
+  try {
+    await ensureRelatorioTable();
+
+    const rowHashes = [...new Set(normalizedSelection.map((nota) => nota.rowHash).filter(Boolean))];
+    const byHash = new Map();
+
+    if (rowHashes.length) {
+      const placeholders = rowHashes.map(() => '?').join(', ');
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT rowHash, dadosOriginaisJson FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash IN (${placeholders})`,
+        ...rowHashes
+      );
+
+      for (const row of rows || []) {
+        try {
+          const parsed = row?.dadosOriginaisJson ? JSON.parse(String(row.dadosOriginaisJson)) : {};
+          byHash.set(String(row.rowHash || ''), normalizeNoteFromSpreadsheetRow({ ...parsed, rowHash: row.rowHash }));
+        } catch {}
+      }
+    }
+
+    const fornecedorNormalized = normalizeCellValue(fornecedor);
+    return normalizedSelection.map((nota) => {
+      const fromHash = nota.rowHash ? byHash.get(nota.rowHash) : null;
+      if (fromHash) return { ...fromHash, chaveAcesso: nota.chaveAcesso || fromHash.chaveAcesso || '' };
+
+      return {
+        ...nota,
+        fornecedor: fornecedorNormalized
+      };
+    });
+  } catch {
+    return normalizedSelection;
+  }
 }
 
 function parseCsvLine(line = '', delimiter = ';') {
@@ -367,7 +482,7 @@ function readZipEntry(filePath, entryName) {
 }
 
 function parseSpreadsheetFile(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
+  const ext = extnameSafe(filePath).toLowerCase();
   if (!SUPPORTED_EXTENSIONS.has(ext)) {
     throw new Error('Formato de planilha não suportado. Use .ods, .csv ou .json.');
   }
@@ -380,6 +495,18 @@ function parseSpreadsheetFile(filePath) {
   }
 
   return [];
+}
+
+
+async function runSqlIgnoringDuplicateKeyName(sql) {
+  try {
+    await prisma.$executeRawUnsafe(sql);
+  } catch (error) {
+    const code = Number(error?.code || error?.meta?.code || 0);
+    const message = String(error?.message || '');
+    if (code === 1061 || message.includes('Duplicate key name')) return;
+    throw error;
+  }
 }
 
 function readState() {
@@ -414,6 +541,8 @@ async function ensureRelatorioTable() {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS ${quoteIdentifier(TABLE_NAME)} (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      rowHash VARCHAR(64) NULL,
+      agendamentoId INT NULL,
       ${businessColumnsSql},
       origemArquivo VARCHAR(255) NULL,
       importedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -427,6 +556,13 @@ async function ensureRelatorioTable() {
 
   const existingColumns = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
   const existingNames = new Set((existingColumns || []).map((item) => String(item.Field || '')));
+
+  if (!existingNames.has('rowHash')) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN rowHash VARCHAR(64) NULL`);
+  }
+  if (!existingNames.has('agendamentoId')) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN agendamentoId INT NULL`);
+  }
 
   for (const column of SHEET_COLUMNS) {
     if (!existingNames.has(column)) {
@@ -446,7 +582,18 @@ async function ensureRelatorioTable() {
   if (!existingNames.has('dadosOriginaisJson')) {
     await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN dadosOriginaisJson LONGTEXT NULL`);
   }
+
+  const existingIndexes = await prisma.$queryRawUnsafe(`SHOW INDEX FROM ${quoteIdentifier(TABLE_NAME)}`);
+  const indexNames = new Set((existingIndexes || []).map((item) => String(item.Key_name || item.key_name || '')));
+
+  if (!indexNames.has('uk_relatorio_row_hash')) {
+    await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD UNIQUE INDEX uk_relatorio_row_hash (rowHash)`);
+  }
+  if (!indexNames.has('idx_relatorio_agendamento')) {
+    await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD INDEX idx_relatorio_agendamento (agendamentoId)`);
+  }
 }
+
 
 
 async function countRelatorioRowsInDatabase() {
@@ -523,24 +670,30 @@ export { countRelatorioRowsInDatabase };
 
 async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   await ensureRelatorioTable();
+
+  const existingRows = await prisma.$queryRawUnsafe(`SELECT rowHash, agendamentoId FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash IS NOT NULL`);
+  const agendamentoMap = new Map((existingRows || []).map((row) => [String(row.rowHash || ''), row.agendamentoId == null ? null : Number(row.agendamentoId)]));
+
   await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)}`);
 
-  const columns = [...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
+  const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
   const columnSql = columns.map((column) => quoteIdentifier(column)).join(', ');
+  const placeholders = columns.map(() => '?').join(', ');
 
   for (const row of rows) {
-    const values = SHEET_COLUMNS.map((column) => normalizeCellValue(row[column] ?? ''));
-    values.push(sourceFileName || null);
-    values.push(JSON.stringify(row));
-    const valuesSql = values.map(sqlLiteral).join(', ');
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${valuesSql})`
-    );
+    const normalizedRow = {};
+    for (const column of SHEET_COLUMNS) normalizedRow[column] = normalizeCellValue(row[column] ?? '');
+    const rowHash = buildRowHash(normalizedRow);
+    const values = [rowHash, agendamentoMap.get(rowHash) ?? null, ...SHEET_COLUMNS.map((column) => normalizedRow[column]), sourceFileName || null, JSON.stringify(normalizedRow)];
+    await prisma.$executeRawUnsafe(`INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${placeholders})`, ...values);
   }
 }
 
 function parseRowFromDatabase(row = {}) {
-  const output = {};
+  const output = {
+    rowHash: normalizeCellValue(row.rowHash ?? ''),
+    agendamentoId: row.agendamentoId == null ? null : Number(row.agendamentoId)
+  };
   for (const column of SHEET_COLUMNS) {
     output[column] = normalizeCellValue(row[column] ?? '');
   }
@@ -550,22 +703,28 @@ function parseRowFromDatabase(row = {}) {
 export async function listFornecedoresPendentesImportados() {
   try {
     await ensureRelatorioTable();
-    const existingColumns = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
-    const existingNames = new Set((existingColumns || []).map((item) => String(item.Field || '')));
-
-    const orderBy = [];
-    if (existingNames.has('Fornecedor')) orderBy.push(`${quoteIdentifier('Fornecedor')} ASC`);
-    if (existingNames.has('Nr. nota')) orderBy.push(`${quoteIdentifier('Nr. nota')} ASC`);
-    if (existingNames.has('Série')) orderBy.push(`${quoteIdentifier('Série')} ASC`);
-    if (existingNames.has('importedAt')) orderBy.push(`importedAt ASC`);
-    if (existingNames.has('updatedAt')) orderBy.push(`updatedAt ASC`);
-    if (existingNames.has('id')) orderBy.push(`id ASC`);
-
-    const sql = `SELECT * FROM ${quoteIdentifier(TABLE_NAME)}${orderBy.length ? ` ORDER BY ${orderBy.join(', ')}` : ''}`;
-    const rows = await prisma.$queryRawUnsafe(sql);
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT id, rowHash, agendamentoId, dadosOriginaisJson, importedAt, updatedAt
+         FROM ${quoteIdentifier(TABLE_NAME)}
+        WHERE agendamentoId IS NULL
+        ORDER BY id ASC`
+    );
 
     if (Array.isArray(rows) && rows.length) {
-      return normalizeImportedItems(rows.map(parseRowFromDatabase));
+      const parsedRows = rows
+        .map((row) => {
+          try {
+            const parsed = row?.dadosOriginaisJson ? JSON.parse(String(row.dadosOriginaisJson)) : {};
+            return { ...normalizeSpreadsheetRow(parsed || {}), rowHash: normalizeCellValue(row?.rowHash || '') };
+          } catch {
+            return null;
+          }
+        })
+        .filter((row) => row && row['Fornecedor'] && row['Nr. nota']);
+
+      if (parsedRows.length) {
+        return normalizeImportedItems(parsedRows);
+      }
     }
   } catch (error) {
     console.error('Falha ao listar pendências importadas no banco:', error?.message || error);
@@ -576,6 +735,43 @@ export async function listFornecedoresPendentesImportados() {
     return JSON.parse(fs.readFileSync(fallbackFile, 'utf8'));
   } catch {
     return [];
+  }
+}
+
+export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, notas = []) {
+  if (!agendamentoId || !fornecedor || !Array.isArray(notas) || !notas.length) return;
+  await ensureRelatorioTable();
+
+  for (const nota of notas) {
+    const rowHash = normalizeCellValue(nota?.rowHash || '');
+    const numeroNf = normalizeCellValue(nota?.numeroNf || nota?.numero_nf || '');
+    const serie = normalizeCellValue(nota?.serie || '');
+    if (rowHash) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = ? WHERE rowHash = ?`,
+        Number(agendamentoId),
+        rowHash
+      );
+      continue;
+    }
+
+    if (!numeroNf) continue;
+
+    const conditions = [
+      `LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(?)`,
+      `TRIM(${quoteIdentifier('Nr. nota')}) = ?`
+    ];
+    const args = [Number(agendamentoId), fornecedor, numeroNf];
+
+    if (serie) {
+      conditions.push(`TRIM(${quoteIdentifier('Série')}) = ?`);
+      args.push(serie);
+    }
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = ? WHERE ${conditions.join(' AND ')}`,
+      ...args
+    );
   }
 }
 
@@ -617,7 +813,7 @@ export async function importRelatorioSpreadsheet({ filePath, originalName = '', 
   writeState({
     ...readState(),
     lastImport: summary,
-    lastProcessedKey: `${summary.fileName}:${stats.mtimeMs}:${stats.size}`
+    lastProcessedKey: buildFileKey(summary.fileName, stats)
   });
 
   if (actor?.sub || actor?.id) {
@@ -668,7 +864,7 @@ export async function ensureLatestRelatorioImport({ forceIfEmpty = true } = {}) 
     return null;
   }
 
-  const key = `${latest.name}:${latest.mtimeMs}:${latest.size}`;
+  const key = buildFileKey(latest.rawName || latest.name, latest);
   const state = readState();
   const totalLinhasNoBanco = await getRelatorioRowsCount();
   const shouldReimport = state.lastProcessedKey !== key || (forceIfEmpty && totalLinhasNoBanco === 0);
@@ -700,7 +896,7 @@ export function listSupportedImportFiles() {
         if (!SUPPORTED_EXTENSIONS.has(extnameSafe(nameBuffer).toLowerCase())) continue;
         const filePath = joinBufferPath(dir, nameBuffer);
         const stats = fs.statSync(filePath);
-        const key = `${pathToDisplayName(nameBuffer)}:${stats.size}:${stats.mtimeMs}`;
+        const key = buildFileKey(nameBuffer, stats);
         if (seen.has(key) || !stats.isFile()) continue;
         seen.add(key);
         items.push({
