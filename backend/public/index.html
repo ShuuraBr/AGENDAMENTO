@@ -175,6 +175,14 @@
         <h3>Agendamentos</h3>
         <div id="dashboardTable"></div>
       </div>
+
+      <div class="card mt16">
+        <div class="row between">
+          <h3>Auditoria operacional</h3>
+          <button id="loadAuditoria" type="button">Atualizar logs</button>
+        </div>
+        <div id="auditoriaList" class="mt12"></div>
+      </div>
     </section>
 
     <section id="docas" class="view">
@@ -301,6 +309,37 @@
           <p id="operacaoMsg" class="msg"></p>
           <div id="agendamentosList" class="mt16"></div>
         </div>
+      </div>
+    </section>
+
+    <section id="avaliacao" class="view">
+      <div class="card avaliacao-card">
+        <div class="avaliacao-header">
+          <img src="/assets/objetiva.png" alt="Logo Objetiva" class="avaliacao-logo" />
+          <div>
+            <h2>Avaliação do atendimento</h2>
+            <p>Pesquisa confidencial destinada ao motorista. Esta avaliação pode ser respondida uma única vez.</p>
+          </div>
+        </div>
+        <div id="avaliacaoIntro" class="avaliacao-identificacao mt12"></div>
+        <form id="avaliacaoForm" class="mt16">
+          <div class="form-grid">
+            <label>Nota para o atendimento geral (1 a 5)<input name="atendimentoNota" type="number" min="1" max="5" required /></label>
+            <label>Nota para a equipe de recebimento (1 a 5)<input name="equipeNota" type="number" min="1" max="5" required /></label>
+            <label>Nota para rapidez e eficácia (1 a 5)<input name="rapidezNota" type="number" min="1" max="5" required /></label>
+            <label>O processo correu tranquilo?
+              <select name="processoTranquilo" required>
+                <option value="">Selecione</option>
+                <option value="SIM">Sim</option>
+                <option value="PARCIAL">Parcialmente</option>
+                <option value="NAO">Não</option>
+              </select>
+            </label>
+            <label class="form-group-full">Comentários adicionais<textarea name="comentario" maxlength="4000" placeholder="Descreva como foi o atendimento e o processo de recebimento."></textarea></label>
+          </div>
+          <button type="submit">Enviar avaliação</button>
+        </form>
+        <p id="avaliacaoMsg" class="msg"></p>
       </div>
     </section>
   </main>

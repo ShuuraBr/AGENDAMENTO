@@ -22,6 +22,14 @@ const models = {
 
 function model(tipo) { return models[tipo]; }
 
+function ensureUserCadastroPermission(req, tipo) {
+  if (tipo === "usuarios" && req.user?.perfil !== "ADMIN") {
+    const err = new Error("Apenas administradores podem acessar o cadastro de usuários.");
+    err.statusCode = 403;
+    throw err;
+  }
+}
+
 async function listItems(tipo, m) {
   try {
     return await prisma[m].findMany({ orderBy: { id: "desc" } });
@@ -32,9 +40,14 @@ async function listItems(tipo, m) {
 }
 
 router.get("/:tipo", async (req, res) => {
-  const m = model(req.params.tipo);
-  if (!m) return res.status(400).json({ message: "Tipo inválido." });
-  res.json(await listItems(req.params.tipo, m));
+  try {
+    const m = model(req.params.tipo);
+    if (!m) return res.status(400).json({ message: "Tipo inválido." });
+    ensureUserCadastroPermission(req, req.params.tipo);
+    res.json(await listItems(req.params.tipo, m));
+  } catch (err) {
+    res.status(err.statusCode || 400).json({ message: err.message });
+  }
 });
 
 router.post("/:tipo", requireProfiles("ADMIN", "GESTOR"), async (req, res) => {
@@ -42,6 +55,7 @@ router.post("/:tipo", requireProfiles("ADMIN", "GESTOR"), async (req, res) => {
     const tipo = req.params.tipo;
     const m = model(tipo);
     if (!m) return res.status(400).json({ message: "Tipo inválido." });
+    ensureUserCadastroPermission(req, tipo);
 
     const data = { ...req.body };
     if (tipo === "usuarios") {
@@ -71,6 +85,7 @@ router.put("/:tipo/:id", requireProfiles("ADMIN", "GESTOR"), async (req, res) =>
     const tipo = req.params.tipo;
     const m = model(tipo);
     if (!m) return res.status(400).json({ message: "Tipo inválido." });
+    ensureUserCadastroPermission(req, tipo);
 
     const data = { ...req.body };
     if (tipo === "usuarios" && data?.perfil) validateProfile(data.perfil);

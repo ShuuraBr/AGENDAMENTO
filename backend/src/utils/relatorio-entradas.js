@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
@@ -130,6 +131,11 @@ function parseNumber(value) {
 
 function toFixedNumber(value, decimals = 3) {
   return Number(Number(value || 0).toFixed(decimals));
+}
+
+function buildRowHash(row = {}) {
+  const payload = SHEET_COLUMNS.map((column) => normalizeCellValue(row[column] ?? '')).join('|');
+  return crypto.createHash('sha256').update(payload).digest('hex');
 }
 
 function buildNoteObservation(row = {}) {
@@ -414,11 +420,15 @@ async function ensureRelatorioTable() {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS ${quoteIdentifier(TABLE_NAME)} (
       id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      rowHash VARCHAR(64) NULL,
+      agendamentoId INT NULL,
       ${businessColumnsSql},
       origemArquivo VARCHAR(255) NULL,
       importedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       dadosOriginaisJson LONGTEXT NULL,
+      UNIQUE KEY uk_relatorio_row_hash (rowHash),
+      INDEX idx_relatorio_agendamento (agendamentoId),
       INDEX idx_relatorio_fornecedor (${quoteIdentifier('Fornecedor')}(191)),
       INDEX idx_relatorio_nf (${quoteIdentifier('Nr. nota')}(191)),
       INDEX idx_relatorio_status (${quoteIdentifier('Status')}(191))
@@ -427,6 +437,13 @@ async function ensureRelatorioTable() {
 
   const existingColumns = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
   const existingNames = new Set((existingColumns || []).map((item) => String(item.Field || '')));
+
+  if (!existingNames.has('rowHash')) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN rowHash VARCHAR(64) NULL`);
+  }
+  if (!existingNames.has('agendamentoId')) {
+    await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN agendamentoId INT NULL`);
+  }
 
   for (const column of SHEET_COLUMNS) {
     if (!existingNames.has(column)) {
@@ -446,6 +463,13 @@ async function ensureRelatorioTable() {
   if (!existingNames.has('dadosOriginaisJson')) {
     await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN dadosOriginaisJson LONGTEXT NULL`);
   }
+
+  try {
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX uk_relatorio_row_hash ON ${quoteIdentifier(TABLE_NAME)} (rowHash)`);
+  } catch {}
+  try {
+    await prisma.$executeRawUnsafe(`CREATE INDEX idx_relatorio_agendamento ON ${quoteIdentifier(TABLE_NAME)} (agendamentoId)`);
+  } catch {}
 }
 
 
@@ -523,24 +547,30 @@ export { countRelatorioRowsInDatabase };
 
 async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   await ensureRelatorioTable();
+
+  const existingRows = await prisma.$queryRawUnsafe(`SELECT rowHash, agendamentoId FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash IS NOT NULL`);
+  const agendamentoMap = new Map((existingRows || []).map((row) => [String(row.rowHash || ''), row.agendamentoId == null ? null : Number(row.agendamentoId)]));
+
   await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)}`);
 
-  const columns = [...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
+  const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
   const columnSql = columns.map((column) => quoteIdentifier(column)).join(', ');
+  const placeholders = columns.map(() => '?').join(', ');
 
   for (const row of rows) {
-    const values = SHEET_COLUMNS.map((column) => normalizeCellValue(row[column] ?? ''));
-    values.push(sourceFileName || null);
-    values.push(JSON.stringify(row));
-    const valuesSql = values.map(sqlLiteral).join(', ');
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${valuesSql})`
-    );
+    const normalizedRow = {};
+    for (const column of SHEET_COLUMNS) normalizedRow[column] = normalizeCellValue(row[column] ?? '');
+    const rowHash = buildRowHash(normalizedRow);
+    const values = [rowHash, agendamentoMap.get(rowHash) ?? null, ...SHEET_COLUMNS.map((column) => normalizedRow[column]), sourceFileName || null, JSON.stringify(normalizedRow)];
+    await prisma.$executeRawUnsafe(`INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${placeholders})`, ...values);
   }
 }
 
 function parseRowFromDatabase(row = {}) {
-  const output = {};
+  const output = {
+    rowHash: normalizeCellValue(row.rowHash ?? ''),
+    agendamentoId: row.agendamentoId == null ? null : Number(row.agendamentoId)
+  };
   for (const column of SHEET_COLUMNS) {
     output[column] = normalizeCellValue(row[column] ?? '');
   }
@@ -561,7 +591,9 @@ export async function listFornecedoresPendentesImportados() {
     if (existingNames.has('updatedAt')) orderBy.push(`updatedAt ASC`);
     if (existingNames.has('id')) orderBy.push(`id ASC`);
 
-    const sql = `SELECT * FROM ${quoteIdentifier(TABLE_NAME)}${orderBy.length ? ` ORDER BY ${orderBy.join(', ')}` : ''}`;
+    const whereParts = [];
+    if (existingNames.has('agendamentoId')) whereParts.push('agendamentoId IS NULL');
+    const sql = `SELECT * FROM ${quoteIdentifier(TABLE_NAME)}${whereParts.length ? ` WHERE ${whereParts.join(' AND ')}` : ''}${orderBy.length ? ` ORDER BY ${orderBy.join(', ')}` : ''}`;
     const rows = await prisma.$queryRawUnsafe(sql);
 
     if (Array.isArray(rows) && rows.length) {
@@ -576,6 +608,33 @@ export async function listFornecedoresPendentesImportados() {
     return JSON.parse(fs.readFileSync(fallbackFile, 'utf8'));
   } catch {
     return [];
+  }
+}
+
+export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, notas = []) {
+  if (!agendamentoId || !fornecedor || !Array.isArray(notas) || !notas.length) return;
+  await ensureRelatorioTable();
+
+  for (const nota of notas) {
+    const numeroNf = normalizeCellValue(nota?.numeroNf || nota?.numero_nf || '');
+    const serie = normalizeCellValue(nota?.serie || '');
+    if (!numeroNf) continue;
+
+    const conditions = [
+      `LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(?)`,
+      `TRIM(${quoteIdentifier('Nr. nota')}) = ?`
+    ];
+    const args = [Number(agendamentoId), fornecedor, numeroNf];
+
+    if (serie) {
+      conditions.push(`TRIM(${quoteIdentifier('Série')}) = ?`);
+      args.push(serie);
+    }
+
+    await prisma.$executeRawUnsafe(
+      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = ? WHERE ${conditions.join(' AND ')}`,
+      ...args
+    );
   }
 }
 
