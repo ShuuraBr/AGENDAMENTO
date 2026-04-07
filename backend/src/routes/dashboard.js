@@ -5,6 +5,7 @@ import { docaPainel } from "../utils/operations.js";
 import { fetchAgendamentosRaw, fetchDocaPainelRaw } from "../utils/db-fallback.js";
 import { readAgendamentos, readDocumentos, buildDocaPainelFromFiles } from "../utils/file-store.js";
 import { withComputedTotals } from "../utils/agendamento-helpers.js";
+import { enrichAgendamentoWithMonitoring, sendMonthlyNearDueDigestIfNeeded } from "../utils/nf-monitoring.js";
 
 const router = Router();
 router.use(authRequired);
@@ -84,20 +85,23 @@ router.get("/operacional", async (req, res) => {
       prisma.agendamento.findMany({ include: { notasFiscais: true } }),
       docaPainel(q.dataAgendada || null)
     ]);
-    return res.json({ kpis: buildKpis(all, docs, "database"), agendamentos: agendamentos.map(withComputedTotals), painelDocas });
+    sendMonthlyNearDueDigestIfNeeded({ triggeredBy: req.user?.nome || req.user?.sub || 'dashboard' }).catch(() => {});
+    return res.json({ kpis: buildKpis(all, docs, "database"), agendamentos: await Promise.all(agendamentos.map((item) => enrichAgendamentoWithMonitoring(withComputedTotals(item)))), painelDocas });
   } catch (error) {
     console.error("Erro em /dashboard/operacional. Tentando fallback SQL/arquivo:", error?.message || error);
     try {
       const [agendamentos, painelDocas] = await Promise.all([fetchAgendamentosRaw(q), fetchDocaPainelRaw(q.dataAgendada || null)]);
+      sendMonthlyNearDueDigestIfNeeded({ triggeredBy: req.user?.nome || req.user?.sub || 'dashboard' }).catch(() => {});
       return res.json({
         kpis: buildKpis(agendamentos, 0, "database-raw"),
-        agendamentos: agendamentos.map(withComputedTotals),
+        agendamentos: await Promise.all(agendamentos.map((item) => enrichAgendamentoWithMonitoring(withComputedTotals(item)))),
         painelDocas
       });
     } catch (rawError) {
       console.error("Erro no fallback SQL de /dashboard/operacional. Usando arquivo:", rawError?.message || rawError);
       const all = readAgendamentos();
-      return res.json({ kpis: buildKpis(all, readDocumentos().length, "arquivo"), agendamentos: filterItems(all, q), painelDocas: buildDocaPainelFromFiles(q.dataAgendada || null) });
+      sendMonthlyNearDueDigestIfNeeded({ triggeredBy: req.user?.nome || req.user?.sub || 'dashboard' }).catch(() => {});
+      return res.json({ kpis: buildKpis(all, readDocumentos().length, "arquivo"), agendamentos: await Promise.all(filterItems(all, q).map((item) => enrichAgendamentoWithMonitoring(item))), painelDocas: buildDocaPainelFromFiles(q.dataAgendada || null) });
     }
   }
 });

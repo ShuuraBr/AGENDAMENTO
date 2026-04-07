@@ -117,3 +117,22 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 .avaliacao-card{max-width:860px;margin:0 auto}.avaliacao-header{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.avaliacao-logo{height:64px;max-width:220px;object-fit:contain}.avaliacao-identificacao{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}.avaliacao-identificacao div{background:#fff;border:1px solid #dbe2ea;border-radius:12px;padding:12px;display:grid;gap:4px}.avaliacao-identificacao strong{font-size:15px;color:#0f172a}@media (max-width:760px){.avaliacao-identificacao{grid-template-columns:1fr}.avaliacao-header{align-items:flex-start}}
 
 .auditoria-list{display:grid;gap:12px}.auditoria-item{border:1px solid #dbe2ea;border-radius:14px;background:#f8fafc;padding:14px}.auditoria-item-header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}.auditoria-item pre{margin-top:10px;background:#0f172a;color:#e2e8f0}.auditoria-meta{color:#64748b;font-size:13px}.auditoria-empty{color:#64748b}
+
+body.modal-open{overflow:hidden}
+.consulta-nf-toolbar{display:grid;grid-template-columns:minmax(280px,1fr) auto;gap:12px;align-items:end}
+.consulta-nf-result-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.pending-nota-item-warning{border-color:#f59e0b;background:#fffbeb}
+.pending-note-due-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;margin-left:auto}
+.nf-series-item-warning{display:inline-block;background:#fef3c7;border:1px solid #f59e0b;border-radius:999px;padding:3px 8px;color:#92400e}
+.nf-series-item-danger{display:inline-block;background:#fee2e2;border:1px solid #ef4444;border-radius:999px;padding:3px 8px;color:#991b1b}
+.nf-alert-badge{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700;width:max-content}
+.nf-alert-badge-danger{background:#fee2e2;color:#991b1b}
+#docaPainel.grid{grid-template-columns:repeat(5,minmax(180px,1fr))}
+.app-modal{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
+.app-modal.hidden{display:none !important}
+.app-modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.55)}
+.app-modal-card{position:relative;z-index:1;width:min(720px,100%);background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(15,23,42,.28);padding:20px}
+.app-modal-header h3{margin:0;font-size:22px;color:#0f172a}.app-modal-body{display:grid;grid-template-columns:10px 1fr;gap:14px;margin-top:16px;color:#334155}.app-modal-body p{margin:0 0 8px}.app-modal-tone{border-radius:999px}.app-modal-tone-info{background:#2563eb}.app-modal-tone-warning{background:#f59e0b}.app-modal-tone-danger{background:#ef4444}.app-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+@media (max-width:1280px){#docaPainel.grid{grid-template-columns:repeat(4,minmax(180px,1fr))}}
+@media (max-width:980px){#docaPainel.grid,.consulta-nf-result-grid{grid-template-columns:1fr 1fr}.consulta-nf-toolbar{grid-template-columns:1fr}}
+@media (max-width:680px){#docaPainel.grid,.consulta-nf-result-grid{grid-template-columns:1fr}.app-modal-card{padding:16px}.app-modal-header h3{font-size:19px}}
