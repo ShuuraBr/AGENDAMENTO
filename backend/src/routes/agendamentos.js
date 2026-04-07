@@ -15,7 +15,8 @@ import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js
 import { auditLog } from "../utils/audit.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
-import { linkRelatorioRowsToAgendamento } from "../utils/relatorio-terceirizado.js";
+import { linkRelatorioRowsToAgendamento } from "../utils/relatorio-entradas.js";
+import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
 
 const router = Router();
 router.use(authRequired);
@@ -53,6 +54,30 @@ function formatDateBR(value) {
 
 function buildScheduleIntro(item) {
   return `O agendamento foi efetuado para o dia ${formatDateBR(item.dataAgendada)}, às ${item.horaAgendada || "-"}. Solicitamos chegada com 10 minutos de antecedência.`;
+}
+
+async function dispatchDriverFeedbackSurvey(item, req, actor = req.user) {
+  const result = await sendDriverFeedbackRequestEmail({
+    agendamento: item,
+    baseUrl: getBaseUrl(req)
+  });
+
+  await auditLog({
+    usuarioId: actor?.sub || actor?.id || null,
+    perfil: actor?.perfil || null,
+    acao: 'ENVIAR_AVALIACAO',
+    entidade: 'AGENDAMENTO',
+    entidadeId: item.id,
+    detalhes: {
+      sent: !!result?.sent,
+      to: result?.to || null,
+      feedbackLink: result?.feedbackLink || null,
+      reason: result?.reason || null
+    },
+    ip: req.ip
+  });
+
+  return result;
 }
 
 async function full(id) {
@@ -459,7 +484,21 @@ router.post("/:id/iniciar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), asyn
 });
 
 router.post("/:id/finalizar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
-  try { res.json(await transition(req.params.id, "FINALIZADO", { fimDescargaEm: new Date() }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
+  try {
+    const found = await full(req.params.id);
+    if (!found) throw new Error("Agendamento não encontrado.");
+    if (found.status === "FINALIZADO") {
+      return res.json({ ...found, message: "Agendamento já estava finalizado." });
+    }
+
+    const updated = await transition(req.params.id, "FINALIZADO", { fimDescargaEm: new Date() }, req);
+    const item = await full(updated.id);
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "FINALIZAR_DESCARGA", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: { origem: 'painel-interno' }, ip: req.ip });
+    const avaliacao = await dispatchDriverFeedbackSurvey(item, req, req.user);
+    res.json({ ...item, avaliacao });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
 });
 
 router.post("/:id/no-show", requireProfiles("ADMIN", "OPERADOR", "GESTOR", "PORTARIA"), async (req, res) => {
@@ -484,6 +523,7 @@ router.post("/:id/checkin", requireProfiles("ADMIN", "OPERADOR", "GESTOR", "PORT
     if (!found) throw new Error("Agendamento não encontrado.");
     if (!["APROVADO", "CHEGOU"].includes(found.status)) throw new Error("Check-in só é permitido para agendamento aprovado.");
     const item = await transition(req.params.id, "CHEGOU", { checkinEm: found.checkinEm || new Date() }, req);
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CHECKIN_MANUAL", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: { origem: 'painel-interno' }, ip: req.ip });
     res.json({ ok: true, message: "Check-in validado pelo operador do recebimento.", agendamento: item });
   } catch (err) {
     res.status(400).json({ message: err.message });
