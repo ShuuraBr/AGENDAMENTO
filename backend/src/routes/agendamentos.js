@@ -17,6 +17,7 @@ import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
 import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento } from "../utils/relatorio-entradas.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
+import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, searchByNumeroNf } from "../utils/nf-monitoring.js";
 
 const router = Router();
 router.use(authRequired);
@@ -116,6 +117,24 @@ async function notificationSummary(agendamentoId) {
 }
 
 const EMPTY_NOTIFICATIONS = { voucherMotorista: false, voucherTransportadoraFornecedor: false, confirmacaoTransportadoraFornecedor: false };
+
+async function enrichResponseItem(item) {
+  if (!item) return item;
+  try { return await enrichAgendamentoWithMonitoring(item); } catch { return item; }
+}
+
+async function buildAwarenessAnalysisFromPayload(base = {}, payload = {}) {
+  const notas = Array.isArray(base?.notasFiscais) ? base.notasFiscais : Array.isArray(payload?.notasFiscais) ? payload.notasFiscais : [];
+  const fornecedor = payload?.fornecedor || base?.fornecedor || '';
+  const dataAgendada = payload?.dataAgendada || base?.dataAgendada || '';
+  return analyzeNotesForSchedule({ notas, fornecedor, dataAgendada });
+}
+
+async function sendFinanceAwarenessIfNeeded({ agendamento, payload, actor }) {
+  const analysis = await buildAwarenessAnalysisFromPayload(agendamento, payload);
+  if (!analysis?.requiresAwareness || !payload?.confirmarCienciaVencimento) return { sent: false, reason: 'Ciência não necessária ou não confirmada.' };
+  return sendFinanceAwarenessEmail({ agendamento, analysis, actor });
+}
 
 async function safeNotificationSummary(agendamentoId) {
   try {
@@ -286,22 +305,69 @@ router.get("/", async (req, res) => {
       include: { notasFiscais: true, documentos: true, doca: true, janela: true },
       orderBy: { id: "desc" }
     });
-    const payload = await Promise.all(items.map(async (i) => ({ ...calculateTotals(i.notasFiscais || [], i), ...i, semaforo: trafficColor(i.status), notificacoes: await safeNotificationSummary(i.id) })));
+    const payload = await Promise.all(items.map(async (i) => enrichResponseItem({ ...calculateTotals(i.notasFiscais || [], i), ...i, semaforo: trafficColor(i.status), notificacoes: await safeNotificationSummary(i.id) })));
     return res.json(payload);
   } catch {
     try {
       const items = await fetchAgendamentosRaw(q);
-      return res.json(items.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { ...EMPTY_NOTIFICATIONS } })));
+      return res.json(await Promise.all(items.map((i) => enrichResponseItem({ ...i, semaforo: trafficColor(i.status), notificacoes: { ...EMPTY_NOTIFICATIONS } }))));
     } catch {}
     const items = readAgendamentos().filter((i) => (!q.status || i.status===String(q.status)) && (!q.fornecedor || String(i.fornecedor||'').toLowerCase().includes(String(q.fornecedor).toLowerCase())) && (!q.transportadora || String(i.transportadora||'').toLowerCase().includes(String(q.transportadora).toLowerCase())) && (!q.motorista || String(i.motorista||'').toLowerCase().includes(String(q.motorista).toLowerCase())) && (!q.placa || String(i.placa||'').toLowerCase().includes(String(q.placa).toLowerCase())) && (!q.dataAgendada || String(i.dataAgendada)===String(q.dataAgendada)));
-    return res.json(items.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { ...EMPTY_NOTIFICATIONS } })));
+    return res.json(await Promise.all(items.map((i) => enrichResponseItem({ ...i, semaforo: trafficColor(i.status), notificacoes: { ...EMPTY_NOTIFICATIONS } }))));
+  }
+});
+
+router.get("/consulta-nf", async (req, res) => {
+  try {
+    const numeroNf = String(req.query?.numeroNf || req.query?.nf || '').trim();
+    if (!numeroNf) return res.status(400).json({ message: 'Informe o número da NF para consulta.' });
+    const result = await searchByNumeroNf(numeroNf);
+    const agendamentos = await Promise.all((result.agendamentos || []).map(enrichResponseItem));
+    return res.json({
+      numeroNf,
+      encontrada: (result.relatorio || []).length > 0 || agendamentos.length > 0,
+      relatorio: result.relatorio || [],
+      agendamentos
+    });
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
+  }
+});
+
+router.post("/analise-vencimento", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const analysis = await analyzeNotesForSchedule({
+      fornecedor: payload.fornecedor || '',
+      dataAgendada: payload.dataAgendada || '',
+      notas: Array.isArray(payload.notasFiscais) ? payload.notasFiscais : []
+    });
+    res.json(analysis);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+router.post("/:id/analise-vencimento", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+  try {
+    const found = await full(req.params.id);
+    if (!found) throw new Error('Agendamento não encontrado.');
+    const merged = {
+      ...found,
+      ...req.body,
+      notasFiscais: Array.isArray(found.notasFiscais) ? found.notasFiscais : []
+    };
+    const analysis = await buildAwarenessAnalysisFromPayload(found, merged);
+    res.json(analysis);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
   }
 });
 
 router.get("/:id", async (req, res) => {
   const item = await full(req.params.id);
   if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
-  res.json({ ...item, semaforo: trafficColor(item.status), notificacoes: await safeNotificationSummary(item.id) });
+  res.json(await enrichResponseItem({ ...item, semaforo: trafficColor(item.status), notificacoes: await safeNotificationSummary(item.id) }));
 });
 
 router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
@@ -312,6 +378,15 @@ router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res
     const totals = calculateTotals(Array.isArray(payload.notasFiscais) ? payload.notasFiscais : [], payload);
     Object.assign(payload, totals);
     validateAgendamentoPayload(payload, false);
+
+    const awarenessAnalysis = await buildAwarenessAnalysisFromPayload(null, payload);
+    if (awarenessAnalysis?.requiresAwareness && !payload.confirmarCienciaVencimento) {
+      return res.status(409).json({
+        message: 'Existem notas com 1º vencimento muito próximo da data agendada. Confirme a ciência para prosseguir.',
+        requiresAwareness: true,
+        analysis: awarenessAnalysis
+      });
+    }
 
     let defaultDoca;
     try {
@@ -339,7 +414,14 @@ router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res
     } catch (relatorioError) {
       console.error('[RELATORIO_IMPORT] Falha ao vincular notas do relatório ao agendamento:', relatorioError?.message || relatorioError);
     }
-    try { const fullItem = await full(item.id); const notificacoes = await sendApprovalNotifications(fullItem || item, req); return res.status(201).json({ ...(fullItem || item), notificacoesEnviadas: notificacoes.results }); } catch { return res.status(201).json(item); }
+    try {
+      const fullItem = await full(item.id);
+      await sendFinanceAwarenessIfNeeded({ agendamento: fullItem || item, payload, actor: req.user });
+      const notificacoes = await sendApprovalNotifications(fullItem || item, req);
+      return res.status(201).json(await enrichResponseItem({ ...(fullItem || item), notificacoesEnviadas: notificacoes.results }));
+    } catch {
+      return res.status(201).json(await enrichResponseItem(item));
+    }
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -415,16 +497,26 @@ router.post("/:id/aprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), asyn
       throw new Error("Selecione ao menos uma NF para o agendamento interno.");
     }
 
+    const awarenessAnalysis = await buildAwarenessAnalysisFromPayload(found, merged);
+    if (awarenessAnalysis?.requiresAwareness && !req.body?.confirmarCienciaVencimento) {
+      return res.status(409).json({
+        message: 'Existem notas com 1º vencimento muito próximo da data agendada. Confirme a ciência para prosseguir.',
+        requiresAwareness: true,
+        analysis: awarenessAnalysis
+      });
+    }
+
     await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada, ignoreAgendamentoId: found.id });
 
     const updated = await transition(req.params.id, "APROVADO", data, req);
     const item = await full(updated.id);
-    res.json({
+    await sendFinanceAwarenessIfNeeded({ agendamento: item, payload: { ...merged, confirmarCienciaVencimento: req.body?.confirmarCienciaVencimento }, actor: req.user });
+    res.json(await enrichResponseItem({
       ...item,
       notificacoesEnviadas: [],
       envioAutomatico: false,
       message: "Agendamento aprovado. O e-mail com voucher só é enviado ao salvar ou ao clicar em 'Enviar informações'."
-    });
+    }));
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -448,6 +540,14 @@ router.post("/:id/reagendar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), as
       janelaId: req.body?.janelaId || found.janelaId
     };
     validateAgendamentoPayload(merged, false);
+    const awarenessAnalysis = await buildAwarenessAnalysisFromPayload(found, merged);
+    if (awarenessAnalysis?.requiresAwareness && !req.body?.confirmarCienciaVencimento) {
+      return res.status(409).json({
+        message: 'Existem notas com 1º vencimento muito próximo da data reagendada. Confirme a ciência para prosseguir.',
+        requiresAwareness: true,
+        analysis: awarenessAnalysis
+      });
+    }
     await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada, ignoreAgendamentoId: found.id });
 
     let item;
@@ -460,7 +560,9 @@ router.post("/:id/reagendar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), as
       item = updateAgendamentoFile(req.params.id, { dataAgendada: merged.dataAgendada, horaAgendada: merged.horaAgendada, docaId: Number(merged.docaId), janelaId: Number(merged.janelaId), status: "PENDENTE_APROVACAO" });
     }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "REAGENDAR", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: req.body, ip: req.ip });
-    res.json(item);
+    const fullItem = await full(item.id);
+    await sendFinanceAwarenessIfNeeded({ agendamento: fullItem || item, payload: { ...merged, confirmarCienciaVencimento: req.body?.confirmarCienciaVencimento }, actor: req.user });
+    res.json(await enrichResponseItem(fullItem || item));
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 

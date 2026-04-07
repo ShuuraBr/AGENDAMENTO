@@ -16,7 +16,8 @@
     docaOptions: [],
     currentUser: null,
     auditoria: [],
-    avaliacaoToken: ""
+    avaliacaoToken: "",
+    missingRelatorioAlertKeys: new Set()
   };
 
   const CADASTRO_CONFIG = {
@@ -205,11 +206,18 @@
   function renderNotaSerieList(item) {
     const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : Array.isArray(item?.notas) ? item.notas : [];
     if (!notas.length) return `<span>${escapeHtml(formatIntegerBR(item?.quantidadeNotas ?? 0))}</span>`;
+    const warning = item?.monitoramentoNf?.notasAusentesNoRelatorio?.length
+      ? `<span class="nf-alert-badge nf-alert-badge-danger" title="Existem notas deste agendamento que não constam mais no relatório terceirizado.">NF indisponível no relatório</span>`
+      : '';
     return `<div class="nf-series-list">${notas.slice(0, 3).map((nota) => {
       const numero = `NF ${String(nota?.numeroNf || '-').trim() || '-'}`;
       const serie = `Série ${String(nota?.serie || '-').trim() || '-'}`;
-      return `<span class="nf-series-item">${escapeHtml(`${numero} • ${serie}`)}</span>`;
-    }).join('')}${notas.length > 3 ? `<span class="nf-series-item">${escapeHtml(`+${notas.length - 3} NF`)}</span>` : ''}</div>`;
+      const classes = ['nf-series-item'];
+      if (nota?.alertaVencimentoProximo) classes.push('nf-series-item-warning');
+      if (nota?.disponivelNoRelatorio === false) classes.push('nf-series-item-danger');
+      const tooltip = nota?.tooltipVencimento || (nota?.disponivelNoRelatorio === false ? 'NF não localizada no relatório terceirizado atual.' : '');
+      return `<span class="${classes.join(' ')}" title="${escapeHtml(tooltip)}">${escapeHtml(`${numero} • ${serie}`)}</span>`;
+    }).join('')}${notas.length > 3 ? `<span class="nf-series-item">${escapeHtml(`+${notas.length - 3} NF`)}</span>` : ''}${warning}</div>`;
   }
 
   function statusLabel(status) {
@@ -258,7 +266,12 @@
       volumes: Number(item.volumes || 0),
       peso: Number(item.peso || 0),
       valorNf: Number(item.valorNf || 0),
-      observacao: String(item.observacao || '').trim()
+      observacao: String(item.observacao || '').trim(),
+      dataPrimeiroVencimento: String(item.dataPrimeiroVencimento || '').trim(),
+      dataPrimeiroVencimentoBr: String(item.dataPrimeiroVencimentoBr || '').trim(),
+      diasParaPrimeiroVencimento: item.diasParaPrimeiroVencimento == null ? null : Number(item.diasParaPrimeiroVencimento),
+      alertaVencimentoProximo: !!item.alertaVencimentoProximo,
+      tooltipVencimento: String(item.tooltipVencimento || '').trim()
     };
   }
 
@@ -452,7 +465,12 @@
     const ct = res.headers.get("content-type") || "";
     const data = ct.includes("application/json") ? await res.json() : await res.text();
     if (res.status === 401) logout();
-    if (!res.ok) throw new Error(data?.message || data || "Erro na requisição");
+    if (!res.ok) {
+      const err = new Error(data?.message || data || "Erro na requisição");
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
     return data;
   }
 
@@ -466,6 +484,58 @@
     byId(id)?.classList.add("active");
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.view === id);
+    });
+  }
+
+  function ensureModalHost() {
+    let host = byId('appModalHost');
+    if (host) return host;
+    host = document.createElement('div');
+    host.id = 'appModalHost';
+    host.className = 'app-modal hidden';
+    host.innerHTML = `
+      <div class="app-modal-backdrop" data-modal-close></div>
+      <div class="app-modal-card">
+        <div class="app-modal-header">
+          <h3 id="appModalTitle">Aviso</h3>
+        </div>
+        <div id="appModalBody" class="app-modal-body"></div>
+        <div class="app-modal-actions">
+          <button type="button" id="appModalCancel" class="btn-secondary hidden">Cancelar</button>
+          <button type="button" id="appModalConfirm">OK</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(host);
+    return host;
+  }
+
+  function showAppModal({ title = 'Aviso', message = '', confirmText = 'OK', cancelText = '', tone = 'info' } = {}) {
+    const host = ensureModalHost();
+    const titleEl = byId('appModalTitle');
+    const bodyEl = byId('appModalBody');
+    const confirmBtn = byId('appModalConfirm');
+    const cancelBtn = byId('appModalCancel');
+    if (!titleEl || !bodyEl || !confirmBtn || !cancelBtn) return Promise.resolve(false);
+    titleEl.textContent = title;
+    bodyEl.innerHTML = `<div class="app-modal-tone app-modal-tone-${escapeHtml(tone)}"></div><div>${String(message || '').split('\n').map((line) => `<p>${escapeHtml(line)}</p>`).join('')}</div>`;
+    confirmBtn.textContent = confirmText || 'OK';
+    cancelBtn.textContent = cancelText || 'Cancelar';
+    cancelBtn.classList.toggle('hidden', !cancelText);
+    host.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    return new Promise((resolve) => {
+      const cleanup = (result) => {
+        host.classList.add('hidden');
+        document.body.classList.remove('modal-open');
+        confirmBtn.onclick = null;
+        cancelBtn.onclick = null;
+        host.querySelectorAll('[data-modal-close]').forEach((el) => { el.onclick = null; });
+        resolve(result);
+      };
+      confirmBtn.onclick = () => cleanup(true);
+      cancelBtn.onclick = () => cleanup(false);
+      host.querySelectorAll('[data-modal-close]').forEach((el) => { el.onclick = () => cleanup(false); });
     });
   }
 
@@ -722,12 +792,18 @@
       return;
     }
 
-    wrap.innerHTML = `<div class="pending-notas-toolbar"><button type="button" class="btn-secondary" id="btnSelectAllPendingNotas">Selecionar todos</button></div><div class="pending-notas-grid">${notas.map((nota, idx) => `
-      <div class="pending-nota-item">
+    wrap.innerHTML = `<div class="pending-notas-toolbar"><button type="button" class="btn-secondary" id="btnSelectAllPendingNotas">Selecionar todos</button></div><div class="pending-notas-grid">${notas.map((nota, idx) => {
+      const dueClass = nota.alertaVencimentoProximo ? ' pending-nota-item-warning' : '';
+      const tooltip = nota.tooltipVencimento || '';
+      const label = `NF ${nota.numeroNf || '-'} • Série ${nota.serie || '-'}`;
+      const dueBadge = nota.alertaVencimentoProximo ? `<span class="pending-note-due-badge" title="${escapeHtml(tooltip)}">Venc. próximo${nota.dataPrimeiroVencimentoBr ? ` • ${escapeHtml(nota.dataPrimeiroVencimentoBr)}` : ''}</span>` : '';
+      return `
+      <div class="pending-nota-item${dueClass}" title="${escapeHtml(tooltip)}">
         <label class="pending-nota-card">
           <div class="pending-nota-check">
             <input type="checkbox" data-internal-nf="${idx}" />
-            <span>${escapeHtml(`NF ${nota.numeroNf || '-'} • Série ${nota.serie || '-'}`)}</span>
+            <span>${escapeHtml(label)}</span>
+            ${dueBadge}
           </div>
           <div class="pending-nota-fields">
             <div class="pending-nota-field">
@@ -744,7 +820,8 @@
             </div>
           </div>
         </label>
-      </div>`).join('')}</div>`;
+      </div>`;
+    }).join('')}</div>`;
 
     const sync = () => {
       state.internalSelectedNotas = notas
@@ -991,6 +1068,7 @@
       });
     }
     renderOperationalTable(data.agendamentos || [], { targetId: 'dashboardTable', includeActions: true });
+    await maybeShowMissingRelatorioAlerts(data.agendamentos || []);
   }
 
   function formatAuditDate(value) {
@@ -1167,7 +1245,93 @@
     Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
     const items = await api(`/api/agendamentos?${params.toString()}`);
     renderOperationalTable(items || [], { targetId: 'agendamentosList', includeActions: false });
+    await maybeShowMissingRelatorioAlerts(items || []);
+  }
 
+  function buildAwarenessMessage(analysis) {
+    const items = Array.isArray(analysis?.notasComCiencia) ? analysis.notasComCiencia : [];
+    if (!items.length) return 'Existem notas com vencimento próximo da data agendada. Deseja confirmar a ciência e prosseguir?';
+    return [
+      'As notas abaixo estão com o 1º vencimento muito próximo da data agendada:',
+      '',
+      ...items.map((nota) => `NF ${nota.numeroNf || '-'} / Série ${nota.serie || '-'} — 1º vencimento ${nota.dataPrimeiroVencimentoBr || '-'}${nota.diasEntreAgendamentoEVencimento != null ? ` — diferença de ${nota.diasEntreAgendamentoEVencimento} dia(s)` : ''}`),
+      '',
+      'Deseja confirmar a ciência e prosseguir com o agendamento?'
+    ].join('\n');
+  }
+
+  async function confirmAwarenessForPayload(payload) {
+    const analysis = await api('/api/agendamentos/analise-vencimento', { method: 'POST', body: JSON.stringify(payload) });
+    if (!analysis?.requiresAwareness) return { confirmed: false, analysis };
+    const confirmed = await showAppModal({
+      title: 'Ciência obrigatória',
+      message: buildAwarenessMessage(analysis),
+      confirmText: 'Estou ciente e quero prosseguir',
+      cancelText: 'Cancelar',
+      tone: 'warning'
+    });
+    return { confirmed, analysis };
+  }
+
+  async function confirmAwarenessForExistingAgendamento(id, body = {}) {
+    const analysis = await api(`/api/agendamentos/${id}/analise-vencimento`, { method: 'POST', body: JSON.stringify(body) });
+    if (!analysis?.requiresAwareness) return { confirmed: false, analysis };
+    const confirmed = await showAppModal({
+      title: 'Ciência obrigatória',
+      message: buildAwarenessMessage(analysis),
+      confirmText: 'Estou ciente e quero prosseguir',
+      cancelText: 'Cancelar',
+      tone: 'warning'
+    });
+    return { confirmed, analysis };
+  }
+
+  async function maybeShowMissingRelatorioAlerts(items = []) {
+    for (const item of Array.isArray(items) ? items : []) {
+      const missing = item?.monitoramentoNf?.notasAusentesNoRelatorio || [];
+      if (!missing.length) continue;
+      const key = `${item.id}:${missing.map((nota) => `${nota.numeroNf || ''}-${nota.serie || ''}`).join('|')}`;
+      if (state.missingRelatorioAlertKeys.has(key)) continue;
+      state.missingRelatorioAlertKeys.add(key);
+      await showAppModal({
+        title: 'NF não disponível no relatório',
+        message: [
+          `O agendamento ${item.protocolo || item.id || ''} possui nota(s) que não constam mais no relatório terceirizado atual.`,
+          '',
+          ...missing.map((nota) => `NF ${nota.numeroNf || '-'} / Série ${nota.serie || '-'}`),
+          '',
+          'Verifique a situação da nota antes de prosseguir com a operação.'
+        ].join('\n'),
+        confirmText: 'Entendi',
+        tone: 'danger'
+      });
+    }
+  }
+
+  function renderConsultaNfResult(data = {}) {
+    const relatorio = Array.isArray(data.relatorio) ? data.relatorio : [];
+    const agendamentos = Array.isArray(data.agendamentos) ? data.agendamentos : [];
+    if (!relatorio.length && !agendamentos.length) {
+      return '<div class="warning-box">Nenhum registro encontrado para a NF informada.</div>';
+    }
+    return `
+      <div class="consulta-nf-result-grid">
+        <div class="result-card">
+          <h3>Relatório terceirizado (${relatorio.length})</h3>
+          ${relatorio.length ? `<table class="table"><thead><tr><th>Fornecedor</th><th>NF</th><th>Série</th><th>1º vencimento</th><th>Status</th></tr></thead><tbody>${relatorio.map((item) => `<tr><td>${escapeHtml(item.fornecedor || '-')}</td><td>${escapeHtml(item.numeroNf || '-')}</td><td>${escapeHtml(item.serie || '-')}</td><td>${escapeHtml(item.dataPrimeiroVencimentoBr || '-')}</td><td>${escapeHtml(item.status || '-')}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">NF não localizada no relatório terceirizado atual.</p>'}
+        </div>
+        <div class="result-card">
+          <h3>Agendamentos vinculados (${agendamentos.length})</h3>
+          ${agendamentos.length ? `<table class="table"><thead><tr><th>ID</th><th>Protocolo</th><th>Status</th><th>Fornecedor</th><th>Data</th><th>Hora</th></tr></thead><tbody>${agendamentos.map((item) => `<tr><td>${escapeHtml(item.id || '-')}</td><td>${escapeHtml(item.protocolo || '-')}</td><td>${renderStatusBadge(item.status, item.semaforo || '')}</td><td>${escapeHtml(item.fornecedor || '-')}</td><td>${escapeHtml(formatDateBR(item.dataAgendada || ''))}</td><td>${escapeHtml(formatHour(item.horaAgendada || ''))}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Nenhum agendamento encontrado para esta NF.</p>'}
+        </div>
+      </div>
+    `;
+  }
+
+  async function consultarNfInterna(numeroNf) {
+    const result = await api(`/api/agendamentos/consulta-nf?numeroNf=${encodeURIComponent(numeroNf)}`);
+    const target = byId('consultaNfResult');
+    if (target) target.innerHTML = renderConsultaNfResult(result);
   }
 
   function currentId() {
@@ -1182,7 +1346,8 @@
 
   async function handleOp(fn, success) {
     try {
-      await fn();
+      const result = await fn();
+      if (result === undefined || result === false) return;
       byId("operacaoMsg").textContent = success;
       await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
     } catch (err) {
@@ -1346,6 +1511,9 @@ Deseja liberar manualmente a descarga deste veículo?`);
         if (!payload.fornecedor) throw new Error('Fornecedor pendente inválido.');
         if (!payload.notasFiscais.length) throw new Error('Selecione ao menos uma NF pendente para o agendamento.');
         delete payload.fornecedorPendenteInterno;
+        const awareness = await confirmAwarenessForPayload(payload);
+        if (awareness.analysis?.requiresAwareness && !awareness.confirmed) return;
+        if (awareness.confirmed) payload.confirmarCienciaVencimento = true;
         const data = await api("/api/agendamentos", { method: "POST", body: JSON.stringify(payload) });
         byId("agendamentoId").value = data.id || "";
         byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo} | ID: ${data.id}`;
@@ -1365,9 +1533,31 @@ Deseja liberar manualmente a descarga deste veículo?`);
     });
 
     byId("loadAgendamentos")?.addEventListener("click", async () => { try { await loadAgendamentos(); } catch (err) { byId("operacaoMsg").textContent = err.message; } });
-    byId("btnAprovar")?.addEventListener("click", async () => handleOp(() => postStatus("aprovar", { janelaId: byId("internalJanelaSelect")?.value }), "Agendamento aprovado."));
+    byId("consultaNfForm")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const numeroNf = new FormData(e.target).get('numeroNf');
+        await consultarNfInterna(numeroNf);
+      } catch (err) {
+        const target = byId('consultaNfResult');
+        if (target) target.innerHTML = `<div class="warning-box">${escapeHtml(err.message)}</div>`;
+      }
+    });
+    byId("btnAprovar")?.addEventListener("click", async () => handleOp(async () => {
+      const body = { janelaId: byId("internalJanelaSelect")?.value };
+      const awareness = await confirmAwarenessForExistingAgendamento(currentId(), body);
+      if (awareness.analysis?.requiresAwareness && !awareness.confirmed) return;
+      if (awareness.confirmed) body.confirmarCienciaVencimento = true;
+      return postStatus("aprovar", body);
+    }, "Agendamento aprovado."));
     byId("btnReprovar")?.addEventListener("click", async () => handleOp(() => postStatus("reprovar", { motivo: "Reprovado via painel" }), "Agendamento reprovado."));
-    byId("btnReagendar")?.addEventListener("click", async () => handleOp(() => postStatus("reagendar", { dataAgendada: new Date().toISOString().slice(0, 10), horaAgendada: "10:00", janelaId: byId("internalJanelaSelect")?.value }), "Agendamento reagendado."));
+    byId("btnReagendar")?.addEventListener("click", async () => handleOp(async () => {
+      const body = { dataAgendada: new Date().toISOString().slice(0, 10), horaAgendada: "10:00", janelaId: byId("internalJanelaSelect")?.value };
+      const awareness = await confirmAwarenessForExistingAgendamento(currentId(), body);
+      if (awareness.analysis?.requiresAwareness && !awareness.confirmed) return;
+      if (awareness.confirmed) body.confirmarCienciaVencimento = true;
+      return postStatus("reagendar", body);
+    }, "Agendamento reagendado."));
     byId("btnCancelar")?.addEventListener("click", async () => handleOp(() => postStatus("cancelar", { motivo: "Cancelado via painel" }), "Agendamento cancelado."));
     byId("btnIniciar")?.addEventListener("click", async () => handleOp(() => postStatus("iniciar"), "Descarga iniciada."));
     byId("btnFinalizar")?.addEventListener("click", async () => handleOp(() => postStatus("finalizar"), "Agendamento finalizado."));
