@@ -90,12 +90,9 @@ export async function generateVoucherPdf(agendamento, options = {}) {
     ['Janela', agendamento.janela?.codigo || agendamento.janela || '-'],
     ['Token do motorista', agendamento.publicTokenMotorista || '-'],
     ['Token do fornecedor', agendamento.publicTokenFornecedor || '-'],
-    ['Notas', formatNumberBR(agendamento.quantidadeNotas ?? 0, 0, 0)],
-    ['Volumes', formatNumberBR(agendamento.quantidadeVolumes || 0, 0, 3)],
-    ['Peso total', formatWeightKg(agendamento.pesoTotalKg || 0)],
     ['Quantidade de notas', String(agendamento.quantidadeNotas ?? 0)],
-    ['Quantidade de volumes', Number(agendamento.quantidadeVolumes || 0).toFixed(3)],
-    ['Peso total', `${Number(agendamento.pesoTotalKg || 0).toFixed(3)} kg`],
+    ['Quantidade de volumes', formatNumberBR(agendamento.quantidadeVolumes || 0, 0, 3)],
+    ['Peso total', formatWeightKg(agendamento.pesoTotalKg || 0)],
     ['Valor total', money(agendamento.valorTotalNf || 0)]
   ];
 
@@ -112,22 +109,14 @@ export async function generateVoucherPdf(agendamento, options = {}) {
   doc.roundedRect(summaryX, notasY, contentWidth, notasH, 14).fillAndStroke('#ffffff', '#dbe2ea');
   drawSectionTitle(doc, 'Notas fiscais e observações', summaryX + 16, notasY + 14);
   const notas = Array.isArray(agendamento.notasFiscais) ? agendamento.notasFiscais : [];
-  let lineY = notasY + 38;
-  if (!notas.length) {
-    doc.font('Helvetica').fontSize(9).fillColor('#334155').text('Sem notas fiscais cadastradas.', summaryX + 16, lineY, { width: contentWidth - 32 });
-  } else {
-    notas.slice(0, 5).forEach((nota) => {
-      const linha = `NF ${nota.numeroNf || '-'} | Série ${nota.serie || '-'} | Vol. ${formatNumberBR(nota.volumes || 0, 0, 3)} | Peso ${formatWeightKg(nota.peso || 0)} | ${money(nota.valorNf || 0)}`;
-      doc.font('Helvetica').fontSize(8.5).fillColor('#334155').text(linha, summaryX + 16, lineY, { width: contentWidth - 32, ellipsis: true });
-      lineY += 15;
-    });
-    if (notas.length > 5) {
-      doc.font('Helvetica-Oblique').fontSize(8).fillColor('#64748b').text(`+ ${notas.length - 5} NF adicionais no sistema.`, summaryX + 16, lineY, { width: contentWidth - 32 });
-    }
-  }
+  const notasTexto = notas.length
+    ? notas.map((nota) => String(nota?.numeroNf || '').trim()).filter(Boolean).join(' / ')
+    : 'Sem notas fiscais cadastradas.';
+  doc.font('Helvetica-Bold').fontSize(8).fillColor('#64748b').text('Notas fiscais', summaryX + 16, notasY + 38);
+  doc.font('Helvetica').fontSize(9).fillColor('#0f172a').text(notasTexto, summaryX + 16, notasY + 50, { width: contentWidth - 32, height: 28, ellipsis: true });
   if (agendamento.observacoes) {
-    doc.font('Helvetica-Bold').fontSize(8).fillColor('#64748b').text('Observações', summaryX + 16, notasY + 95);
-    doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a').text(String(agendamento.observacoes), summaryX + 16, notasY + 106, { width: contentWidth - 32, height: 18, ellipsis: true });
+    doc.font('Helvetica-Bold').fontSize(8).fillColor('#64748b').text('Observações', summaryX + 16, notasY + 92);
+    doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a').text(String(agendamento.observacoes), summaryX + 16, notasY + 104, { width: contentWidth - 32, height: 18, ellipsis: true });
   }
 
   const qrY = 524;
@@ -140,8 +129,7 @@ export async function generateVoucherPdf(agendamento, options = {}) {
   doc.image(qrCheckin, summaryX + 45, qrY + 40, { fit: [165, 165] });
   doc.image(qrCheckout, summaryX + 319, qrY + 40, { fit: [165, 165] });
   doc.font('Helvetica').fontSize(8.5).fillColor('#475569').text('Use este QR no recebimento para registrar a chegada do veículo.', summaryX + 16, qrY + 176, { width: 220 });
-  doc.text('Use este QR ao finalizar a operação, para registrar a saída do veículo.', summaryX + 290, qrY + 176, { width: 220 });
-  doc.text('Use este QR ao finalizar a operação e liberar a saída do veículo.', summaryX + 290, qrY + 176, { width: 220 });
+  doc.text('Use este QR ao finalizar a operação e registrar a saída do veículo.', summaryX + 290, qrY + 176, { width: 220 });
   doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#0f172a').text(`Token: ${checkinToken || '-'}`, summaryX + 16, qrY + 204, { width: 220 });
   doc.text(`Token: ${checkoutToken || '-'}`, summaryX + 290, qrY + 204, { width: 220 });
   doc.font('Helvetica').fontSize(6.5).fillColor('#64748b').text(checkinUrl, summaryX + 16, qrY + 218, { width: 220, ellipsis: true });
