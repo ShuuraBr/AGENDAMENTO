@@ -13,7 +13,10 @@
     scanning: false,
     internalPendingFornecedor: null,
     internalSelectedNotas: [],
-    docaOptions: []
+    docaOptions: [],
+    currentUser: null,
+    auditoria: [],
+    avaliacaoToken: ""
   };
 
   const CADASTRO_CONFIG = {
@@ -213,8 +216,32 @@
     return String(status || "").replaceAll("_", " ");
   }
 
+  function statusTone(status = "", semaforo = "") {
+    const statusMap = {
+      PENDENTE_APROVACAO: 'amarelo',
+      APROVADO: 'azul',
+      CHEGOU: 'laranja',
+      EM_DESCARGA: 'laranja',
+      FINALIZADO: 'verde',
+      CANCELADO: 'vermelho',
+      REPROVADO: 'vermelho',
+      NO_SHOW: 'cinza',
+      LIVRE: 'verde'
+    };
+    const direct = statusMap[String(status || '').toUpperCase()];
+    if (direct) return direct;
+    const hint = String(semaforo || '').toLowerCase();
+    if (hint.includes('verde')) return 'verde';
+    if (hint.includes('amarelo')) return 'amarelo';
+    if (hint.includes('azul')) return 'azul';
+    if (hint.includes('laranja')) return 'laranja';
+    if (hint.includes('cinza')) return 'cinza';
+    if (hint.includes('vermelho')) return 'vermelho';
+    return 'azul';
+  }
+
   function renderStatusBadge(status, semaforo) {
-    return `<span class="badge ${semaforoClass(semaforo || status)}">${escapeHtml(statusLabel(status))}</span>`;
+    return `<span class="badge ${statusTone(status, semaforo)}">${escapeHtml(statusLabel(status))}</span>`;
   }
 
   function renderNotasTable(notas) {
@@ -345,17 +372,53 @@
     return Date.now() >= data.exp * 1000;
   }
 
+  function syncCurrentUserFromToken() {
+    if (!state.token || isTokenExpired(state.token)) {
+      state.currentUser = null;
+      return null;
+    }
+    const payload = parseJwt(state.token) || {};
+    state.currentUser = {
+      id: payload.sub || null,
+      nome: payload.nome || "",
+      perfil: payload.perfil || ""
+    };
+    return state.currentUser;
+  }
+
+  function currentProfile() {
+    return String(state.currentUser?.perfil || syncCurrentUserFromToken()?.perfil || "").toUpperCase();
+  }
+
+  function isAdmin() {
+    return currentProfile() === "ADMIN";
+  }
+
+  function applyRoleAccess() {
+    const usersTab = document.querySelector('.cad-tab[data-tipo="usuarios"]');
+    if (usersTab) usersTab.classList.toggle('hidden', !isAdmin());
+    if (!isAdmin() && state.cadastroTipo === 'usuarios') {
+      state.cadastroTipo = 'fornecedores';
+      setActiveButton('.cad-tab', document.querySelector('.cad-tab[data-tipo="fornecedores"]'));
+      renderCadastroForm();
+      loadCadastro().catch(() => {});
+    }
+  }
+
   function logout() {
     localStorage.removeItem("token");
     state.token = "";
+    state.currentUser = null;
     updateNav();
     showView("public-home");
   }
 
   function updateNav() {
     const logged = !!state.token && !isTokenExpired(state.token);
+    if (logged) syncCurrentUserFromToken();
     byId("publicNav")?.classList.toggle("hidden", logged);
     byId("privateNav")?.classList.toggle("hidden", !logged);
+    applyRoleAccess();
     if (!logged && state.token) logout();
   }
 
@@ -600,6 +663,14 @@
     setValue('internalValorTotalNf', formatDecimalBR(totalValor, 2));
   }
 
+  function syncPendingNotasSelectionUI(wrap) {
+    const boxes = [...(wrap?.querySelectorAll('[data-internal-nf]') || [])];
+    const button = wrap?.querySelector('#btnSelectAllPendingNotas');
+    if (!button) return;
+    const allChecked = boxes.length > 0 && boxes.every((el) => el.checked);
+    button.textContent = allChecked ? 'Desmarcar todos' : 'Selecionar todos';
+  }
+
   function renderPendingNotasInterno() {
     const wrap = byId('internalPendingNotas');
     if (!wrap) return;
@@ -638,16 +709,20 @@
     const sync = () => {
       state.internalSelectedNotas = notas.filter((_nota, index) => wrap.querySelector(`[data-internal-nf="${index}"]`)?.checked);
       updateInternalTotals();
+      syncPendingNotasSelectionUI(wrap);
     };
 
     wrap.querySelectorAll('[data-internal-nf]').forEach((el) => el.addEventListener('change', sync));
     wrap.querySelector('#btnSelectAllPendingNotas')?.addEventListener('click', () => {
-      wrap.querySelectorAll('[data-internal-nf]').forEach((el) => { el.checked = true; });
+      const checkboxes = [...wrap.querySelectorAll('[data-internal-nf]')];
+      const allChecked = checkboxes.length > 0 && checkboxes.every((el) => el.checked);
+      checkboxes.forEach((el) => { el.checked = !allChecked; });
       sync();
     });
 
     state.internalSelectedNotas = [...notas];
     updateInternalTotals();
+    syncPendingNotasSelectionUI(wrap);
   }
 
 
@@ -841,28 +916,83 @@
     Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
     const data = await api(`/api/dashboard/operacional?${params.toString()}`);
     const kpis = byId("kpis");
+    const hiddenKpis = new Set(['documentos', 'volumes', 'origem']);
+    const labels = {
+      total: 'Total',
+      pendentes: 'Pendentes de aprovação',
+      aprovados: 'Aprovados',
+      chegou: 'Chegou',
+      emDescarga: 'Em descarga',
+      finalizados: 'Finalizados',
+      cancelados: 'Cancelados',
+      noShow: 'No-show',
+      pesoKg: 'Peso total (kg)',
+      valorTotal: 'Valor total'
+    };
     if (kpis) {
-      kpis.innerHTML = "";
+      kpis.className = 'grid kpi-grid';
+      kpis.innerHTML = '';
       Object.entries(data.kpis || {}).forEach(([k, v]) => {
-        const div = document.createElement("div");
-        div.className = "kpi";
-        const key = String(k || '').toLowerCase();
+        if (hiddenKpis.has(String(k || ''))) return;
+        const div = document.createElement('div');
+        div.className = 'kpi';
+        const key = String(k || '');
         let formatted = v;
         if (key.includes('valor')) formatted = Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        else if (key.includes('peso') || key.includes('volume')) formatted = formatDecimalBR(v || 0, 3);
+        else if (key.toLowerCase().includes('peso')) formatted = formatDecimalBR(v || 0, 3);
         else if (typeof v === 'number') formatted = formatIntegerBR(v);
-        div.innerHTML = `<strong>${escapeHtml(k)}</strong><span>${escapeHtml(formatted)}</span>`;
+        const length = String(formatted ?? '').length;
+        const valueClass = length > 16 ? 'kpi-value kpi-value-compact' : length > 11 ? 'kpi-value kpi-value-tight' : 'kpi-value';
+        const label = labels[key] || statusLabel(key);
+        div.innerHTML = `<span class="kpi-label" title="${escapeHtml(label)}">${escapeHtml(label)}</span><span class="${valueClass}" title="${escapeHtml(formatted)}">${escapeHtml(formatted)}</span>`;
         kpis.appendChild(div);
       });
     }
     renderOperationalTable(data.agendamentos || [], { targetId: 'dashboardTable', includeActions: true });
+    await loadAuditoria();
   }
 
-  function semaforoClass(v) {
-    const s = String(v || "").toLowerCase();
-    if (s.includes("verde")) return "verde";
-    if (s.includes("amarelo")) return "amarelo";
-    return "vermelho";
+  function formatAuditDate(value) {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString('pt-BR');
+  }
+
+  function renderAuditoria(items = []) {
+    const wrap = byId('auditoriaList');
+    if (!wrap) return;
+    state.auditoria = Array.isArray(items) ? items : [];
+    if (!state.auditoria.length) {
+      wrap.innerHTML = '<p class="auditoria-empty">Nenhum log de auditoria encontrado.</p>';
+      return;
+    }
+    wrap.innerHTML = `<div class="auditoria-list">${state.auditoria.map((item) => {
+      const who = [item.usuarioNome || '-', item.perfil ? `(${item.perfil})` : ''].join(' ').trim();
+      const detail = item.detalhes ? escapeHtml(JSON.stringify(item.detalhes, null, 2)) : '';
+      return `<div class="auditoria-item">
+        <div class="auditoria-item-header">
+          <div>
+            <strong>${escapeHtml(item.acao || '-')}</strong>
+            <div class="auditoria-meta">${escapeHtml(item.entidade || '-')} #${escapeHtml(item.entidadeId ?? '-')}</div>
+          </div>
+          <div class="auditoria-meta">${escapeHtml(formatAuditDate(item.createdAt))}</div>
+        </div>
+        <div class="auditoria-meta mt12">Usuário: ${escapeHtml(who)}${item.ip ? ` • IP ${escapeHtml(item.ip)}` : ''}</div>
+        ${detail ? `<pre>${detail}</pre>` : ''}
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  async function loadAuditoria() {
+    if (!state.token || isTokenExpired(state.token)) return;
+    try {
+      const logs = await api('/api/dashboard/logs?limit=40');
+      renderAuditoria(logs || []);
+    } catch (err) {
+      const wrap = byId('auditoriaList');
+      if (wrap) wrap.innerHTML = `<p class="auditoria-empty">${escapeHtml(err.message)}</p>`;
+    }
   }
 
   async function loadDocas() {
@@ -876,7 +1006,7 @@
         <h3>${escapeHtml(d.codigo)}</h3>
         <p>${escapeHtml(d.descricao || "")}</p>
         <p><strong>Ocupação:</strong> ${escapeHtml(d.ocupacaoAtual)}</p>
-        <span class="badge ${semaforoClass(d.semaforo)}">${escapeHtml(d.semaforo)}</span>
+        <span class="badge ${statusTone(d.ocupacaoAtual, d.semaforo)}">${escapeHtml(d.semaforo)}</span>
         <div class="mt12">
           <strong>Fila (${d.fila.length})</strong>
           ${d.fila.length ? d.fila.map((f) => {
@@ -992,6 +1122,12 @@
   }
 
   async function loadCadastro() {
+    if (state.cadastroTipo === "usuarios" && !isAdmin()) {
+      byId("cadastroMsg").textContent = "Apenas administradores podem acessar o cadastro de usuários.";
+      state.cadastroTipo = "fornecedores";
+      renderCadastroForm();
+      applyRoleAccess();
+    }
     const config = CADASTRO_CONFIG[state.cadastroTipo];
     const items = await api(config.endpoint);
     renderCadastroList(items);
@@ -1053,12 +1189,13 @@
       try {
         data = await api(endpoint, { method: "POST", body: JSON.stringify({}) });
       } catch (err) {
-        if (modo === 'checkin' && /divergente/i.test(String(err.message || ''))) {
-          const liberar = window.confirm(`${err.message}
+        const message = String(err.message || '');
+        if (modo === 'checkin' && (/fora da janela/i.test(message) || /divergente/i.test(message))) {
+          const liberar = window.confirm(`${message}
 
 Deseja liberar manualmente a descarga deste veículo?`);
           if (!liberar) throw err;
-          data = await api(endpoint, { method: "POST", body: JSON.stringify({ overrideDateMismatch: true }) });
+          data = await api(endpoint, { method: "POST", body: JSON.stringify({ overrideManualAuthorization: true, overrideDateMismatch: true, overrideTimeMismatch: true }) });
         } else {
           throw err;
         }
@@ -1072,7 +1209,37 @@ Deseja liberar manualmente a descarga deste veículo?`);
     }
   }
 
+  async function loadAvaliacaoForm(token) {
+    state.avaliacaoToken = String(token || '').trim();
+    const intro = byId('avaliacaoIntro');
+    const msg = byId('avaliacaoMsg');
+    const form = byId('avaliacaoForm');
+    if (msg) msg.textContent = '';
+    if (!state.avaliacaoToken) {
+      if (intro) intro.innerHTML = '';
+      if (msg) msg.textContent = 'Token de avaliação não informado.';
+      return;
+    }
+    const data = await api(`/api/public/avaliacao/${encodeURIComponent(state.avaliacaoToken)}`);
+    if (intro) {
+      intro.innerHTML = `
+        <div><span class="field-label">Protocolo</span><strong>${escapeHtml(data.protocolo || '-')}</strong></div>
+        <div><span class="field-label">Fornecedor</span><strong>${escapeHtml(data.fornecedor || '-')}</strong></div>
+        <div><span class="field-label">Transportadora</span><strong>${escapeHtml(data.transportadora || '-')}</strong></div>
+        <div><span class="field-label">Motorista</span><strong>${escapeHtml(data.motorista || '-')}</strong></div>
+        <div><span class="field-label">CPF</span><strong>${escapeHtml(data.cpfMotorista || '-')}</strong></div>
+        <div><span class="field-label">Placa</span><strong>${escapeHtml(data.placa || '-')}</strong></div>
+      `;
+    }
+    if (form) {
+      form.reset();
+      Array.from(form.elements).forEach((el) => { if (el?.tagName) el.disabled = !!data.respondeu; });
+    }
+    if (msg && data.respondeu) msg.textContent = 'Esta avaliação já foi respondida. Obrigado pelo retorno.';
+  }
+
   document.addEventListener("DOMContentLoaded", async () => {
+    syncCurrentUserFromToken();
     updateNav();
     renderNfRows();
     renderCadastroForm();
@@ -1109,6 +1276,8 @@ Deseja liberar manualmente a descarga deste veículo?`);
         const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
         state.token = data.token;
         localStorage.setItem("token", data.token);
+        state.currentUser = data.user || null;
+        syncCurrentUserFromToken();
         updateNav();
         await fillSelects();
         if (!applyCheckinRouteContext({ autoValidate: true })) {
@@ -1122,11 +1291,16 @@ Deseja liberar manualmente a descarga deste veículo?`);
     });
 
     byId("loadDashboard")?.addEventListener("click", async () => { try { await loadDashboard(); } catch (err) { alert(err.message); } });
+    byId("loadAuditoria")?.addEventListener("click", async () => { try { await loadAuditoria(); } catch (err) { alert(err.message); } });
     byId("loadDocas")?.addEventListener("click", async () => { try { await loadDocas(); } catch (err) { alert(err.message); } });
 
     document.querySelectorAll(".cad-tab").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.preventDefault();
+        if (btn.dataset.tipo === "usuarios" && !isAdmin()) {
+          byId("cadastroMsg").textContent = "Apenas administradores podem acessar o cadastro de usuários.";
+          return;
+        }
         state.cadastroTipo = btn.dataset.tipo;
         setActiveButton(".cad-tab", btn);
         renderCadastroForm();
@@ -1270,6 +1444,19 @@ Deseja liberar manualmente a descarga deste veículo?`);
       e.preventDefault();
       await validateCheckin(normalizeOperationToken(new FormData(e.target).get("token")));
     });
+
+    byId("avaliacaoForm")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        if (!state.avaliacaoToken) throw new Error("Token de avaliação não informado.");
+        const payload = Object.fromEntries(new FormData(e.target).entries());
+        const data = await api(`/api/public/avaliacao/${encodeURIComponent(state.avaliacaoToken)}`, { method: 'POST', body: JSON.stringify(payload) });
+        byId('avaliacaoMsg').textContent = data.message || 'Avaliação registrada com sucesso.';
+        await loadAvaliacaoForm(state.avaliacaoToken);
+      } catch (err) {
+        byId('avaliacaoMsg').textContent = err.message;
+      }
+    });
     byId("startCamera")?.addEventListener("click", startCameraScan);
     byId("stopCamera")?.addEventListener("click", stopCameraScan);
 
@@ -1297,6 +1484,13 @@ Deseja liberar manualmente a descarga deste veículo?`);
         applyCheckinRouteContext({ autoValidate: false });
       } else {
         showView("login");
+      }
+    } else if (view === 'avaliacao' && token) {
+      showView('avaliacao');
+      try {
+        await loadAvaliacaoForm(token);
+      } catch (err) {
+        byId('avaliacaoMsg').textContent = err.message;
       }
     } else if (view === "motorista" && token) {
       showView("motorista");

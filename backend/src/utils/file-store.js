@@ -47,6 +47,8 @@ export function readDocas() { return readJsonFile('docas.json', []); }
 export function readJanelas() { return readJsonFile('janelas.json', []); }
 export function readDocumentos() { return readJsonFile('documentos.json', []); }
 export function writeDocumentos(items) { return writeJsonFile('documentos.json', items); }
+export function readAuditLogs() { return readJsonFile('logs-auditoria.json', []); }
+export function writeAuditLogs(items) { return writeJsonFile('logs-auditoria.json', items); }
 export function readFornecedores() { return readJsonFile('fornecedores.json', []); }
 export function readTransportadoras() { return readJsonFile('transportadoras.json', []); }
 export function readMotoristas() { return readJsonFile('motoristas.json', []); }
