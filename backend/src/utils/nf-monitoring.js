@@ -160,15 +160,27 @@ function normalizeRelatorioRow(row = {}) {
   const fornecedor = normalizeText(merged['Fornecedor'] ?? merged.fornecedor);
   const vencimento = normalizeText(merged['Data 1º vencimento'] ?? merged['Data 1o vencimento'] ?? merged.dataPrimeiroVencimento ?? merged.vencimento);
   const status = normalizeText(merged['Status'] ?? merged.status);
+  const dataEntrada = normalizeText(merged['Data de Entrada'] ?? merged.dataEntrada);
+  const dataCadastro = normalizeText(merged['Data do cadastro'] ?? merged.dataCadastro);
+  const entrada = normalizeText(merged['Entrada'] ?? merged.entrada);
+  const empresa = normalizeText(merged['Empresa'] ?? merged.empresa);
   const rowHash = normalizeText(merged.rowHash);
   const dueInfo = computeDueInfo({ dueDateValue: vencimento });
+  const entryInfo = computeDueInfo({ dueDateValue: dataEntrada });
+  const cadastroInfo = computeDueInfo({ dueDateValue: dataCadastro });
   return {
     rowHash,
     agendamentoId: merged.agendamentoId == null ? null : Number(merged.agendamentoId),
     fornecedor,
     numeroNf,
     serie,
+    empresa,
+    entrada,
     status,
+    dataEntrada: entryInfo.dueDateIso || '',
+    dataEntradaBr: entryInfo.dueDateBr || dataEntrada,
+    dataCadastro: cadastroInfo.dueDateIso || '',
+    dataCadastroBr: cadastroInfo.dueDateBr || dataCadastro,
     dataPrimeiroVencimento: dueInfo.dueDateIso,
     dataPrimeiroVencimentoBr: dueInfo.dueDateBr,
     diasParaPrimeiroVencimento: dueInfo.daysUntilDue,
@@ -180,7 +192,7 @@ function normalizeRelatorioRow(row = {}) {
 
 async function loadRelatorioRowsFromDb() {
   const rows = await prisma.$queryRawUnsafe(
-    `SELECT rowHash, agendamentoId, ${quoteIdentifier('Fornecedor')} AS fornecedorRaw, ${quoteIdentifier('Nr. nota')} AS numeroNfRaw, ${quoteIdentifier('Série')} AS serieRaw, ${quoteIdentifier('Status')} AS statusRaw, ${quoteIdentifier('Data 1º vencimento')} AS vencimentoRaw, dadosOriginaisJson FROM ${quoteIdentifier(TABLE_NAME)}`
+    `SELECT rowHash, agendamentoId, ${quoteIdentifier('Fornecedor')} AS fornecedorRaw, ${quoteIdentifier('Nr. nota')} AS numeroNfRaw, ${quoteIdentifier('Série')} AS serieRaw, ${quoteIdentifier('Status')} AS statusRaw, ${quoteIdentifier('Data 1º vencimento')} AS vencimentoRaw, ${quoteIdentifier('Data de Entrada')} AS dataEntradaRaw, ${quoteIdentifier('Data do cadastro')} AS dataCadastroRaw, ${quoteIdentifier('Entrada')} AS entradaRaw, ${quoteIdentifier('Empresa')} AS empresaRaw, dadosOriginaisJson FROM ${quoteIdentifier(TABLE_NAME)}`
   );
   return (rows || []).map((row) => normalizeRelatorioRow({
     rowHash: row.rowHash,
@@ -190,7 +202,11 @@ async function loadRelatorioRowsFromDb() {
     'Nr. nota': row.numeroNfRaw,
     'Série': row.serieRaw,
     'Status': row.statusRaw,
-    'Data 1º vencimento': row.vencimentoRaw
+    'Data 1º vencimento': row.vencimentoRaw,
+    'Data de Entrada': row.dataEntradaRaw,
+    'Data do cadastro': row.dataCadastroRaw,
+    'Entrada': row.entradaRaw,
+    'Empresa': row.empresaRaw
   }));
 }
 
@@ -230,6 +246,10 @@ function enrichNoteWithRelatorio(nota = {}, row = null, scheduledDateValue = nul
     ...nota,
     disponivelNoRelatorio: !!row,
     rowHash: normalizeText(nota?.rowHash || row?.rowHash || ''),
+    empresa: normalizeText(nota?.empresa || row?.empresa || ''),
+    entrada: normalizeText(nota?.entrada || row?.entrada || ''),
+    dataEntrada: normalizeText(nota?.dataEntrada || row?.dataEntrada || ''),
+    dataEntradaBr: normalizeText(nota?.dataEntradaBr || row?.dataEntradaBr || ''),
     dataPrimeiroVencimento: dueInfo.dueDateIso,
     dataPrimeiroVencimentoBr: dueInfo.dueDateBr,
     diasParaPrimeiroVencimento: dueInfo.daysUntilDue,
