@@ -75,7 +75,8 @@ const SHEET_COLUMNS = [
   'Valor FEEF - MT',
   'ICMS desonerado',
   'ICMS descontado PIS/COFINS',
-  'CFOP'
+  'CFOP',
+  'Destino'
 ];
 
 let watcherHandle = null;
