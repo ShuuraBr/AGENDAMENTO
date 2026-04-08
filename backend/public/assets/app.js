@@ -200,9 +200,13 @@
 
   function noteEmpresaMatches(nota, target) {
     const desired = resolveStoreKey(target) || normalizeCompanyKey(target);
-    const candidates = [nota?.destino, nota?.destinoRelatorio, nota?.empresa, nota?.empresaRelatorio]
+    const destinationCandidates = [nota?.destino, nota?.destinoRelatorio]
       .map((value) => resolveStoreKey(value) || normalizeCompanyKey(value))
       .filter(Boolean);
+    const fallbackCandidates = [nota?.empresa, nota?.empresaRelatorio]
+      .map((value) => resolveStoreKey(value) || normalizeCompanyKey(value))
+      .filter(Boolean);
+    const candidates = destinationCandidates.length ? destinationCandidates : fallbackCandidates;
     if (!desired || !candidates.length) return false;
     return candidates.some((candidate) => candidate === desired || candidate.includes(desired) || desired.includes(candidate));
   }
@@ -1404,6 +1408,21 @@
     }
   }
 
+  function renderConsultaAgendamentoNotas(item, { targetDigits = '', searchByDateOnly = false } = {}) {
+    const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : Array.isArray(item?.notas) ? item.notas : [];
+    if (!notas.length) return '<span>-</span>';
+    const filtered = searchByDateOnly
+      ? notas
+      : (targetDigits ? notas.filter((nota) => normalizeDigitsValue(nota?.numeroNf || '').includes(targetDigits)) : notas);
+    const source = filtered.length ? filtered : notas;
+    return `<div class="consulta-nf-agendamento-nfs">${source.map((nota) => {
+      const numero = `NF ${String(nota?.numeroNf || '-').trim() || '-'}`;
+      const serie = String(nota?.serie || '').trim();
+      const label = serie ? `${numero} • Série ${serie}` : numero;
+      return `<span class="nf-series-item consulta-nf-agendamento-nf-item">${escapeHtml(label)}</span>`;
+    }).join('')}</div>`;
+  }
+
   function renderConsultaNfResult(data = {}) {
     const relatorio = Array.isArray(data.relatorio) ? data.relatorio : [];
     const agendamentos = Array.isArray(data.agendamentos) ? data.agendamentos : [];
@@ -1443,11 +1462,11 @@
         </div>
         <div class="result-card">
           <h3>${searchByDateOnly ? `Agendamentos do dia (${agendamentos.length})` : `Agendamentos vinculados (${agendamentos.length})`}</h3>
-          ${agendamentos.length ? `<table class="table"><thead><tr><th>ID</th><th>Protocolo</th><th>Status</th><th>Usuário</th><th>Fornecedor</th><th>Data agendada</th><th>Faltam</th><th>Hora</th><th>Data entrada</th><th>1º vencimento</th></tr></thead><tbody>${agendamentos.map((item) => {
+          ${agendamentos.length ? `<table class="table"><thead><tr><th>ID</th><th>Protocolo</th><th>Status</th><th>Usuário</th><th>Fornecedor</th><th>NF(s)</th><th>Data agendada</th><th>Faltam</th><th>Hora</th><th>Data entrada</th><th>1º vencimento</th></tr></thead><tbody>${agendamentos.map((item) => {
             const notas = Array.isArray(item.notasFiscais) ? item.notasFiscais : [];
             const notaConsultada = (targetDigits ? notas.find((nota) => normalizeDigitsValue(nota?.numeroNf || '').includes(targetDigits)) : null) || notas[0] || {};
             const faltam = item.diasParaAgendamento == null ? formatRemainingDaysLabel(item.dataAgendada || '') : (Number(item.diasParaAgendamento) === 0 ? 'Hoje' : Number(item.diasParaAgendamento) > 0 ? `${Number(item.diasParaAgendamento)} dia(s)` : `${Math.abs(Number(item.diasParaAgendamento))} dia(s) atrás`);
-            return `<tr><td>${escapeHtml(item.id || '-')}</td><td>${escapeHtml(item.protocolo || '-')}</td><td>${renderStatusBadge(item.status, item.semaforo || '')}</td><td>${escapeHtml(item.usuarioAgendamento || '-')}</td><td>${escapeHtml(item.fornecedor || '-')}</td><td>${escapeHtml(formatDateBR(item.dataAgendada || ''))}</td><td>${escapeHtml(faltam)}</td><td>${escapeHtml(formatHour(item.horaAgendada || ''))}</td><td>${escapeHtml(notaConsultada?.dataEntradaBr || notaConsultada?.dataEntrada || '-')}</td><td>${escapeHtml(notaConsultada?.dataPrimeiroVencimentoBr || notaConsultada?.dataPrimeiroVencimento || '-')}</td></tr>`;
+            return `<tr><td>${escapeHtml(item.id || '-')}</td><td>${escapeHtml(item.protocolo || '-')}</td><td>${renderStatusBadge(item.status, item.semaforo || '')}</td><td>${escapeHtml(item.usuarioAgendamento || '-')}</td><td>${escapeHtml(item.fornecedor || '-')}</td><td>${renderConsultaAgendamentoNotas(item, { targetDigits, searchByDateOnly })}</td><td>${escapeHtml(formatDateBR(item.dataAgendada || ''))}</td><td>${escapeHtml(faltam)}</td><td>${escapeHtml(formatHour(item.horaAgendada || ''))}</td><td>${escapeHtml(notaConsultada?.dataEntradaBr || notaConsultada?.dataEntrada || '-')}</td><td>${escapeHtml(notaConsultada?.dataPrimeiroVencimentoBr || notaConsultada?.dataPrimeiroVencimento || '-')}</td></tr>`;
           }).join('')}</tbody></table>` : `<p class="hint">${searchByDateOnly ? 'Nenhum agendamento encontrado para a data informada.' : 'Nenhum agendamento encontrado para esta NF. Situação atual: não agendada.'}</p>`}
         </div>
       </div>
@@ -1588,8 +1607,13 @@ Deseja liberar manualmente a descarga deste veículo?`);
         updateNav();
         await fillSelects();
         if (!applyCheckinRouteContext({ autoValidate: true })) {
-          showView("dashboard");
-          await loadDashboard();
+          const requestedView = new URLSearchParams(location.search).get("view");
+          if (requestedView === "consulta-nf") {
+            showView("consulta-nf");
+          } else {
+            showView("dashboard");
+            await loadDashboard();
+          }
         }
         byId("loginMsg").textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
       } catch (err) {
@@ -1832,7 +1856,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
       if (input) input.value = token;
       byId("motoristaConsultaForm")?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
     } else if (view === "consulta-nf") {
-      showView(state.token && !isTokenExpired(state.token) ? "agendamentos" : "login");
+      showView(state.token && !isTokenExpired(state.token) ? "consulta-nf" : "login");
     } else if ((view === "consulta" || view === "fornecedor") && token) {
       showView("consulta");
       const input = byId("consultaForm")?.querySelector('input[name="token"]');

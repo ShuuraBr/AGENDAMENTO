@@ -27,6 +27,7 @@
       <button type="button" class="nav-btn" data-view="docas">Painel de Docas</button>
       <button type="button" class="nav-btn" data-view="cadastros">Cadastros</button>
       <button type="button" class="nav-btn" data-view="agendamentos">Agendamentos</button>
+      <button type="button" class="nav-btn" data-view="consulta-nf">Consulta por NF</button>
       <button type="button" class="nav-btn" data-view="checkin">Check-in / Check-out QR</button>
       <button type="button" id="btnLogout">Sair</button>
     </nav>
@@ -227,8 +228,8 @@
 
     <!-- Aba Agendamentos sem painel de consulta por NF -->
     <section id="agendamentos" class="view">
-      <div class="grid2">
-        <div class="card">
+      <div class="agendamentos-layout">
+        <div class="card agendamento-form-card">
           <h2>Novo agendamento interno</h2>
           <form id="agendamentoForm" class="operator-form" autocomplete="off">
             <div class="card inner">
@@ -277,19 +278,6 @@
           <p id="agendamentoMsg" class="msg"></p>
         </div>
 
-        <div class="card agendamento-consulta-card">
-          <h2>Consulta por NF</h2>
-          <form id="consultaNfForm" class="consulta-nf-form mt12">
-            <div class="consulta-nf-toolbar">
-              <label>Número da NF (opcional)<input name="numeroNf" type="text" inputmode="numeric" placeholder="Digite o número da NF" /></label>
-              <label>Data para conferência<input name="dataAgendada" type="date" /></label>
-              <button type="submit">Consultar NF</button>
-            </div>
-          </form>
-          <p class="hint mt12">A consulta pode ser feita pela NF, apenas pela data, ou pelos dois campos. O resultado cruza o relatório terceirizado com os agendamentos internos, indicando situação da NF, data de entrada, 1º vencimento, usuário do agendamento e quantas notas estão agendadas para a data informada.</p>
-          <div id="consultaNfResult" class="mt16"></div>
-        </div>
-
         <div class="card workflow-card-full">
           <h2>Workflow operacional</h2>
           <div class="workflow-id-row">
@@ -308,11 +296,24 @@
             <button id="btnQr">QR Code</button>
             <button id="btnEnviarInfos">Enviar informações</button>
           </div>
-
-
           <p id="operacaoMsg" class="msg"></p>
           <div id="agendamentosList" class="mt16"></div>
         </div>
+      </div>
+    </section>
+
+    <section id="consulta-nf" class="view">
+      <div class="card consulta-nf-page-card">
+        <h2>Consulta por NF</h2>
+        <form id="consultaNfForm" class="consulta-nf-form mt12">
+          <div class="consulta-nf-toolbar">
+            <label>Número da NF (opcional)<input name="numeroNf" type="text" inputmode="numeric" placeholder="Digite o número da NF" /></label>
+            <label>Data para conferência<input name="dataAgendada" type="date" /></label>
+            <button type="submit">Consultar NF</button>
+          </div>
+        </form>
+        <p class="hint mt12">A consulta pode ser feita pela NF, apenas pela data, ou pelos dois campos. Quando a pesquisa for somente por data, o sistema listará todas as NFs agendadas no dia informado.</p>
+        <div id="consultaNfResult" class="mt16"></div>
       </div>
     </section>
 

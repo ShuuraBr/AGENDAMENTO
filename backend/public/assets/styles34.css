@@ -232,6 +232,47 @@ body.modal-open{overflow:hidden}
   height: 22px;
 }
 
+.agendamentos-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.agendamento-form-card {
+  width: 100%;
+}
+
+.agendamento-form-card .operator-form {
+  gap: 16px;
+}
+
+.agendamento-form-card .operator-grid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.consulta-nf-page-card {
+  width: 100%;
+}
+
+.consulta-nf-agendamento-nfs {
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.consulta-nf-agendamento-nf-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.consulta-nf-agendamento-nf-item .nf-series-item {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+}
+
 .operational-table td.empresa-notas-cell {
   min-width: 180px;
 }
@@ -243,5 +284,9 @@ body.modal-open{overflow:hidden}
 @media (max-width: 720px) {
   .pending-note-tags {
     width: 100%;
+  }
+
+  .consulta-nf-agendamento-nfs {
+    min-width: 0;
   }
 }
