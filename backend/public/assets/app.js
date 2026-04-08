@@ -13,6 +13,8 @@
     scanning: false,
     internalPendingFornecedor: null,
     internalSelectedNotas: [],
+    internalSelectedNotaKeys: new Set(),
+    internalPendingSearchTerm: "",
     docaOptions: [],
     currentUser: null,
     auditoria: [],
@@ -365,7 +367,11 @@
       dataPrimeiroVencimentoBr: String(item.dataPrimeiroVencimentoBr || '').trim(),
       diasParaPrimeiroVencimento: item.diasParaPrimeiroVencimento == null ? null : Number(item.diasParaPrimeiroVencimento),
       alertaVencimentoProximo: !!item.alertaVencimentoProximo,
-      tooltipVencimento: String(item.tooltipVencimento || '').trim()
+      tooltipVencimento: String(item.tooltipVencimento || '').trim(),
+      origemManual: !!item.origemManual,
+      inseridaManual: !!item.inseridaManual,
+      preLancamentoPendente: !!item.preLancamentoPendente,
+      disponivelNoRelatorio: item.disponivelNoRelatorio === false ? false : true
     };
   }
 
@@ -818,49 +824,68 @@
     return String(text || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => ({ numeroNf: line, serie: '', chaveAcesso: '', volumes: 0, peso: 0, valorNf: 0, observacao: '' }));
   }
 
-  function selectedInternalNotas() {
-    const notas = Array.isArray(state.internalPendingFornecedor?.notas)
+  function buildInternalNotaKey(nota = {}) {
+    const normalized = normalizePendingNota(nota);
+    return String(
+      normalized.rowHash
+      || [
+        normalized.numeroNf,
+        normalized.serie,
+        normalized.valorNf,
+        normalized.peso,
+        normalized.volumes,
+        normalized.dataEntrada,
+        normalized.destino || normalized.empresa,
+        normalized.origemManual ? 'MANUAL' : 'RELATORIO'
+      ].join('::')
+    ).trim();
+  }
+
+  function getCurrentInternalNotas() {
+    return Array.isArray(state.internalPendingFornecedor?.notas)
       ? state.internalPendingFornecedor.notas
       : Array.isArray(state.internalPendingFornecedor?.notasFiscais)
         ? state.internalPendingFornecedor.notasFiscais
         : [];
+  }
 
-    const wrap = byId('internalPendingNotas');
-    const selectedFromDom = wrap
-      ? notas
-          .filter((_nota, index) => wrap.querySelector(`[data-internal-nf="${index}"]`)?.checked)
-          .map((nota) => ({ ...nota }))
-      : [];
+  function clearInternalPendingSelectionState({ keepFornecedor = false } = {}) {
+    if (!keepFornecedor) state.internalPendingFornecedor = null;
+    state.internalSelectedNotas = [];
+    state.internalSelectedNotaKeys = new Set();
+    state.internalPendingSearchTerm = '';
+    const searchInput = byId('internalPendingSearch');
+    if (searchInput) searchInput.value = '';
+  }
 
-    const source = selectedFromDom.length || wrap ? selectedFromDom : (state.internalSelectedNotas || []);
+  function syncInternalSelectionFromDom(wrap = byId('internalPendingNotas')) {
+    if (!wrap) return;
+    wrap.querySelectorAll('[data-internal-key]').forEach((el) => {
+      const key = String(el.dataset.internalKey || '').trim();
+      if (!key) return;
+      if (el.checked) state.internalSelectedNotaKeys.add(key);
+      else state.internalSelectedNotaKeys.delete(key);
+    });
+  }
+
+  function selectedInternalNotas() {
+    syncInternalSelectionFromDom();
     const unique = [];
     const seen = new Set();
 
-    for (const nota of source) {
-      const normalized = {
-        rowHash: String(nota?.rowHash || '').trim(),
-        numeroNf: String(nota?.numeroNf || '').trim(),
-        serie: String(nota?.serie || '').trim(),
-        empresa: String(nota?.empresa || '').trim(),
-        destino: String(nota?.destino || '').trim(),
-        dataEntrada: String(nota?.dataEntrada || '').trim(),
-        dataEntradaBr: String(nota?.dataEntradaBr || '').trim(),
-        entrada: String(nota?.entrada || '').trim(),
-        dataPrimeiroVencimento: String(nota?.dataPrimeiroVencimento || '').trim(),
-        dataPrimeiroVencimentoBr: String(nota?.dataPrimeiroVencimentoBr || '').trim(),
-        diasParaPrimeiroVencimento: nota?.diasParaPrimeiroVencimento == null ? null : Number(nota.diasParaPrimeiroVencimento),
-        alertaVencimentoProximo: !!nota?.alertaVencimentoProximo,
-        tooltipVencimento: String(nota?.tooltipVencimento || '').trim(),
-        chaveAcesso: String(nota?.chaveAcesso || '').trim(),
-        volumes: Number(nota?.volumes || 0),
-        peso: Number(nota?.peso || 0),
-        valorNf: Number(nota?.valorNf || 0),
-        observacao: String(nota?.observacao || '').trim()
-      };
-      const key = normalized.rowHash || `${normalized.numeroNf}::${normalized.serie}::${normalized.valorNf}::${normalized.peso}::${normalized.volumes}`;
-      if (!key || seen.has(key)) continue;
+    for (const nota of getCurrentInternalNotas()) {
+      const normalized = normalizePendingNota(nota);
+      const key = buildInternalNotaKey(normalized);
+      if (!key || !state.internalSelectedNotaKeys.has(key) || seen.has(key)) continue;
       seen.add(key);
-      unique.push(normalized);
+      unique.push({
+        ...normalized,
+        rowHash: key,
+        disponivelNoRelatorio: normalized.disponivelNoRelatorio,
+        origemManual: normalized.origemManual,
+        inseridaManual: normalized.inseridaManual,
+        preLancamentoPendente: normalized.preLancamentoPendente
+      });
     }
 
     state.internalSelectedNotas = unique.map((nota) => ({ ...nota }));
@@ -880,27 +905,62 @@
   }
 
   function syncPendingNotasSelectionUI(wrap) {
-    const boxes = [...(wrap?.querySelectorAll('[data-internal-nf]') || [])];
+    const boxes = [...(wrap?.querySelectorAll('[data-internal-key]') || [])];
     const button = wrap?.querySelector('#btnSelectAllPendingNotas');
     if (!button) return;
     const allChecked = boxes.length > 0 && boxes.every((el) => el.checked);
     button.textContent = allChecked ? 'Desmarcar todos' : 'Selecionar todos';
+    button.disabled = boxes.length === 0;
+  }
+
+  function refreshPendingFornecedorOptionText(item) {
+    if (!item?.id) return;
+    const label = `${String(item.fornecedor || item.nome || '-').trim()} (${formatIntegerBR(item.quantidadeNotas ?? 0)} NF)`;
+    ['internalFornecedorPendenteSelect', 'fornecedorPendenteSelect'].forEach((id) => {
+      const select = byId(id);
+      if (!select) return;
+      const option = [...select.options].find((entry) => String(entry.value || '') === String(item.id));
+      if (option) option.textContent = label;
+    });
   }
 
   function renderPendingNotasInterno() {
+    syncInternalSelectionFromDom();
     const wrap = byId('internalPendingNotas');
     if (!wrap) return;
-    const sourceNotas = Array.isArray(state.internalPendingFornecedor?.notas) ? state.internalPendingFornecedor.notas : Array.isArray(state.internalPendingFornecedor?.notasFiscais) ? state.internalPendingFornecedor.notasFiscais : [];
-    const notas = [...sourceNotas].sort((a, b) => {
+    const sourceNotas = getCurrentInternalNotas();
+    if (!sourceNotas.length) {
+      wrap.innerHTML = '<div class="warning-box">Selecione um fornecedor pendente para carregar as NF disponíveis.</div>';
+      updateInternalTotals();
+      return;
+    }
+
+    const searchTerm = String(state.internalPendingSearchTerm || '').trim().toLowerCase();
+    const notasOrdenadas = [...sourceNotas].sort((a, b) => {
       if (!!a.alertaVencimentoProximo !== !!b.alertaVencimentoProximo) return a.alertaVencimentoProximo ? -1 : 1;
       const dueA = a.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(a.diasParaPrimeiroVencimento);
       const dueB = b.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(b.diasParaPrimeiroVencimento);
       if (dueA !== dueB) return dueA - dueB;
       return String(a.numeroNf || '').localeCompare(String(b.numeroNf || ''), 'pt-BR');
     });
+    const notas = searchTerm
+      ? notasOrdenadas.filter((nota) => {
+          const numero = String(nota.numeroNf || '').toLowerCase();
+          const serie = String(nota.serie || '').toLowerCase();
+          return numero.includes(searchTerm) || serie.includes(searchTerm);
+        })
+      : notasOrdenadas;
+
     if (!notas.length) {
-      wrap.innerHTML = '<div class="warning-box">Selecione um fornecedor pendente para carregar as NF disponíveis.</div>';
-      state.internalSelectedNotas = [];
+      wrap.innerHTML = `
+        <div class="warning-box">
+          Nenhuma NF localizada para a busca informada.
+          <div class="pending-notas-empty-actions">
+            <button type="button" id="btnInsertManualPendingNota">Inserir NF manualmente</button>
+          </div>
+        </div>
+      `;
+      wrap.querySelector('#btnInsertManualPendingNota')?.addEventListener('click', () => openManualNotaModal(state.internalPendingSearchTerm));
       updateInternalTotals();
       return;
     }
@@ -910,41 +970,127 @@
       { title: 'Demais notas pendentes', items: notas.filter((nota) => !nota.alertaVencimentoProximo), highlight: false }
     ].filter((group) => group.items.length);
 
-    wrap.innerHTML = `<div class="pending-notas-toolbar"><button type="button" class="btn-secondary" id="btnSelectAllPendingNotas">Selecionar todos</button></div>${groups.map((group) => `<div class="pending-notas-group${group.highlight ? ' pending-notas-group-highlight' : ''}"><h4>${escapeHtml(group.title)} <span>${escapeHtml(formatIntegerBR(group.items.length))} NF</span></h4><div class="pending-notas-grid">${group.items.map((nota, idx) => {
-      const originalIndex = notas.findIndex((candidate) => candidate === nota);
+    wrap.innerHTML = `<div class="pending-notas-toolbar"><button type="button" class="btn-secondary" id="btnSelectAllPendingNotas">Selecionar todos</button></div>${groups.map((group) => `<div class="pending-notas-group${group.highlight ? ' pending-notas-group-highlight' : ''}"><h4>${escapeHtml(group.title)} <span>${escapeHtml(formatIntegerBR(group.items.length))} NF</span></h4><div class="pending-notas-grid">${group.items.map((nota) => {
+      const key = buildInternalNotaKey(nota);
       const dueClass = nota.alertaVencimentoProximo ? ' pending-nota-item-warning' : '';
+      const manualClass = nota.origemManual || nota.inseridaManual || nota.preLancamentoPendente ? ' pending-nota-item-manual' : '';
       const tooltip = nota.tooltipVencimento || '';
       const label = `NF ${nota.numeroNf || '-'} • Série ${nota.serie || '-'}`;
       const dueBadge = nota.alertaVencimentoProximo ? `<span class="pending-note-due-badge" title="${escapeHtml(tooltip)}">Venc. próximo${nota.dataPrimeiroVencimentoBr ? ` • ${escapeHtml(nota.dataPrimeiroVencimentoBr)}` : ''}</span>` : '';
+      const manualBadge = nota.origemManual || nota.inseridaManual || nota.preLancamentoPendente ? `<span class="pending-note-manual-badge" title="NF inserida manualmente e sem pré-lançamento no relatório terceirizado.">Inserida manualmente</span>` : '';
       const empresa = nota.empresa ? `<span class="pending-note-company">${escapeHtml(nota.empresa)}</span>` : '';
       const destinoLogo = renderStoreLogo(nota.destino || nota.empresa, { showEmpty: false });
       const dataEntrada = nota.dataEntradaBr || nota.dataEntrada || '-';
-      return `<div class="pending-nota-item${dueClass}" title="${escapeHtml(tooltip)}"><label class="pending-nota-card"><div class="pending-nota-check"><input type="checkbox" data-internal-nf="${originalIndex}" /><span>${escapeHtml(label)}</span><div class="pending-note-tags">${empresa}${destinoLogo}${dueBadge}</div></div><div class="pending-nota-meta"><span><strong>Entrada:</strong> ${escapeHtml(dataEntrada)}</span><span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(nota.peso || 0, 3))} kg</span><span><strong>Volumes:</strong> ${escapeHtml(formatDecimalBR(nota.volumes || 0, 3))}</span></div></label></div>`;
+      const checked = state.internalSelectedNotaKeys.has(key) ? 'checked' : '';
+      return `<div class="pending-nota-item${dueClass}${manualClass}" title="${escapeHtml(tooltip)}"><label class="pending-nota-card"><div class="pending-nota-check"><input type="checkbox" data-internal-key="${escapeHtml(key)}" ${checked} /><span>${escapeHtml(label)}</span><div class="pending-note-tags">${empresa}${destinoLogo}${manualBadge}${dueBadge}</div></div><div class="pending-nota-meta"><span><strong>Entrada:</strong> ${escapeHtml(dataEntrada)}</span><span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(nota.peso || 0, 3))} kg</span><span><strong>Volumes:</strong> ${escapeHtml(formatDecimalBR(nota.volumes || 0, 3))}</span></div></label></div>`;
     }).join('')}</div></div>`).join('')}`;
 
     const sync = () => {
-      state.internalSelectedNotas = notas
-        .filter((_nota, index) => wrap.querySelector(`[data-internal-nf="${index}"]`)?.checked)
-        .map((nota) => ({ ...nota }));
+      syncInternalSelectionFromDom(wrap);
       updateInternalTotals();
       syncPendingNotasSelectionUI(wrap);
     };
 
-    wrap.querySelectorAll('[data-internal-nf]').forEach((el) => el.addEventListener('change', sync));
+    wrap.querySelectorAll('[data-internal-key]').forEach((el) => el.addEventListener('change', sync));
     wrap.querySelector('#btnSelectAllPendingNotas')?.addEventListener('click', () => {
-      const checkboxes = [...wrap.querySelectorAll('[data-internal-nf]')];
+      const checkboxes = [...wrap.querySelectorAll('[data-internal-key]')];
       const allChecked = checkboxes.length > 0 && checkboxes.every((el) => el.checked);
-      checkboxes.forEach((el) => { el.checked = !allChecked; });
-      sync();
+      checkboxes.forEach((el) => {
+        el.checked = !allChecked;
+        const key = String(el.dataset.internalKey || '').trim();
+        if (!key) return;
+        if (!allChecked) state.internalSelectedNotaKeys.add(key);
+        else state.internalSelectedNotaKeys.delete(key);
+      });
+      updateInternalTotals();
+      syncPendingNotasSelectionUI(wrap);
     });
 
-    state.internalSelectedNotas = [];
     updateInternalTotals();
     syncPendingNotasSelectionUI(wrap);
   }
 
+  function openManualNotaModal(seed = '') {
+    if (!state.internalPendingFornecedor) {
+      byId('agendamentoMsg').textContent = 'Selecione primeiro o fornecedor pendente.';
+      return;
+    }
+    const modal = byId('manualNotaModal');
+    const form = byId('manualNotaForm');
+    const msg = byId('manualNotaMsg');
+    if (!modal || !form) return;
+    form.reset();
+    if (msg) msg.textContent = '';
+    const numeroField = form.querySelector('[name="numeroNf"]');
+    if (numeroField) numeroField.value = String(seed || '').trim();
+    modal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    setTimeout(() => numeroField?.focus(), 0);
+  }
+
+  function closeManualNotaModal() {
+    const modal = byId('manualNotaModal');
+    const form = byId('manualNotaForm');
+    const msg = byId('manualNotaMsg');
+    if (msg) msg.textContent = '';
+    form?.reset();
+    modal?.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+  }
+
+  function appendManualNotaToPendingFornecedor(nota = {}) {
+    const fornecedor = state.internalPendingFornecedor;
+    if (!fornecedor) throw new Error('Selecione o fornecedor pendente antes de inserir a NF.');
+    const numeroNf = String(nota.numeroNf || '').trim();
+    const serie = String(nota.serie || '').trim();
+    const notasAtuais = getCurrentInternalNotas();
+    const duplicate = notasAtuais.some((item) => String(item.numeroNf || '').trim() === numeroNf && String(item.serie || '').trim() === serie);
+    if (duplicate) throw new Error('Esta NF já está listada para o fornecedor selecionado.');
+
+    const normalized = normalizePendingNota({
+      ...nota,
+      observacao: String(nota.observacao || 'NF inserida manualmente - sem pré-lançamento').trim(),
+      origemManual: true,
+      inseridaManual: true,
+      preLancamentoPendente: true,
+      disponivelNoRelatorio: false,
+      tooltipVencimento: 'NF inserida manualmente; sem pré-lançamento no relatório terceirizado.'
+    });
+
+    const updatedNotas = [...notasAtuais, normalized];
+    fornecedor.notas = updatedNotas;
+    fornecedor.notasFiscais = updatedNotas;
+    fornecedor.quantidadeNotas = updatedNotas.length;
+    fornecedor.quantidadeVolumes = updatedNotas.reduce((acc, item) => acc + Number(item.volumes || 0), 0);
+    fornecedor.pesoTotalKg = updatedNotas.reduce((acc, item) => acc + Number(item.peso || 0), 0);
+    state.internalPendingFornecedor = fornecedor;
+    state.internalSelectedNotaKeys.add(buildInternalNotaKey(normalized));
+    state.internalPendingSearchTerm = '';
+    const searchInput = byId('internalPendingSearch');
+    if (searchInput) searchInput.value = '';
+    refreshPendingFornecedorOptionText(fornecedor);
+    renderPendingNotasInterno();
+    return normalized;
+  }
+
+  async function notifyFiscalForManualNota(nota = {}) {
+    const fornecedor = String(state.internalPendingFornecedor?.fornecedor || state.internalPendingFornecedor?.nome || byId('internalFornecedorNome')?.value || '').trim();
+    return api('/api/agendamentos/notas/manual-alerta', {
+      method: 'POST',
+      body: JSON.stringify({
+        fornecedor,
+        numeroNf: nota.numeroNf,
+        serie: nota.serie,
+        volumes: nota.volumes,
+        peso: nota.peso,
+        destino: nota.destino,
+        observacao: nota.observacao || ''
+      })
+    });
+  }
 
   function applyFornecedorPendenteInterno(item) {
+    clearInternalPendingSelectionState({ keepFornecedor: true });
     state.internalPendingFornecedor = item || null;
     const fornecedorField = byId('internalFornecedorNome');
     if (fornecedorField) fornecedorField.value = String(item?.fornecedor || item?.nome || '').trim();
@@ -962,8 +1108,7 @@
       }).join('');
       select.onchange = () => {
         if (!select.value) {
-          state.internalPendingFornecedor = null;
-          state.internalSelectedNotas = [];
+          clearInternalPendingSelectionState();
           const fornecedorField = byId('internalFornecedorNome');
           if (fornecedorField) fornecedorField.value = '';
           renderPendingNotasInterno();
@@ -1671,10 +1816,11 @@ Deseja liberar manualmente a descarga deste veículo?`);
         byId("agendamentoId").value = data.id || "";
         byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo} | ID: ${data.id}`;
         e.target.reset();
-        state.internalPendingFornecedor = null;
-        state.internalSelectedNotas = [];
+        clearInternalPendingSelectionState();
         const fornecedorField = byId('internalFornecedorNome');
         if (fornecedorField) fornecedorField.value = '';
+        const fornecedorSelect = byId('internalFornecedorPendenteSelect');
+        if (fornecedorSelect) fornecedorSelect.value = '';
         renderPendingNotasInterno();
         const dataInput = byId('agendamentoForm')?.querySelector('[name="dataAgendada"]');
         if (dataInput) dataInput.value = new Date().toISOString().slice(0, 10);
@@ -1819,6 +1965,57 @@ Deseja liberar manualmente a descarga deste veículo?`);
     byId("stopCamera")?.addEventListener("click", stopCameraScan);
 
     byId("publicDataSelect")?.addEventListener("change", (e) => renderPublicSlots(e.target.value));
+
+    byId('internalPendingSearch')?.addEventListener('input', (e) => {
+      syncInternalSelectionFromDom();
+      state.internalPendingSearchTerm = String(e.target.value || '').trim();
+      renderPendingNotasInterno();
+    });
+    byId('btnClearPendingSearch')?.addEventListener('click', () => {
+      syncInternalSelectionFromDom();
+      state.internalPendingSearchTerm = '';
+      const input = byId('internalPendingSearch');
+      if (input) input.value = '';
+      renderPendingNotasInterno();
+    });
+    byId('manualNotaForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const msg = byId('manualNotaMsg');
+      try {
+        const formData = new FormData(e.target);
+        const nota = appendManualNotaToPendingFornecedor({
+          numeroNf: String(formData.get('numeroNf') || '').trim(),
+          serie: String(formData.get('serie') || '').trim(),
+          volumes: Number(formData.get('volumes') || 0),
+          peso: Number(formData.get('peso') || 0),
+          destino: String(formData.get('destino') || '').trim(),
+          empresa: '',
+          valorNf: 0,
+          observacao: 'NF inserida manualmente - sem pré-lançamento'
+        });
+        try {
+          await notifyFiscalForManualNota(nota);
+          byId('agendamentoMsg').textContent = `NF ${nota.numeroNf}${nota.serie ? ` / Série ${nota.serie}` : ''} inserida manualmente e alerta fiscal enviado.`;
+        } catch (alertErr) {
+          byId('agendamentoMsg').textContent = `NF ${nota.numeroNf}${nota.serie ? ` / Série ${nota.serie}` : ''} inserida manualmente, mas o alerta ao fiscal falhou: ${alertErr.message}`;
+        }
+        if (msg) msg.textContent = 'NF adicionada ao agendamento com sucesso.';
+        closeManualNotaModal();
+      } catch (err) {
+        if (msg) msg.textContent = err.message || 'Não foi possível inserir a NF manualmente.';
+      }
+    });
+    byId('manualNotaModal')?.querySelectorAll('[data-manual-nota-close]').forEach((el) => {
+      el.addEventListener('click', () => closeManualNotaModal());
+    });
+    byId('btnResumoFinanceiro')?.addEventListener('click', async () => {
+      try {
+        const data = await api('/api/agendamentos/financeiro/resumo-mensal', { method: 'POST', body: JSON.stringify({}) });
+        byId('operacaoMsg').textContent = data?.message || 'Resumo financeiro enviado com sucesso.';
+      } catch (err) {
+        byId('operacaoMsg').textContent = err.message || 'Falha ao enviar o resumo financeiro.';
+      }
+    });
 
     if (state.token && !isTokenExpired(state.token)) {
       await fillSelects();

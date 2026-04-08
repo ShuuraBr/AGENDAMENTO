@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { calculateTotals } from './agendamento-helpers.js';
+import { normalizeAgendamentoNota } from './nota-metadata.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,7 +56,7 @@ export function readMotoristas() { return readJsonFile('motoristas.json', []); }
 export function readVeiculos() { return readJsonFile('veiculos.json', []); }
 export function readRegras() { return readJsonFile('regras.json', []); }
 function normalizePendingNota(item = {}) {
-  return {
+  return normalizeAgendamentoNota({
     ...item,
     numeroNf: String(item?.numeroNf ?? item?.numero_nf ?? item?.notaFiscal ?? item?.nota_fiscal ?? item?.["Nr. Nota"] ?? item?.["NR NOTA"] ?? item?.["NF"] ?? '').trim(),
     serie: String(item?.serie ?? item?.serieNf ?? item?.serie_nf ?? item?.["Série"] ?? item?.["Serie"] ?? item?.["SERIE"] ?? '').trim(),
@@ -64,7 +65,7 @@ function normalizePendingNota(item = {}) {
     peso: Number(item?.peso ?? item?.["Peso"] ?? 0),
     valorNf: Number(item?.valorNf ?? item?.valor_nf ?? item?.valor ?? item?.["Valor da nota"] ?? 0),
     observacao: String(item?.observacao ?? item?.observações ?? item?.["Observação"] ?? '').trim()
-  };
+  });
 }
 
 export function readFornecedoresPendentes() {

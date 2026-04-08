@@ -3,7 +3,7 @@
 .brand{display:flex;align-items:center;gap:16px;justify-content:space-between;width:100%}
 .topbar h1{margin:0;font-size:28px}
 .nav-menu{display:flex;gap:8px;flex-wrap:wrap}
-.logo{height: 60px;max-width:220px;object-fit:contain}
+.logo{height:92px;max-width:300px;object-fit:contain}
 button{border:0;background:#2563eb;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
 button:hover{opacity:.94}
 .container{padding:24px}
@@ -36,7 +36,7 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 .fila-item{padding:8px 0;border-top:1px solid #e5e7eb}
 .badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700}
 .badge.verde{background:#dcfce7;color:#166534}.badge.amarelo{background:#fef9c3;color:#854d0e}.badge.azul{background:#dbeafe;color:#1d4ed8}.badge.laranja{background:#ffedd5;color:#c2410c}.badge.cinza{background:#e5e7eb;color:#475569}.badge.vermelho{background:#fee2e2;color:#991b1b}
-@media (max-width:1100px){.filters{grid-template-columns:1fr 1fr}.logo{height:36px}}
+@media (max-width:1100px){.filters{grid-template-columns:1fr 1fr}.logo{height:56px;max-width:220px}}
 @media (max-width:900px){.grid2{grid-template-columns:1fr}.brand{flex-direction:column;align-items:flex-start}}
 
 #login.view.active{min-height:calc(100vh - 180px);display:flex;align-items:center;justify-content:center}.login-card{width:100%;margin:0 auto}.btn-secondary{background:#475569}.nf-row{padding:14px;border:1px solid #dbe2ea;border-radius:12px;background:#f8fafc}.nf-full{grid-column:1/-1}
@@ -290,3 +290,6 @@ body.modal-open{overflow:hidden}
     min-width: 0;
   }
 }
+
+
+.pending-search-toolbar{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:12px;align-items:end}.pending-search-field{display:grid;gap:6px;font-size:13px;font-weight:700;color:#334155}.pending-search-field input{font-weight:400}.pending-notas-empty-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.pending-nota-item-manual{border-style:dashed;border-color:#2563eb;background:#eff6ff}.pending-note-manual-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:700}.manual-nota-modal-card{width:min(860px,100%)}.manual-nota-form{display:grid;gap:14px}@media (max-width:720px){.pending-search-toolbar{grid-template-columns:1fr}.pending-search-toolbar button{width:100%}}
