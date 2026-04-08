@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS `RelatorioTerceirizado` (
   `Status` TEXT NULL,
   `Prazo médio` TEXT NULL,
   `Empresa` TEXT NULL,
+  `Destino` TEXT NULL,
   `Data do cadastro` TEXT NULL,
   `Total de IPI` TEXT NULL,
   `Base de ICMS` TEXT NULL,
