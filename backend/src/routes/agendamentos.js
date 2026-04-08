@@ -15,7 +15,7 @@ import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js
 import { auditLog } from "../utils/audit.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
-import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento } from "../utils/relatorio-entradas.js";
+import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento } from "../utils/relatorio-entradas.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
 import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, searchByNumeroNf } from "../utils/nf-monitoring.js";
 
@@ -52,6 +52,92 @@ function formatDateBR(value) {
   if (!year || !month || !day) return String(value);
   return `${day}/${month}/${year}`;
 }
+
+function daysUntilDate(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const target = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  if (Number.isNaN(target.getTime())) return null;
+  const now = new Date();
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  return Math.round((target.getTime() - today.getTime()) / 86400000);
+}
+
+async function resolveCreateUserMap(agendamentoIds = []) {
+  const ids = [...new Set((Array.isArray(agendamentoIds) ? agendamentoIds : []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))];
+  if (!ids.length) return new Map();
+
+  try {
+    const logs = await prisma.logAuditoria.findMany({
+      where: {
+        entidade: 'AGENDAMENTO',
+        acao: 'CREATE',
+        entidadeId: { in: ids }
+      },
+      include: { usuario: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]
+    });
+
+    const map = new Map();
+    for (const log of logs || []) {
+      const key = Number(log.entidadeId || 0);
+      if (!key || map.has(key)) continue;
+      const nome = log.usuario?.nome || log.usuarioNome || null;
+      map.set(key, nome || null);
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+async function countScheduledNotesForDate(dataAgendada = '') {
+  const date = String(dataAgendada || '').trim();
+  if (!date) return { totalAgendamentosNoDia: 0, totalNotasNoDia: 0 };
+
+  try {
+    const items = await prisma.agendamento.findMany({
+      where: { dataAgendada: date },
+      include: { notasFiscais: true }
+    });
+    const totalNotasNoDia = (items || []).reduce((acc, item) => {
+      const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais.length : 0;
+      return acc + Number(item?.quantidadeNotas || notas || 0);
+    }, 0);
+    return { totalAgendamentosNoDia: Number(items?.length || 0), totalNotasNoDia };
+  } catch {
+    const items = readAgendamentos().filter((item) => String(item?.dataAgendada || '') === date);
+    const totalNotasNoDia = items.reduce((acc, item) => {
+      const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais.length : 0;
+      return acc + Number(item?.quantidadeNotas || notas || 0);
+    }, 0);
+    return { totalAgendamentosNoDia: Number(items.length || 0), totalNotasNoDia };
+  }
+}
+
+async function loadAgendamentosForConsulta({ numeroNf = '', dataAgendada = '' } = {}) {
+  const nfDigits = String(numeroNf || '').replace(/\D/g, '');
+  const targetDate = String(dataAgendada || '').trim();
+  const matches = (item = {}) => {
+    if (targetDate && String(item?.dataAgendada || '') !== targetDate) return false;
+    if (!nfDigits) return true;
+    const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : Array.isArray(item?.notas) ? item.notas : [];
+    return notas.some((nota) => String(nota?.numeroNf || '').replace(/\D/g, '').includes(nfDigits));
+  };
+
+  try {
+    const items = await prisma.agendamento.findMany({
+      include: { notasFiscais: true, documentos: true, doca: true, janela: true },
+      orderBy: { id: 'desc' }
+    });
+    return (items || []).filter(matches);
+  } catch {
+    return readAgendamentos().filter(matches);
+  }
+}
+
 
 function buildScheduleIntro(item) {
   return `O agendamento foi efetuado para o dia ${formatDateBR(item.dataAgendada)}, às ${item.horaAgendada || "-"}. Solicitamos chegada com 10 minutos de antecedência.`;
@@ -320,12 +406,46 @@ router.get("/", async (req, res) => {
 router.get("/consulta-nf", async (req, res) => {
   try {
     const numeroNf = String(req.query?.numeroNf || req.query?.nf || '').trim();
-    if (!numeroNf) return res.status(400).json({ message: 'Informe o número da NF para consulta.' });
-    const result = await searchByNumeroNf(numeroNf);
-    const agendamentos = await Promise.all((result.agendamentos || []).map(enrichResponseItem));
+    const dataAgendada = String(req.query?.dataAgendada || req.query?.data || '').trim();
+    if (!numeroNf && !dataAgendada) {
+      return res.status(400).json({ message: 'Informe o número da NF, a data da consulta, ou ambos.' });
+    }
+
+    const modoConsulta = numeroNf && dataAgendada ? 'NF_DATA' : numeroNf ? 'NF' : 'DATA';
+    const result = numeroNf ? await searchByNumeroNf(numeroNf) : { relatorio: [], agendamentos: [] };
+    const baseAgendamentos = modoConsulta === 'DATA'
+      ? await loadAgendamentosForConsulta({ dataAgendada })
+      : modoConsulta === 'NF_DATA'
+        ? (result.agendamentos || []).filter((item) => String(item?.dataAgendada || '') === dataAgendada)
+        : (result.agendamentos || []);
+
+    const agendamentoIds = baseAgendamentos.map((item) => item?.id);
+    const createUserMap = await resolveCreateUserMap(agendamentoIds);
+    const agendamentos = await Promise.all(baseAgendamentos.map(async (item) => {
+      const enriched = await enrichResponseItem(item);
+      return {
+        ...enriched,
+        agendada: true,
+        usuarioAgendamento: createUserMap.get(Number(enriched?.id || 0)) || null,
+        diasParaAgendamento: daysUntilDate(enriched?.dataAgendada)
+      };
+    }));
+    const resumoDia = dataAgendada ? await countScheduledNotesForDate(dataAgendada) : { totalAgendamentosNoDia: 0, totalNotasNoDia: 0 };
+    const agendamentosNoDia = dataAgendada ? agendamentos.filter((item) => String(item?.dataAgendada || '') === dataAgendada) : agendamentos;
     return res.json({
-      numeroNf,
+      modoConsulta,
+      numeroNf: numeroNf || null,
+      dataAgendada: dataAgendada || null,
       encontrada: (result.relatorio || []).length > 0 || agendamentos.length > 0,
+      resumo: {
+        agendada: agendamentos.length > 0,
+        totalOcorrenciasRelatorio: Number((result.relatorio || []).length || 0),
+        totalAgendamentosEncontrados: Number(agendamentos.length || 0),
+        totalAgendamentosNoDia: Number(resumoDia.totalAgendamentosNoDia || 0),
+        totalNotasNoDia: Number(resumoDia.totalNotasNoDia || 0),
+        totalAgendamentosDestaNfNoDia: Number(agendamentosNoDia.length || 0),
+        totalAgendamentosDaConsulta: Number(agendamentos.length || 0)
+      },
       relatorio: result.relatorio || [],
       agendamentos
     });
@@ -408,7 +528,7 @@ router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res
       item = createAgendamentoFile({ protocolo: generateProtocol(), publicTokenMotorista: generatePublicToken("MOT", payload.cpfMotorista), publicTokenFornecedor: generatePublicToken("FOR", payload.fornecedor), checkinToken: generatePublicToken("CHK", payload.cpfMotorista || payload.placa), checkoutToken: generatePublicToken("OUT", payload.cpfMotorista || payload.placa), fornecedor: payload.fornecedor, transportadora: payload.transportadora, motorista: payload.motorista, cpfMotorista: payload.cpfMotorista || '', telefoneMotorista: payload.telefoneMotorista || '', emailMotorista: payload.emailMotorista || '', emailTransportadora: payload.emailTransportadora || '', placa: payload.placa, docaId: Number(payload.docaId), janelaId: Number(payload.janelaId), dataAgendada: payload.dataAgendada, horaAgendada: payload.horaAgendada, quantidadeNotas: Number(payload.quantidadeNotas || 0), quantidadeVolumes: Number(payload.quantidadeVolumes || 0), pesoTotalKg: Number(payload.pesoTotalKg || 0), valorTotalNf: Number(payload.valorTotalNf || 0), status: 'PENDENTE_APROVACAO', observacoes: payload.observacoes || '', notasFiscais: payload.notasFiscais || [] });
     }
 
-    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CREATE", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: payload, ip: req.ip });
+    await auditLog({ usuarioId: req.user.sub, usuarioNome: req.user.nome || req.user.name || null, perfil: req.user.perfil, acao: "CREATE", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: payload, ip: req.ip });
     try {
       await linkRelatorioRowsToAgendamento(item.id, payload.fornecedor, payload.notasFiscais || []);
     } catch (relatorioError) {
@@ -523,7 +643,11 @@ router.post("/:id/aprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), asyn
 });
 
 router.post("/:id/reprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
-  try { res.json(await transition(req.params.id, "REPROVADO", { motivoReprovacao: req.body?.motivo || "Reprovado" }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
+  try {
+    const item = await transition(req.params.id, "REPROVADO", { motivoReprovacao: req.body?.motivo || "Reprovado" }, req);
+    await unlinkRelatorioRowsFromAgendamento(item?.id);
+    res.json(item);
+  } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
 router.post("/:id/reagendar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
@@ -578,6 +702,7 @@ router.post("/:id/cancelar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), asy
       item = updateAgendamentoFile(req.params.id, { status: "CANCELADO", motivoCancelamento: req.body?.motivo || "Cancelado" });
     }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CANCELAR", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: req.body, ip: req.ip });
+    await unlinkRelatorioRowsFromAgendamento(item?.id);
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
@@ -616,6 +741,7 @@ router.post("/:id/no-show", requireProfiles("ADMIN", "OPERADOR", "GESTOR", "PORT
       item = updateAgendamentoFile(req.params.id, { status: "NO_SHOW" });
     }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "NO_SHOW", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: null, ip: req.ip });
+    await unlinkRelatorioRowsFromAgendamento(item?.id);
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });

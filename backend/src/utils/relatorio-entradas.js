@@ -51,6 +51,7 @@ const SHEET_COLUMNS = [
   'Status',
   'Prazo médio',
   'Empresa',
+  'Destino',
   'Data do cadastro',
   'Total de IPI',
   'Base de ICMS',
@@ -224,6 +225,8 @@ function normalizeImportedItems(rows = []) {
         quantidadeVolumes: 0,
         pesoTotalKg: 0,
         valorTotalNf: 0,
+        totalNotasVencimentoProximo: 0,
+        possuiVencimentoProximo: false,
         status: 'AGUARDANDO_CHEGADA',
         statusRelatorio: 'Aguardando Chegada',
         _seenNotaKeys: new Set()
@@ -231,15 +234,20 @@ function normalizeImportedItems(rows = []) {
     }
 
     const current = groups.get(fornecedor);
+    const dueFields = buildDueFields(normalizedRow['Data 1º vencimento']);
     const note = {
       rowHash: normalizeCellValue(row?.rowHash || '') || buildRowHash(normalizedRow),
       numeroNf,
       serie: normalizeCellValue(normalizedRow['Série']),
+      empresa: normalizeCellValue(normalizedRow['Empresa']),
+      destino: normalizeCellValue(normalizedRow['Destino']),
+      dataEntrada: normalizeCellValue(normalizedRow['Data de Entrada']),
+      entrada: normalizeCellValue(normalizedRow['Entrada']),
       volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
       peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
       valorNf: toFixedNumber(parseNumber(normalizedRow['Valor da nota']), 2),
       observacao: buildNoteObservation(normalizedRow),
-      ...buildDueFields(normalizedRow['Data 1º vencimento'])
+      ...dueFields
     };
 
     const noteKey = note.rowHash || `${note.numeroNf}::${note.serie}::${note.valorNf}::${note.peso}::${note.volumes}`;
@@ -252,14 +260,104 @@ function normalizeImportedItems(rows = []) {
     current.quantidadeVolumes = toFixedNumber(current.quantidadeVolumes + Number(note.volumes || 0), 3);
     current.pesoTotalKg = toFixedNumber(current.pesoTotalKg + Number(note.peso || 0), 3);
     current.valorTotalNf = toFixedNumber(current.valorTotalNf + Number(note.valorNf || 0), 2);
+    if (dueFields.alertaVencimentoProximo) {
+      current.totalNotasVencimentoProximo += 1;
+      current.possuiVencimentoProximo = true;
+    }
   }
 
   return [...groups.values()]
     .map((item) => {
       delete item._seenNotaKeys;
+      item.notas = [...item.notas].sort((a, b) => {
+        if (!!a.alertaVencimentoProximo !== !!b.alertaVencimentoProximo) {
+          return a.alertaVencimentoProximo ? -1 : 1;
+        }
+        const dueA = a.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(a.diasParaPrimeiroVencimento);
+        const dueB = b.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(b.diasParaPrimeiroVencimento);
+        if (dueA !== dueB) return dueA - dueB;
+        return String(a.numeroNf || '').localeCompare(String(b.numeroNf || ''), 'pt-BR');
+      });
+      item.notasFiscais = item.notas;
       return item;
     })
-    .sort((a, b) => String(a.fornecedor || '').localeCompare(String(b.fornecedor || ''), 'pt-BR'));
+    .sort((a, b) => {
+      if (!!a.possuiVencimentoProximo !== !!b.possuiVencimentoProximo) {
+        return a.possuiVencimentoProximo ? -1 : 1;
+      }
+      if (Number(a.totalNotasVencimentoProximo || 0) !== Number(b.totalNotasVencimentoProximo || 0)) {
+        return Number(b.totalNotasVencimentoProximo || 0) - Number(a.totalNotasVencimentoProximo || 0);
+      }
+      return String(a.fornecedor || '').localeCompare(String(b.fornecedor || ''), 'pt-BR');
+    });
+}
+
+function buildPendingNoteKey(nota = {}) {
+  const rowHash = normalizeCellValue(nota?.rowHash || '');
+  if (rowHash) return rowHash;
+  const numeroNf = normalizeCellValue(nota?.numeroNf || nota?.numero_nf || '');
+  const serie = normalizeCellValue(nota?.serie || '');
+  if (!numeroNf) return '';
+  return `${numeroNf}::${serie}`;
+}
+
+function filterScheduledNotesFromGroups(groups = []) {
+  const rescheduleStatuses = new Set(['CANCELADO', 'REPROVADO', 'NO_SHOW']);
+  const blockedKeys = new Set();
+
+  for (const agendamento of readAgendamentos()) {
+    if (rescheduleStatuses.has(String(agendamento?.status || '').trim().toUpperCase())) continue;
+    const notas = Array.isArray(agendamento?.notasFiscais) ? agendamento.notasFiscais : Array.isArray(agendamento?.notas) ? agendamento.notas : [];
+    for (const nota of notas) {
+      const key = buildPendingNoteKey(nota);
+      if (key) blockedKeys.add(key);
+    }
+  }
+
+  return (Array.isArray(groups) ? groups : []).map((group, index) => {
+    const notas = (Array.isArray(group?.notas) ? group.notas : Array.isArray(group?.notasFiscais) ? group.notasFiscais : [])
+      .filter((nota) => {
+        const key = buildPendingNoteKey(nota);
+        return !key || !blockedKeys.has(key);
+      })
+      .sort((a, b) => {
+        if (!!a.alertaVencimentoProximo !== !!b.alertaVencimentoProximo) {
+          return a.alertaVencimentoProximo ? -1 : 1;
+        }
+        const dueA = a.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(a.diasParaPrimeiroVencimento);
+        const dueB = b.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(b.diasParaPrimeiroVencimento);
+        if (dueA !== dueB) return dueA - dueB;
+        return String(a.numeroNf || '').localeCompare(String(b.numeroNf || ''), 'pt-BR');
+      });
+
+    if (!notas.length) return null;
+
+    const quantidadeVolumes = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0), 3);
+    const pesoTotalKg = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0), 3);
+    const valorTotalNf = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0), 2);
+    const totalNotasVencimentoProximo = notas.filter((nota) => nota?.alertaVencimentoProximo).length;
+
+    return {
+      ...group,
+      id: group?.id || index + 1,
+      notas,
+      notasFiscais: notas,
+      quantidadeNotas: notas.length,
+      quantidadeVolumes,
+      pesoTotalKg,
+      valorTotalNf,
+      totalNotasVencimentoProximo,
+      possuiVencimentoProximo: totalNotasVencimentoProximo > 0
+    };
+  }).filter(Boolean).sort((a, b) => {
+    if (!!a.possuiVencimentoProximo !== !!b.possuiVencimentoProximo) {
+      return a.possuiVencimentoProximo ? -1 : 1;
+    }
+    if (Number(a.totalNotasVencimentoProximo || 0) !== Number(b.totalNotasVencimentoProximo || 0)) {
+      return Number(b.totalNotasVencimentoProximo || 0) - Number(a.totalNotasVencimentoProximo || 0);
+    }
+    return String(a.fornecedor || '').localeCompare(String(b.fornecedor || ''), 'pt-BR');
+  });
 }
 
 function normalizeSelectedNota(nota = {}) {
@@ -267,6 +365,10 @@ function normalizeSelectedNota(nota = {}) {
     rowHash: normalizeCellValue(nota?.rowHash || ''),
     numeroNf: normalizeCellValue(nota?.numeroNf || nota?.numero_nf || ''),
     serie: normalizeCellValue(nota?.serie || ''),
+    empresa: normalizeCellValue(nota?.empresa || ''),
+    destino: normalizeCellValue(nota?.destino || ''),
+    dataEntrada: normalizeCellValue(nota?.dataEntrada || ''),
+    entrada: normalizeCellValue(nota?.entrada || ''),
     chaveAcesso: normalizeCellValue(nota?.chaveAcesso || ''),
     volumes: toFixedNumber(parseNumber(nota?.volumes || 0), 3),
     peso: toFixedNumber(parseNumber(nota?.peso || 0), 3),
@@ -281,6 +383,10 @@ function normalizeNoteFromSpreadsheetRow(row = {}) {
     rowHash: normalizeCellValue(row?.rowHash || '') || buildRowHash(normalizedRow),
     numeroNf: normalizeCellValue(normalizedRow['Nr. nota']),
     serie: normalizeCellValue(normalizedRow['Série']),
+    empresa: normalizeCellValue(normalizedRow['Empresa']),
+    destino: normalizeCellValue(normalizedRow['Destino']),
+    dataEntrada: normalizeCellValue(normalizedRow['Data de Entrada']),
+    entrada: normalizeCellValue(normalizedRow['Entrada']),
     chaveAcesso: '',
     volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
     peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
@@ -738,7 +844,7 @@ export async function listFornecedoresPendentesImportados() {
         .filter((row) => row && row['Fornecedor'] && row['Nr. nota']);
 
       if (parsedRows.length) {
-        return normalizeImportedItems(parsedRows);
+        return filterScheduledNotesFromGroups(normalizeImportedItems(parsedRows));
       }
     }
   } catch (error) {
@@ -747,7 +853,7 @@ export async function listFornecedoresPendentesImportados() {
 
   try {
     if (!fs.existsSync(fallbackFile)) return [];
-    return JSON.parse(fs.readFileSync(fallbackFile, 'utf8'));
+    return filterScheduledNotesFromGroups(JSON.parse(fs.readFileSync(fallbackFile, 'utf8')) || []);
   } catch {
     return [];
   }
@@ -788,6 +894,17 @@ export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, 
       ...args
     );
   }
+}
+
+export async function unlinkRelatorioRowsFromAgendamento(agendamentoId) {
+  if (!agendamentoId) return;
+  try {
+    await ensureRelatorioTable();
+    await prisma.$executeRawUnsafe(
+      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = NULL WHERE agendamentoId = ?`,
+      Number(agendamentoId)
+    );
+  } catch {}
 }
 
 export async function importRelatorioSpreadsheet({ filePath, originalName = '', actor = null, source = 'manual', ip = null } = {}) {

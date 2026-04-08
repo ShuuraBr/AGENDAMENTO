@@ -172,6 +172,90 @@
     return `${digits.slice(0, 2)}:${digits.slice(2)}`;
   }
 
+  function normalizeCompanyKey(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^A-Za-z0-9]+/g, '')
+      .toUpperCase();
+  }
+
+  const STORE_LOGOS = {
+    'OBJ': '/assets/store-obj.svg',
+    'AC COELHO': '/assets/store-ac-coelho.svg',
+    'SR ACABAMENTOS': '/assets/store-sr-acabamentos.svg',
+    'FINITURA': '/assets/store-finitura.svg'
+  };
+
+  function resolveStoreKey(value) {
+    const normalized = normalizeCompanyKey(value);
+    if (!normalized) return '';
+    if (normalized.includes('ACCOELHO') || normalized === 'COELHO') return 'AC COELHO';
+    if (normalized.includes('SRACABAMENTOS') || normalized.includes('ACABAMENTOS')) return 'SR ACABAMENTOS';
+    if (normalized.includes('FINITURA')) return 'FINITURA';
+    if (normalized.includes('OBJ') || normalized.includes('OBJETIVA')) return 'OBJ';
+    return '';
+  }
+
+  function noteEmpresaMatches(nota, target) {
+    const desired = resolveStoreKey(target) || normalizeCompanyKey(target);
+    const candidates = [nota?.destino, nota?.destinoRelatorio, nota?.empresa, nota?.empresaRelatorio]
+      .map((value) => resolveStoreKey(value) || normalizeCompanyKey(value))
+      .filter(Boolean);
+    if (!desired || !candidates.length) return false;
+    return candidates.some((candidate) => candidate === desired || candidate.includes(desired) || desired.includes(candidate));
+  }
+
+  function renderStoreLogo(value, { showEmpty = false } = {}) {
+    const storeKey = resolveStoreKey(value);
+    if (!storeKey) return showEmpty ? '<span class="store-logo store-logo-empty">Sem destino</span>' : '';
+    const src = STORE_LOGOS[storeKey] || '';
+    return src
+      ? `<img src="${escapeHtml(src)}" alt="${escapeHtml(storeKey)}" class="store-logo-image" title="${escapeHtml(storeKey)}" />`
+      : `<span class="store-logo">${escapeHtml(storeKey)}</span>`;
+  }
+
+  function renderEmpresaNotas(item, targetEmpresa) {
+    const notas = (Array.isArray(item?.notasFiscais) ? item.notasFiscais : Array.isArray(item?.notas) ? item.notas : [])
+      .filter((nota) => noteEmpresaMatches(nota, targetEmpresa));
+    if (!notas.length) return '<span>-</span>';
+    return `<div class="nf-series-list">${notas.map((nota) => {
+      const numero = `NF ${String(nota?.numeroNf || '-').trim() || '-'}`;
+      const serie = String(nota?.serie || '').trim();
+      const label = serie ? `${numero} • Série ${serie}` : numero;
+      return `<span class="nf-series-item">${escapeHtml(label)}</span>`;
+    }).join('')}</div>`;
+  }
+
+  function normalizeDigitsValue(value) {
+    return String(value || '').replace(/\D/g, '');
+  }
+
+  function formatRemainingDaysLabel(value) {
+    const raw = normalizeDateToIso(value);
+    if (!raw) return '-';
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return '-';
+    const target = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    const now = new Date();
+    const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const diff = Math.round((target - today) / 86400000);
+    if (!Number.isFinite(diff)) return '-';
+    if (diff === 0) return 'Hoje';
+    if (diff > 0) return `${diff} dia(s)`;
+    return `${Math.abs(diff)} dia(s) atrás`;
+  }
+
+  function sortPendingFornecedores(items = []) {
+    return [...(Array.isArray(items) ? items : [])].sort((a, b) => {
+      if (!!a.possuiVencimentoProximo !== !!b.possuiVencimentoProximo) return a.possuiVencimentoProximo ? -1 : 1;
+      const nearA = Number(a.totalNotasVencimentoProximo || 0);
+      const nearB = Number(b.totalNotasVencimentoProximo || 0);
+      if (nearA !== nearB) return nearB - nearA;
+      return String(a.fornecedor || a.nome || '').localeCompare(String(b.fornecedor || b.nome || ''), 'pt-BR');
+    });
+  }
+
   function formatDateInputBR(value) {
     const digits = String(value || '').replace(/\D/g, '').slice(0, 8);
     if (digits.length <= 2) return digits;
@@ -262,6 +346,11 @@
       rowHash: String(item.rowHash || '').trim(),
       numeroNf: String(item.numeroNf || item.numero_nf || '').trim(),
       serie: String(item.serie || '').trim(),
+      empresa: String(item.empresa || '').trim(),
+      destino: String(item.destino || '').trim(),
+      dataEntrada: String(item.dataEntrada || '').trim(),
+      dataEntradaBr: String(item.dataEntradaBr || '').trim(),
+      entrada: String(item.entrada || '').trim(),
       chaveAcesso: String(item.chaveAcesso || '').trim(),
       volumes: Number(item.volumes || 0),
       peso: Number(item.peso || 0),
@@ -284,7 +373,9 @@
       quantidadeNotas: Number(item.quantidadeNotas ?? notas.length ?? 0),
       quantidadeVolumes: Number(item.quantidadeVolumes ?? notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0)),
       pesoTotalKg: Number(item.pesoTotalKg ?? notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0)),
-      valorTotalNf: Number(item.valorTotalNf ?? notas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0))
+      valorTotalNf: Number(item.valorTotalNf ?? notas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0)),
+      totalNotasVencimentoProximo: Number(item.totalNotasVencimentoProximo ?? notas.filter((nota) => nota.alertaVencimentoProximo).length),
+      possuiVencimentoProximo: !!(item.possuiVencimentoProximo ?? notas.some((nota) => nota.alertaVencimentoProximo))
     };
   }
 
@@ -745,6 +836,16 @@
         rowHash: String(nota?.rowHash || '').trim(),
         numeroNf: String(nota?.numeroNf || '').trim(),
         serie: String(nota?.serie || '').trim(),
+        empresa: String(nota?.empresa || '').trim(),
+        destino: String(nota?.destino || '').trim(),
+        dataEntrada: String(nota?.dataEntrada || '').trim(),
+        dataEntradaBr: String(nota?.dataEntradaBr || '').trim(),
+        entrada: String(nota?.entrada || '').trim(),
+        dataPrimeiroVencimento: String(nota?.dataPrimeiroVencimento || '').trim(),
+        dataPrimeiroVencimentoBr: String(nota?.dataPrimeiroVencimentoBr || '').trim(),
+        diasParaPrimeiroVencimento: nota?.diasParaPrimeiroVencimento == null ? null : Number(nota.diasParaPrimeiroVencimento),
+        alertaVencimentoProximo: !!nota?.alertaVencimentoProximo,
+        tooltipVencimento: String(nota?.tooltipVencimento || '').trim(),
         chaveAcesso: String(nota?.chaveAcesso || '').trim(),
         volumes: Number(nota?.volumes || 0),
         peso: Number(nota?.peso || 0),
@@ -784,7 +885,14 @@
   function renderPendingNotasInterno() {
     const wrap = byId('internalPendingNotas');
     if (!wrap) return;
-    const notas = Array.isArray(state.internalPendingFornecedor?.notas) ? state.internalPendingFornecedor.notas : Array.isArray(state.internalPendingFornecedor?.notasFiscais) ? state.internalPendingFornecedor.notasFiscais : [];
+    const sourceNotas = Array.isArray(state.internalPendingFornecedor?.notas) ? state.internalPendingFornecedor.notas : Array.isArray(state.internalPendingFornecedor?.notasFiscais) ? state.internalPendingFornecedor.notasFiscais : [];
+    const notas = [...sourceNotas].sort((a, b) => {
+      if (!!a.alertaVencimentoProximo !== !!b.alertaVencimentoProximo) return a.alertaVencimentoProximo ? -1 : 1;
+      const dueA = a.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(a.diasParaPrimeiroVencimento);
+      const dueB = b.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(b.diasParaPrimeiroVencimento);
+      if (dueA !== dueB) return dueA - dueB;
+      return String(a.numeroNf || '').localeCompare(String(b.numeroNf || ''), 'pt-BR');
+    });
     if (!notas.length) {
       wrap.innerHTML = '<div class="warning-box">Selecione um fornecedor pendente para carregar as NF disponíveis.</div>';
       state.internalSelectedNotas = [];
@@ -792,36 +900,22 @@
       return;
     }
 
-    wrap.innerHTML = `<div class="pending-notas-toolbar"><button type="button" class="btn-secondary" id="btnSelectAllPendingNotas">Selecionar todos</button></div><div class="pending-notas-grid">${notas.map((nota, idx) => {
+    const groups = [
+      { title: 'Notas com 1º vencimento próximo', items: notas.filter((nota) => nota.alertaVencimentoProximo), highlight: true },
+      { title: 'Demais notas pendentes', items: notas.filter((nota) => !nota.alertaVencimentoProximo), highlight: false }
+    ].filter((group) => group.items.length);
+
+    wrap.innerHTML = `<div class="pending-notas-toolbar"><button type="button" class="btn-secondary" id="btnSelectAllPendingNotas">Selecionar todos</button></div>${groups.map((group) => `<div class="pending-notas-group${group.highlight ? ' pending-notas-group-highlight' : ''}"><h4>${escapeHtml(group.title)} <span>${escapeHtml(formatIntegerBR(group.items.length))} NF</span></h4><div class="pending-notas-grid">${group.items.map((nota, idx) => {
+      const originalIndex = notas.findIndex((candidate) => candidate === nota);
       const dueClass = nota.alertaVencimentoProximo ? ' pending-nota-item-warning' : '';
       const tooltip = nota.tooltipVencimento || '';
       const label = `NF ${nota.numeroNf || '-'} • Série ${nota.serie || '-'}`;
       const dueBadge = nota.alertaVencimentoProximo ? `<span class="pending-note-due-badge" title="${escapeHtml(tooltip)}">Venc. próximo${nota.dataPrimeiroVencimentoBr ? ` • ${escapeHtml(nota.dataPrimeiroVencimentoBr)}` : ''}</span>` : '';
-      return `
-      <div class="pending-nota-item${dueClass}" title="${escapeHtml(tooltip)}">
-        <label class="pending-nota-card">
-          <div class="pending-nota-check">
-            <input type="checkbox" data-internal-nf="${idx}" />
-            <span>${escapeHtml(label)}</span>
-            ${dueBadge}
-          </div>
-          <div class="pending-nota-fields">
-            <div class="pending-nota-field">
-              <span class="pending-nota-title">Volumes</span>
-              <strong>${escapeHtml(formatDecimalBR(nota.volumes || 0, 3))}</strong>
-            </div>
-            <div class="pending-nota-field">
-              <span class="pending-nota-title">Peso</span>
-              <strong>${escapeHtml(formatDecimalBR(nota.peso || 0, 3))} kg</strong>
-            </div>
-            <div class="pending-nota-field pending-nota-field-full">
-              <span class="pending-nota-title">Valor da nota</span>
-              <strong>${escapeHtml(Number(nota.valorNf || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))}</strong>
-            </div>
-          </div>
-        </label>
-      </div>`;
-    }).join('')}</div>`;
+      const empresa = nota.empresa ? `<span class="pending-note-company">${escapeHtml(nota.empresa)}</span>` : '';
+      const destinoLogo = renderStoreLogo(nota.destino || nota.empresa, { showEmpty: false });
+      const dataEntrada = nota.dataEntradaBr || nota.dataEntrada || '-';
+      return `<div class="pending-nota-item${dueClass}" title="${escapeHtml(tooltip)}"><label class="pending-nota-card"><div class="pending-nota-check"><input type="checkbox" data-internal-nf="${originalIndex}" /><span>${escapeHtml(label)}</span><div class="pending-note-tags">${empresa}${destinoLogo}${dueBadge}</div></div><div class="pending-nota-meta"><span><strong>Entrada:</strong> ${escapeHtml(dataEntrada)}</span><span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(nota.peso || 0, 3))} kg</span><span><strong>Volumes:</strong> ${escapeHtml(formatDecimalBR(nota.volumes || 0, 3))}</span></div></label></div>`;
+    }).join('')}</div></div>`).join('')}`;
 
     const sync = () => {
       state.internalSelectedNotas = notas
@@ -855,10 +949,12 @@
   async function loadFornecedoresPendentesInterno() {
     try {
       const items = await api('/api/public/fornecedores-pendentes');
-      state.pendingFornecedores = Array.isArray(items) ? items.map(normalizePendingFornecedor) : [];
+      state.pendingFornecedores = sortPendingFornecedores(Array.isArray(items) ? items.map(normalizePendingFornecedor) : []);
       const select = byId('internalFornecedorPendenteSelect');
       if (!select) return;
-      select.innerHTML = `<option value="">Selecione o fornecedor pendente</option>` + state.pendingFornecedores.map((item) => `<option value="${escapeHtml(item.id || '')}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('');
+      select.innerHTML = `<option value="">Selecione o fornecedor pendente</option>` + state.pendingFornecedores.map((item) => {
+        return `<option value="${escapeHtml(item.id || '')}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`;
+      }).join('');
       select.onchange = () => {
         if (!select.value) {
           state.internalPendingFornecedor = null;
@@ -914,14 +1010,14 @@
             <th>Transportadora</th>
             <th>Motorista</th>
             <th>Placa</th>
-            <th>Doca</th>
-            <th>Janela</th>
             <th>Data</th>
             <th>Hora</th>
-            <th>NF / Série</th>
+            <th>FINITURA</th>
+            <th>OBJ</th>
+            <th>AC COELHO</th>
+            <th>SR ACABAMENTOS</th>
             <th>Volumes</th>
             <th>Peso kg</th>
-            <th>Valor total</th>
             ${includeActions ? '<th>Ações</th>' : ''}
           </tr>
         </thead>
@@ -935,14 +1031,14 @@
               <td>${escapeHtml(item.transportadora || '')}</td>
               <td>${escapeHtml(item.motorista || '')}</td>
               <td>${escapeHtml(item.placa || '')}</td>
-              <td>${escapeHtml(currentDocaLabel(item))}</td>
-              <td>${escapeHtml(item.janela?.codigo || item.janela || '')}</td>
               <td>${escapeHtml(formatDateBR(item.dataAgendada || '') || '')}</td>
               <td>${escapeHtml(formatHour(item.horaAgendada || '') || '')}</td>
-              <td class="nf-series-cell">${renderNotaSerieList(item)}</td>
+              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'FINITURA')}</td>
+              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'OBJ')}</td>
+              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'AC COELHO')}</td>
+              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'SR ACABAMENTOS')}</td>
               <td>${escapeHtml(formatDecimalBR(item.quantidadeVolumes || 0, 3))}</td>
               <td>${escapeHtml(formatDecimalBR(item.pesoTotalKg || 0, 3))}</td>
-              <td>${escapeHtml(Number(item.valorTotalNf || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))}</td>
               ${includeActions ? `<td>
                 <div class="row gap8 wrap action-cell">
                   <button type="button" class="btn-secondary" data-select-agendamento="${escapeHtml(item.id)}">Usar ID</button>
@@ -1035,7 +1131,7 @@
     Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
     const data = await api(`/api/dashboard/operacional?${params.toString()}`);
     const kpis = byId("kpis");
-    const hiddenKpis = new Set(['documentos', 'volumes', 'origem']);
+    const hiddenKpis = new Set(['documentos', 'volumes', 'origem', 'valorTotal']);
     const labels = {
       total: 'Total',
       pendentes: 'Pendentes',
@@ -1045,8 +1141,7 @@
       finalizados: 'Finalizados',
       cancelados: 'Cancelados',
       noShow: 'No-show',
-      pesoKg: 'Peso (kg)',
-      valorTotal: 'Valor total'
+      pesoKg: 'Peso (kg)'
     };
     if (kpis) {
       kpis.className = 'grid kpi-grid';
@@ -1311,25 +1406,58 @@
   function renderConsultaNfResult(data = {}) {
     const relatorio = Array.isArray(data.relatorio) ? data.relatorio : [];
     const agendamentos = Array.isArray(data.agendamentos) ? data.agendamentos : [];
+    const resumo = data.resumo || {};
+    const mode = String(data.modoConsulta || 'NF').toUpperCase();
+    const searchByDateOnly = mode === 'DATA';
+    const targetDigits = normalizeDigitsValue(data.numeroNf || '');
     if (!relatorio.length && !agendamentos.length) {
-      return '<div class="warning-box">Nenhum registro encontrado para a NF informada.</div>';
+      return `<div class="warning-box">${searchByDateOnly ? 'Nenhum agendamento encontrado para a data informada.' : 'Nenhum registro encontrado para a NF informada.'}</div>`;
     }
+
+    const summaryCards = searchByDateOnly
+      ? `
+        <div class="consulta-nf-summary-card"><span>Consulta</span><strong>Por data</strong></div>
+        <div class="consulta-nf-summary-card"><span>Agendamentos do dia</span><strong>${escapeHtml(formatIntegerBR(resumo.totalAgendamentosDaConsulta || resumo.totalAgendamentosNoDia || 0))}</strong></div>
+        <div class="consulta-nf-summary-card"><span>Notas agendadas no dia</span><strong>${escapeHtml(formatIntegerBR(resumo.totalNotasNoDia || 0))}</strong></div>
+        <div class="consulta-nf-summary-card"><span>Data consultada</span><strong>${escapeHtml(formatDateBR(data.dataAgendada || '') || '-')}</strong></div>
+      `
+      : `
+        <div class="consulta-nf-summary-card"><span>Situação da NF</span><strong>${resumo.agendada ? 'Agendada' : 'Sem agendamento'}</strong></div>
+        <div class="consulta-nf-summary-card"><span>Ocorrências no relatório</span><strong>${escapeHtml(formatIntegerBR(resumo.totalOcorrenciasRelatorio || 0))}</strong></div>
+        <div class="consulta-nf-summary-card"><span>Agendamentos na data</span><strong>${escapeHtml(formatIntegerBR(resumo.totalAgendamentosNoDia || 0))}</strong></div>
+        <div class="consulta-nf-summary-card"><span>Notas agendadas na data</span><strong>${escapeHtml(formatIntegerBR(resumo.totalNotasNoDia || 0))}</strong></div>
+        <div class="consulta-nf-summary-card"><span>Esta NF na data</span><strong>${escapeHtml(formatIntegerBR(resumo.totalAgendamentosDestaNfNoDia || 0))}</strong></div>
+      `;
+
     return `
+      <div class="consulta-nf-summary-grid">${summaryCards}</div>
       <div class="consulta-nf-result-grid">
         <div class="result-card">
-          <h3>Relatório terceirizado (${relatorio.length})</h3>
-          ${relatorio.length ? `<table class="table"><thead><tr><th>Fornecedor</th><th>NF</th><th>Série</th><th>1º vencimento</th><th>Status</th></tr></thead><tbody>${relatorio.map((item) => `<tr><td>${escapeHtml(item.fornecedor || '-')}</td><td>${escapeHtml(item.numeroNf || '-')}</td><td>${escapeHtml(item.serie || '-')}</td><td>${escapeHtml(item.dataPrimeiroVencimentoBr || '-')}</td><td>${escapeHtml(item.status || '-')}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">NF não localizada no relatório terceirizado atual.</p>'}
+          <h3>${searchByDateOnly ? 'Relatório terceirizado' : `Relatório terceirizado (${relatorio.length})`}</h3>
+          ${searchByDateOnly
+            ? '<p class="hint">Na consulta apenas por data, o foco é a lista de agendamentos internos do dia escolhido.</p>'
+            : relatorio.length
+              ? `<table class="table"><thead><tr><th>Fornecedor</th><th>Empresa</th><th>Destino</th><th>NF</th><th>Série</th><th>Data entrada</th><th>1º vencimento</th><th>Status</th><th>Agendada?</th></tr></thead><tbody>${relatorio.map((item) => `<tr><td>${escapeHtml(item.fornecedor || '-')}</td><td>${escapeHtml(item.empresa || '-')}</td><td>${renderStoreLogo(item.destino || item.empresa, { showEmpty: true })}</td><td>${escapeHtml(item.numeroNf || '-')}</td><td>${escapeHtml(item.serie || '-')}</td><td>${escapeHtml(item.dataEntradaBr || '-')}</td><td>${escapeHtml(item.dataPrimeiroVencimentoBr || '-')}</td><td>${escapeHtml(item.status || '-')}</td><td>${item.agendamentoId ? 'Sim' : (resumo.agendada ? 'Sim' : 'Não')}</td></tr>`).join('')}</tbody></table>`
+              : '<p class="hint">NF não localizada no relatório terceirizado atual.</p>'}
         </div>
         <div class="result-card">
-          <h3>Agendamentos vinculados (${agendamentos.length})</h3>
-          ${agendamentos.length ? `<table class="table"><thead><tr><th>ID</th><th>Protocolo</th><th>Status</th><th>Fornecedor</th><th>Data</th><th>Hora</th></tr></thead><tbody>${agendamentos.map((item) => `<tr><td>${escapeHtml(item.id || '-')}</td><td>${escapeHtml(item.protocolo || '-')}</td><td>${renderStatusBadge(item.status, item.semaforo || '')}</td><td>${escapeHtml(item.fornecedor || '-')}</td><td>${escapeHtml(formatDateBR(item.dataAgendada || ''))}</td><td>${escapeHtml(formatHour(item.horaAgendada || ''))}</td></tr>`).join('')}</tbody></table>` : '<p class="hint">Nenhum agendamento encontrado para esta NF.</p>'}
+          <h3>${searchByDateOnly ? `Agendamentos do dia (${agendamentos.length})` : `Agendamentos vinculados (${agendamentos.length})`}</h3>
+          ${agendamentos.length ? `<table class="table"><thead><tr><th>ID</th><th>Protocolo</th><th>Status</th><th>Usuário</th><th>Fornecedor</th><th>Data agendada</th><th>Faltam</th><th>Hora</th><th>Data entrada</th><th>1º vencimento</th></tr></thead><tbody>${agendamentos.map((item) => {
+            const notas = Array.isArray(item.notasFiscais) ? item.notasFiscais : [];
+            const notaConsultada = (targetDigits ? notas.find((nota) => normalizeDigitsValue(nota?.numeroNf || '').includes(targetDigits)) : null) || notas[0] || {};
+            const faltam = item.diasParaAgendamento == null ? formatRemainingDaysLabel(item.dataAgendada || '') : (Number(item.diasParaAgendamento) === 0 ? 'Hoje' : Number(item.diasParaAgendamento) > 0 ? `${Number(item.diasParaAgendamento)} dia(s)` : `${Math.abs(Number(item.diasParaAgendamento))} dia(s) atrás`);
+            return `<tr><td>${escapeHtml(item.id || '-')}</td><td>${escapeHtml(item.protocolo || '-')}</td><td>${renderStatusBadge(item.status, item.semaforo || '')}</td><td>${escapeHtml(item.usuarioAgendamento || '-')}</td><td>${escapeHtml(item.fornecedor || '-')}</td><td>${escapeHtml(formatDateBR(item.dataAgendada || ''))}</td><td>${escapeHtml(faltam)}</td><td>${escapeHtml(formatHour(item.horaAgendada || ''))}</td><td>${escapeHtml(notaConsultada?.dataEntradaBr || notaConsultada?.dataEntrada || '-')}</td><td>${escapeHtml(notaConsultada?.dataPrimeiroVencimentoBr || notaConsultada?.dataPrimeiroVencimento || '-')}</td></tr>`;
+          }).join('')}</tbody></table>` : `<p class="hint">${searchByDateOnly ? 'Nenhum agendamento encontrado para a data informada.' : 'Nenhum agendamento encontrado para esta NF. Situação atual: não agendada.'}</p>`}
         </div>
       </div>
     `;
   }
 
-  async function consultarNfInterna(numeroNf) {
-    const result = await api(`/api/agendamentos/consulta-nf?numeroNf=${encodeURIComponent(numeroNf)}`);
+  async function consultarNfInterna(numeroNf, dataAgendada = '') {
+    const params = new URLSearchParams();
+    if (String(numeroNf || '').trim()) params.set('numeroNf', numeroNf);
+    if (dataAgendada) params.set('dataAgendada', normalizeDateToIso(dataAgendada));
+    const result = await api(`/api/agendamentos/consulta-nf?${params.toString()}`);
     const target = byId('consultaNfResult');
     if (target) target.innerHTML = renderConsultaNfResult(result);
   }
@@ -1536,8 +1664,11 @@ Deseja liberar manualmente a descarga deste veículo?`);
     byId("consultaNfForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
-        const numeroNf = new FormData(e.target).get('numeroNf');
-        await consultarNfInterna(numeroNf);
+        const formData = new FormData(e.target);
+        const numeroNf = String(formData.get('numeroNf') || '').trim();
+        const dataAgendada = String(formData.get('dataAgendada') || '').trim();
+        if (!numeroNf && !dataAgendada) throw new Error('Informe o número da NF, a data da consulta, ou ambos.');
+        await consultarNfInterna(numeroNf, dataAgendada);
       } catch (err) {
         const target = byId('consultaNfResult');
         if (target) target.innerHTML = `<div class="warning-box">${escapeHtml(err.message)}</div>`;
@@ -1700,7 +1831,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
       if (input) input.value = token;
       byId("motoristaConsultaForm")?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
     } else if (view === "consulta-nf") {
-      showView("consulta-nf");
+      showView(state.token && !isTokenExpired(state.token) ? "agendamentos" : "login");
     } else if ((view === "consulta" || view === "fornecedor") && token) {
       showView("consulta");
       const input = byId("consultaForm")?.querySelector('input[name="token"]');
