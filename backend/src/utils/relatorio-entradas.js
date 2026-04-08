@@ -52,7 +52,6 @@ const SHEET_COLUMNS = [
   'Status',
   'Prazo médio',
   'Empresa',
-  'Destino',
   'Data do cadastro',
   'Total de IPI',
   'Base de ICMS',
