@@ -6,6 +6,7 @@ import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { prisma } from './prisma.js';
 import { auditLog } from './audit.js';
+import { computeDueInfo, toIsoDate, formatDateBR } from './nf-monitoring.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -174,7 +175,19 @@ function buildNoteObservation(row = {}) {
   if (row['Data emissão']) parts.push(`Emissão ${row['Data emissão']}`);
   if (row['Data de Entrada']) parts.push(`Entrada ${row['Data de Entrada']}`);
   if (row['Status']) parts.push(`Status ${row['Status']}`);
+  if (row['Data 1º vencimento']) parts.push(`1º vencimento ${row['Data 1º vencimento']}`);
   return parts.join(' | ');
+}
+
+function buildDueFields(dateValue = '') {
+  const dueInfo = computeDueInfo({ dueDateValue: dateValue });
+  return {
+    dataPrimeiroVencimento: dueInfo.dueDateIso ? toIsoDate(dueInfo.dueDateIso) : '',
+    dataPrimeiroVencimentoBr: dueInfo.dueDateBr || '',
+    diasParaPrimeiroVencimento: dueInfo.daysUntilDue,
+    alertaVencimentoProximo: dueInfo.nearDue,
+    tooltipVencimento: dueInfo.tooltip || (dueInfo.dueDate ? `1º vencimento em ${formatDateBR(dueInfo.dueDate)}` : '')
+  };
 }
 
 function normalizeSpreadsheetRow(row = {}) {
@@ -225,7 +238,8 @@ function normalizeImportedItems(rows = []) {
       volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
       peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
       valorNf: toFixedNumber(parseNumber(normalizedRow['Valor da nota']), 2),
-      observacao: buildNoteObservation(normalizedRow)
+      observacao: buildNoteObservation(normalizedRow),
+      ...buildDueFields(normalizedRow['Data 1º vencimento'])
     };
 
     const noteKey = note.rowHash || `${note.numeroNf}::${note.serie}::${note.valorNf}::${note.peso}::${note.volumes}`;
@@ -271,7 +285,8 @@ function normalizeNoteFromSpreadsheetRow(row = {}) {
     volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
     peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
     valorNf: toFixedNumber(parseNumber(normalizedRow['Valor da nota']), 2),
-    observacao: buildNoteObservation(normalizedRow)
+    observacao: buildNoteObservation(normalizedRow),
+    ...buildDueFields(normalizedRow['Data 1º vencimento'])
   };
 }
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agendamento de Descarga V3.1</title>
+  <title>Agendamento de Descarga V3.2</title>
   <link rel="stylesheet" href="/assets/styles28.css" />
   <link rel="icon" href="assets/Favicon.png" type="image">
 </head>
@@ -19,8 +19,6 @@
 
     <nav id="publicNav" class="nav-menu">
       <button type="button" class="nav-btn active" data-view="public-home">Início</button>
-            <button type="button" class="nav-btn" data-view="consulta">Consulta transportadora/fornecedor</button>
-      <button type="button" class="nav-btn" data-view="motorista">Consulta motorista</button>
       <button type="button" class="nav-btn" data-view="login">Área do Colaborador</button>
     </nav>
 
@@ -121,6 +119,20 @@
         </form>
         <p id="motoristaMsg" class="msg"></p>
         <div id="motoristaResult" class="mt16"></div>
+      </div>
+    </section>
+
+    <section id="consulta-nf" class="view">
+      <div class="card">
+        <h2>Consulta por NF</h2>
+        <form id="consultaNfForm" class="consulta-nf-form mt12">
+          <div class="consulta-nf-toolbar">
+            <label class="form-group-full">Número da NF<input name="numeroNf" type="text" inputmode="numeric" placeholder="Digite o número da NF" required /></label>
+            <button type="submit">Consultar NF</button>
+          </div>
+        </form>
+        <p class="hint mt12">Use este painel para localizar a NF no relatório terceirizado atual e verificar se ela já possui agendamento vinculado.</p>
+        <div id="consultaNfResult" class="mt16"></div>
       </div>
     </section>
 
@@ -228,6 +240,7 @@
       </div>
     </section>
 
+    <!-- Aba Agendamentos sem painel de consulta por NF -->
     <section id="agendamentos" class="view">
       <div class="grid2">
         <div class="card">
@@ -279,9 +292,9 @@
           <p id="agendamentoMsg" class="msg"></p>
         </div>
 
-        <div class="card">
+        <div class="card workflow-card-full">
           <h2>Workflow operacional</h2>
-          <div class="row gap8">
+          <div class="workflow-id-row">
             <button id="loadAgendamentos">Atualizar lista</button>
             <input id="agendamentoId" placeholder="ID do agendamento" />
           </div>
@@ -337,6 +350,6 @@
     </section>
   </main>
 
-  <script src="/assets/app.js"></script>
+  <script src="/assets/app.js?v=20260407b"></script>
 </body>
 </html>
