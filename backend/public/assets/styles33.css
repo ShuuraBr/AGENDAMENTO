@@ -107,8 +107,8 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 
 .kpi-grid{grid-template-columns:repeat(auto-fit,minmax(185px,1fr));align-items:stretch}
 .kpi{display:flex;flex-direction:column;justify-content:space-between;min-height:98px;padding:14px 14px 12px;background:#f8fafc;border:1px solid #dbe2ea;border-radius:14px;overflow:hidden}
-.kpi-label{display:block;font-size:22px;line-height:1.2;text-transform:uppercase;letter-spacing:.02em;color:#64748b;margin-bottom:8px;white-space:normal;word-break:break-word;max-width:100%}
-.kpi-value{display:block;font-size:clamp(20px,1.8vw,30px);font-weight:800;line-height:1.05;letter-spacing:-.03em;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi-label{display:block;font-size:20px;line-height:1.2;text-transform:uppercase;letter-spacing:.02em;color:#64748b;margin-bottom:8px;white-space:normal;word-break:break-word;max-width:100%}
+.kpi-value{display:block;font-size:clamp(18px,1.8vw,30px);font-weight:800;line-height:1.05;letter-spacing:-.03em;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kpi-value-tight{font-size:clamp(20px,1.65vw,26px)}
 .kpi-value-compact{font-size:clamp(17px,1.35vw,22px)}
 @media (max-width:1200px){.kpi-grid{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}}
