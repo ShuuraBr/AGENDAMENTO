@@ -3,10 +3,6 @@ import path from 'path';
 import fs from 'fs';
 import QRCode from 'qrcode';
 
-function money(value = 0) {
-  return Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
 function formatNumberBR(value = 0, minimumFractionDigits = 0, maximumFractionDigits = 3) {
   return Number(value || 0).toLocaleString('pt-BR', {
     minimumFractionDigits,
@@ -92,8 +88,7 @@ export async function generateVoucherPdf(agendamento, options = {}) {
     ['Token do fornecedor', agendamento.publicTokenFornecedor || '-'],
     ['Quantidade de notas', String(agendamento.quantidadeNotas ?? 0)],
     ['Quantidade de volumes', formatNumberBR(agendamento.quantidadeVolumes || 0, 0, 3)],
-    ['Peso total', formatWeightKg(agendamento.pesoTotalKg || 0)],
-    ['Valor total', money(agendamento.valorTotalNf || 0)]
+    ['Peso total', formatWeightKg(agendamento.pesoTotalKg || 0)]
   ];
 
   const leftX = summaryX + 16;
