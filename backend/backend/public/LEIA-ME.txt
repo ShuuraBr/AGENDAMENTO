@@ -1,6 +1,0 @@
-Coloque aqui o conteúdo gerado em frontend/dist.
-
-Exemplo:
-public/index.html
-public/assets/index-xxxxx.js
-public/assets/index-xxxxx.css

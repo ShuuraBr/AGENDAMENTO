@@ -1,9 +1,0 @@
-[
-  {
-    "id": 1,
-    "nome": "Administrador",
-    "email": "admin@local.test",
-    "perfil": "ADMIN",
-    "senha": "123456"
-  }
-]

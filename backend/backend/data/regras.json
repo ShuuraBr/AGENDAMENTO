@@ -1,8 +1,0 @@
-[
-  {
-    "id": 1,
-    "nome": "Padrão",
-    "toleranciaAtrasoMin": 15,
-    "tempoDescargaPrevistoMin": 60
-  }
-]

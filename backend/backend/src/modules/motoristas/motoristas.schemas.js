@@ -1,3 +1,0 @@
-import { z } from 'zod';
-export const createSchema = z.object({ transportadoraId:z.coerce.bigint().optional().nullable(), nome:z.string().min(2), cpf:z.string().optional().nullable(), telefone:z.string().optional().nullable(), whatsapp:z.string().optional().nullable(), email:z.string().email().optional().nullable().or(z.literal('')), status:z.string().default('ATIVO'), observacoes:z.string().optional().nullable() });
-export const updateSchema = createSchema.partial();

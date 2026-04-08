@@ -6,6 +6,7 @@ import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { prisma } from './prisma.js';
 import { auditLog } from './audit.js';
+import { readAgendamentos } from './file-store.js';
 import { computeDueInfo, toIsoDate, formatDateBR } from './nf-monitoring.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -51,6 +52,7 @@ const SHEET_COLUMNS = [
   'Status',
   'Prazo médio',
   'Empresa',
+  'Destino',
   'Data do cadastro',
   'Total de IPI',
   'Base de ICMS',
@@ -82,7 +84,15 @@ const SHEET_COLUMNS = [
 
 let watcherHandle = null;
 let watcherBusy = false;
+let relatorioDbDisabled = false;
+let relatorioDbDisableReason = null;
 
+function disableRelatorioDb(error, context = 'operacao_desconhecida') {
+  relatorioDbDisabled = true;
+  const detail = error?.message || String(error || 'erro_desconhecido');
+  relatorioDbDisableReason = `${context}: ${detail}`;
+  console.error(`[RELATORIO_DB_FALLBACK] Banco desabilitado para o relatório terceirizado. Motivo: ${relatorioDbDisableReason}`);
+}
 
 function pathToDisplayName(filePathOrName) {
   if (Buffer.isBuffer(filePathOrName)) {
@@ -224,6 +234,8 @@ function normalizeImportedItems(rows = []) {
         quantidadeVolumes: 0,
         pesoTotalKg: 0,
         valorTotalNf: 0,
+        totalNotasVencimentoProximo: 0,
+        possuiVencimentoProximo: false,
         status: 'AGUARDANDO_CHEGADA',
         statusRelatorio: 'Aguardando Chegada',
         _seenNotaKeys: new Set()
@@ -231,15 +243,20 @@ function normalizeImportedItems(rows = []) {
     }
 
     const current = groups.get(fornecedor);
+    const dueFields = buildDueFields(normalizedRow['Data 1º vencimento']);
     const note = {
       rowHash: normalizeCellValue(row?.rowHash || '') || buildRowHash(normalizedRow),
       numeroNf,
       serie: normalizeCellValue(normalizedRow['Série']),
+      empresa: normalizeCellValue(normalizedRow['Empresa']),
+      destino: normalizeCellValue(normalizedRow['Destino']),
+      dataEntrada: normalizeCellValue(normalizedRow['Data de Entrada']),
+      entrada: normalizeCellValue(normalizedRow['Entrada']),
       volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
       peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
       valorNf: toFixedNumber(parseNumber(normalizedRow['Valor da nota']), 2),
       observacao: buildNoteObservation(normalizedRow),
-      ...buildDueFields(normalizedRow['Data 1º vencimento'])
+      ...dueFields
     };
 
     const noteKey = note.rowHash || `${note.numeroNf}::${note.serie}::${note.valorNf}::${note.peso}::${note.volumes}`;
@@ -252,14 +269,104 @@ function normalizeImportedItems(rows = []) {
     current.quantidadeVolumes = toFixedNumber(current.quantidadeVolumes + Number(note.volumes || 0), 3);
     current.pesoTotalKg = toFixedNumber(current.pesoTotalKg + Number(note.peso || 0), 3);
     current.valorTotalNf = toFixedNumber(current.valorTotalNf + Number(note.valorNf || 0), 2);
+    if (dueFields.alertaVencimentoProximo) {
+      current.totalNotasVencimentoProximo += 1;
+      current.possuiVencimentoProximo = true;
+    }
   }
 
   return [...groups.values()]
     .map((item) => {
       delete item._seenNotaKeys;
+      item.notas = [...item.notas].sort((a, b) => {
+        if (!!a.alertaVencimentoProximo !== !!b.alertaVencimentoProximo) {
+          return a.alertaVencimentoProximo ? -1 : 1;
+        }
+        const dueA = a.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(a.diasParaPrimeiroVencimento);
+        const dueB = b.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(b.diasParaPrimeiroVencimento);
+        if (dueA !== dueB) return dueA - dueB;
+        return String(a.numeroNf || '').localeCompare(String(b.numeroNf || ''), 'pt-BR');
+      });
+      item.notasFiscais = item.notas;
       return item;
     })
-    .sort((a, b) => String(a.fornecedor || '').localeCompare(String(b.fornecedor || ''), 'pt-BR'));
+    .sort((a, b) => {
+      if (!!a.possuiVencimentoProximo !== !!b.possuiVencimentoProximo) {
+        return a.possuiVencimentoProximo ? -1 : 1;
+      }
+      if (Number(a.totalNotasVencimentoProximo || 0) !== Number(b.totalNotasVencimentoProximo || 0)) {
+        return Number(b.totalNotasVencimentoProximo || 0) - Number(a.totalNotasVencimentoProximo || 0);
+      }
+      return String(a.fornecedor || '').localeCompare(String(b.fornecedor || ''), 'pt-BR');
+    });
+}
+
+function buildPendingNoteKey(nota = {}) {
+  const rowHash = normalizeCellValue(nota?.rowHash || '');
+  if (rowHash) return rowHash;
+  const numeroNf = normalizeCellValue(nota?.numeroNf || nota?.numero_nf || '');
+  const serie = normalizeCellValue(nota?.serie || '');
+  if (!numeroNf) return '';
+  return `${numeroNf}::${serie}`;
+}
+
+function filterScheduledNotesFromGroups(groups = []) {
+  const rescheduleStatuses = new Set(['CANCELADO', 'REPROVADO', 'NO_SHOW']);
+  const blockedKeys = new Set();
+
+  for (const agendamento of readAgendamentos()) {
+    if (rescheduleStatuses.has(String(agendamento?.status || '').trim().toUpperCase())) continue;
+    const notas = Array.isArray(agendamento?.notasFiscais) ? agendamento.notasFiscais : Array.isArray(agendamento?.notas) ? agendamento.notas : [];
+    for (const nota of notas) {
+      const key = buildPendingNoteKey(nota);
+      if (key) blockedKeys.add(key);
+    }
+  }
+
+  return (Array.isArray(groups) ? groups : []).map((group, index) => {
+    const notas = (Array.isArray(group?.notas) ? group.notas : Array.isArray(group?.notasFiscais) ? group.notasFiscais : [])
+      .filter((nota) => {
+        const key = buildPendingNoteKey(nota);
+        return !key || !blockedKeys.has(key);
+      })
+      .sort((a, b) => {
+        if (!!a.alertaVencimentoProximo !== !!b.alertaVencimentoProximo) {
+          return a.alertaVencimentoProximo ? -1 : 1;
+        }
+        const dueA = a.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(a.diasParaPrimeiroVencimento);
+        const dueB = b.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(b.diasParaPrimeiroVencimento);
+        if (dueA !== dueB) return dueA - dueB;
+        return String(a.numeroNf || '').localeCompare(String(b.numeroNf || ''), 'pt-BR');
+      });
+
+    if (!notas.length) return null;
+
+    const quantidadeVolumes = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0), 3);
+    const pesoTotalKg = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0), 3);
+    const valorTotalNf = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0), 2);
+    const totalNotasVencimentoProximo = notas.filter((nota) => nota?.alertaVencimentoProximo).length;
+
+    return {
+      ...group,
+      id: group?.id || index + 1,
+      notas,
+      notasFiscais: notas,
+      quantidadeNotas: notas.length,
+      quantidadeVolumes,
+      pesoTotalKg,
+      valorTotalNf,
+      totalNotasVencimentoProximo,
+      possuiVencimentoProximo: totalNotasVencimentoProximo > 0
+    };
+  }).filter(Boolean).sort((a, b) => {
+    if (!!a.possuiVencimentoProximo !== !!b.possuiVencimentoProximo) {
+      return a.possuiVencimentoProximo ? -1 : 1;
+    }
+    if (Number(a.totalNotasVencimentoProximo || 0) !== Number(b.totalNotasVencimentoProximo || 0)) {
+      return Number(b.totalNotasVencimentoProximo || 0) - Number(a.totalNotasVencimentoProximo || 0);
+    }
+    return String(a.fornecedor || '').localeCompare(String(b.fornecedor || ''), 'pt-BR');
+  });
 }
 
 function normalizeSelectedNota(nota = {}) {
@@ -267,6 +374,10 @@ function normalizeSelectedNota(nota = {}) {
     rowHash: normalizeCellValue(nota?.rowHash || ''),
     numeroNf: normalizeCellValue(nota?.numeroNf || nota?.numero_nf || ''),
     serie: normalizeCellValue(nota?.serie || ''),
+    empresa: normalizeCellValue(nota?.empresa || ''),
+    destino: normalizeCellValue(nota?.destino || ''),
+    dataEntrada: normalizeCellValue(nota?.dataEntrada || ''),
+    entrada: normalizeCellValue(nota?.entrada || ''),
     chaveAcesso: normalizeCellValue(nota?.chaveAcesso || ''),
     volumes: toFixedNumber(parseNumber(nota?.volumes || 0), 3),
     peso: toFixedNumber(parseNumber(nota?.peso || 0), 3),
@@ -281,6 +392,10 @@ function normalizeNoteFromSpreadsheetRow(row = {}) {
     rowHash: normalizeCellValue(row?.rowHash || '') || buildRowHash(normalizedRow),
     numeroNf: normalizeCellValue(normalizedRow['Nr. nota']),
     serie: normalizeCellValue(normalizedRow['Série']),
+    empresa: normalizeCellValue(normalizedRow['Empresa']),
+    destino: normalizeCellValue(normalizedRow['Destino']),
+    dataEntrada: normalizeCellValue(normalizedRow['Data de Entrada']),
+    entrada: normalizeCellValue(normalizedRow['Entrada']),
     chaveAcesso: '',
     volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
     peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
@@ -524,6 +639,25 @@ async function runSqlIgnoringDuplicateKeyName(sql) {
   }
 }
 
+async function runSqlIgnoringLegacyConstraint(sql) {
+  try {
+    await prisma.$executeRawUnsafe(sql);
+  } catch (error) {
+    const code = Number(error?.code || error?.meta?.code || 0);
+    const message = String(error?.message || '');
+    if (
+      code === 1060 ||
+      code === 1061 ||
+      message.includes('Duplicate column name') ||
+      message.includes('Duplicate key name') ||
+      message.includes('Multiple primary key defined')
+    ) {
+      return;
+    }
+    throw error;
+  }
+}
+
 function readState() {
   try {
     if (!fs.existsSync(stateFile)) return {};
@@ -549,73 +683,31 @@ function writeRawFallback(rows = []) {
 }
 
 async function ensureRelatorioTable() {
-  const businessColumnsSql = SHEET_COLUMNS
-    .map((column) => `${quoteIdentifier(column)} TEXT NULL`)
-    .join(',\n      ');
+  if (relatorioDbDisabled) return false;
 
-  await prisma.$executeRawUnsafe(`
-    CREATE TABLE IF NOT EXISTS ${quoteIdentifier(TABLE_NAME)} (
-      id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-      rowHash VARCHAR(64) NULL,
-      agendamentoId INT NULL,
-      ${businessColumnsSql},
-      origemArquivo VARCHAR(255) NULL,
-      importedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      dadosOriginaisJson LONGTEXT NULL,
-      INDEX idx_relatorio_fornecedor (${quoteIdentifier('Fornecedor')}(191)),
-      INDEX idx_relatorio_nf (${quoteIdentifier('Nr. nota')}(191)),
-      INDEX idx_relatorio_status (${quoteIdentifier('Status')}(191))
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  `);
-
-  const existingColumns = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
-  const existingNames = new Set((existingColumns || []).map((item) => String(item.Field || '')));
-
-  if (!existingNames.has('rowHash')) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN rowHash VARCHAR(64) NULL`);
-  }
-  if (!existingNames.has('agendamentoId')) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN agendamentoId INT NULL`);
-  }
-
-  for (const column of SHEET_COLUMNS) {
-    if (!existingNames.has(column)) {
-      await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN ${quoteIdentifier(column)} TEXT NULL`);
-    }
-  }
-
-  if (!existingNames.has('origemArquivo')) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN origemArquivo VARCHAR(255) NULL`);
-  }
-  if (!existingNames.has('importedAt')) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN importedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`);
-  }
-  if (!existingNames.has('updatedAt')) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`);
-  }
-  if (!existingNames.has('dadosOriginaisJson')) {
-    await prisma.$executeRawUnsafe(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN dadosOriginaisJson LONGTEXT NULL`);
-  }
-
-  const existingIndexes = await prisma.$queryRawUnsafe(`SHOW INDEX FROM ${quoteIdentifier(TABLE_NAME)}`);
-  const indexNames = new Set((existingIndexes || []).map((item) => String(item.Key_name || item.key_name || '')));
-
-  if (!indexNames.has('uk_relatorio_row_hash')) {
-    await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD UNIQUE INDEX uk_relatorio_row_hash (rowHash)`);
-  }
-  if (!indexNames.has('idx_relatorio_agendamento')) {
-    await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD INDEX idx_relatorio_agendamento (agendamentoId)`);
+  try {
+    await prisma.$queryRawUnsafe(
+      `SELECT rowHash, agendamentoId, dadosOriginaisJson
+         FROM ${quoteIdentifier(TABLE_NAME)}
+        LIMIT 1`
+    );
+    return true;
+  } catch (error) {
+    disableRelatorioDb(error, 'ensureRelatorioTable:readOnlyProbe');
+    return false;
   }
 }
 
-
-
 async function countRelatorioRowsInDatabase() {
-  await ensureRelatorioTable();
-  const rows = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS total FROM ${quoteIdentifier(TABLE_NAME)}`);
-  const total = Number(rows?.[0]?.total ?? rows?.[0]?.['COUNT(*)'] ?? 0);
-  return Number.isFinite(total) ? total : 0;
+  if (!(await ensureRelatorioTable())) return 0;
+  try {
+    const rows = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS total FROM ${quoteIdentifier(TABLE_NAME)}`);
+    const total = Number(rows?.[0]?.total ?? rows?.[0]?.['COUNT(*)'] ?? 0);
+    return Number.isFinite(total) ? total : 0;
+  } catch (error) {
+    disableRelatorioDb(error, 'countRelatorioRowsInDatabase');
+    return 0;
+  }
 }
 
 function buildImportKey(file = null) {
@@ -646,7 +738,8 @@ export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = t
 
   const currentKey = buildImportKey(latest);
   const sameFileAlreadyProcessed = state.lastProcessedKey === currentKey;
-  const shouldImport = !sameFileAlreadyProcessed || (forceWhenDatabaseEmpty && totalLinhasNoBanco === 0);
+  const shouldForceBecauseDatabaseEmpty = !relatorioDbDisabled && forceWhenDatabaseEmpty && totalLinhasNoBanco === 0;
+  const shouldImport = !sameFileAlreadyProcessed || shouldForceBecauseDatabaseEmpty;
 
   if (!shouldImport) {
     return {
@@ -684,22 +777,45 @@ export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = t
 export { countRelatorioRowsInDatabase };
 
 async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
-  await ensureRelatorioTable();
+  if (!(await ensureRelatorioTable())) {
+    throw new Error(relatorioDbDisableReason || 'Banco do relatório terceirizado indisponível.');
+  }
 
-  const existingRows = await prisma.$queryRawUnsafe(`SELECT rowHash, agendamentoId FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash IS NOT NULL`);
+  let existingRows = [];
+  try {
+    existingRows = await prisma.$queryRawUnsafe(`SELECT rowHash, agendamentoId FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash IS NOT NULL`);
+  } catch (error) {
+    disableRelatorioDb(error, 'replaceDatabaseSnapshot:readExistingRows');
+    throw error;
+  }
   const agendamentoMap = new Map((existingRows || []).map((row) => [String(row.rowHash || ''), row.agendamentoId == null ? null : Number(row.agendamentoId)]));
 
   await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)}`);
 
-  const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
-  const columnSql = columns.map((column) => quoteIdentifier(column)).join(', ');
-  const placeholders = columns.map(() => '?').join(', ');
+  const deduplicatedRows = [];
+  const seenRowHashes = new Set();
 
   for (const row of rows) {
     const normalizedRow = {};
     for (const column of SHEET_COLUMNS) normalizedRow[column] = normalizeCellValue(row[column] ?? '');
     const rowHash = buildRowHash(normalizedRow);
-    const values = [rowHash, agendamentoMap.get(rowHash) ?? null, ...SHEET_COLUMNS.map((column) => normalizedRow[column]), sourceFileName || null, JSON.stringify(normalizedRow)];
+    if (seenRowHashes.has(rowHash)) continue;
+    seenRowHashes.add(rowHash);
+    deduplicatedRows.push({ normalizedRow, rowHash });
+  }
+
+  const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
+  const columnSql = columns.map((column) => quoteIdentifier(column)).join(', ');
+  const placeholders = columns.map(() => '?').join(', ');
+
+  for (const row of deduplicatedRows) {
+    const values = [
+      row.rowHash,
+      agendamentoMap.get(row.rowHash) ?? null,
+      ...SHEET_COLUMNS.map((column) => row.normalizedRow[column]),
+      sourceFileName || null,
+      JSON.stringify(row.normalizedRow)
+    ];
     await prisma.$executeRawUnsafe(`INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${placeholders})`, ...values);
   }
 }
@@ -717,16 +833,16 @@ function parseRowFromDatabase(row = {}) {
 
 export async function listFornecedoresPendentesImportados() {
   try {
-    await ensureRelatorioTable();
-    const rows = await prisma.$queryRawUnsafe(
-      `SELECT id, rowHash, agendamentoId, dadosOriginaisJson, importedAt, updatedAt
+    if (await ensureRelatorioTable()) {
+      const rows = await prisma.$queryRawUnsafe(
+      `SELECT rowHash, agendamentoId, dadosOriginaisJson, importedAt, updatedAt
          FROM ${quoteIdentifier(TABLE_NAME)}
         WHERE agendamentoId IS NULL
-        ORDER BY id ASC`
+        ORDER BY importedAt ASC, updatedAt ASC, rowHash ASC`
     );
 
-    if (Array.isArray(rows) && rows.length) {
-      const parsedRows = rows
+      if (Array.isArray(rows) && rows.length) {
+        const parsedRows = rows
         .map((row) => {
           try {
             const parsed = row?.dadosOriginaisJson ? JSON.parse(String(row.dadosOriginaisJson)) : {};
@@ -737,17 +853,19 @@ export async function listFornecedoresPendentesImportados() {
         })
         .filter((row) => row && row['Fornecedor'] && row['Nr. nota']);
 
-      if (parsedRows.length) {
-        return normalizeImportedItems(parsedRows);
+        if (parsedRows.length) {
+          return filterScheduledNotesFromGroups(normalizeImportedItems(parsedRows));
+        }
       }
     }
   } catch (error) {
+    disableRelatorioDb(error, 'listFornecedoresPendentesImportados');
     console.error('Falha ao listar pendências importadas no banco:', error?.message || error);
   }
 
   try {
     if (!fs.existsSync(fallbackFile)) return [];
-    return JSON.parse(fs.readFileSync(fallbackFile, 'utf8'));
+    return filterScheduledNotesFromGroups(JSON.parse(fs.readFileSync(fallbackFile, 'utf8')) || []);
   } catch {
     return [];
   }
@@ -755,7 +873,7 @@ export async function listFornecedoresPendentesImportados() {
 
 export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, notas = []) {
   if (!agendamentoId || !fornecedor || !Array.isArray(notas) || !notas.length) return;
-  await ensureRelatorioTable();
+  if (!(await ensureRelatorioTable())) return;
 
   for (const nota of notas) {
     const rowHash = normalizeCellValue(nota?.rowHash || '');
@@ -788,6 +906,17 @@ export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, 
       ...args
     );
   }
+}
+
+export async function unlinkRelatorioRowsFromAgendamento(agendamentoId) {
+  if (!agendamentoId) return;
+  try {
+    if (!(await ensureRelatorioTable())) return;
+    await prisma.$executeRawUnsafe(
+      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = NULL WHERE agendamentoId = ?`,
+      Number(agendamentoId)
+    );
+  } catch {}
 }
 
 export async function importRelatorioSpreadsheet({ filePath, originalName = '', actor = null, source = 'manual', ip = null } = {}) {
@@ -855,18 +984,21 @@ export function getRelatorioImportStatusDetailed() {
   return {
     ultimoProcessamento: state.lastImport || null,
     lastProcessedKey: state.lastProcessedKey || null,
-    pastasMonitoradas: [...importDirCandidates]
+    pastasMonitoradas: [...importDirCandidates],
+    bancoDesabilitado: relatorioDbDisabled,
+    motivoBancoDesabilitado: relatorioDbDisableReason
   };
 }
 
 
 export async function getRelatorioRowsCount() {
   try {
-    await ensureRelatorioTable();
+    if (!(await ensureRelatorioTable())) return 0;
     const result = await prisma.$queryRawUnsafe(`SELECT COUNT(*) AS total FROM ${quoteIdentifier(TABLE_NAME)}`);
     const total = Number(result?.[0]?.total || result?.[0]?.TOTAL || 0);
     return Number.isFinite(total) ? total : 0;
   } catch (error) {
+    disableRelatorioDb(error, 'getRelatorioRowsCount');
     console.error('Falha ao contar linhas do relatório terceirizado:', error?.message || error);
     return 0;
   }
@@ -882,7 +1014,8 @@ export async function ensureLatestRelatorioImport({ forceIfEmpty = true } = {}) 
   const key = buildFileKey(latest.rawName || latest.name, latest);
   const state = readState();
   const totalLinhasNoBanco = await getRelatorioRowsCount();
-  const shouldReimport = state.lastProcessedKey !== key || (forceIfEmpty && totalLinhasNoBanco === 0);
+  const shouldForceBecauseDatabaseEmpty = !relatorioDbDisabled && forceIfEmpty && totalLinhasNoBanco === 0;
+  const shouldReimport = state.lastProcessedKey !== key || shouldForceBecauseDatabaseEmpty;
 
   if (!shouldReimport) {
     return {

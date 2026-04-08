@@ -1,3 +1,0 @@
-import { z } from 'zod';
-export const createSchema = z.object({ transportadoraId:z.coerce.bigint().optional().nullable(), placaCavalo:z.string().optional().nullable(), placaCarreta:z.string().optional().nullable(), tipoVeiculo:z.string().min(2), capacidadePesoKg:z.coerce.number().optional().nullable(), capacidadeVolumeM3:z.coerce.number().optional().nullable(), observacoes:z.string().optional().nullable(), ativo:z.boolean().default(true) });
-export const updateSchema = createSchema.partial();

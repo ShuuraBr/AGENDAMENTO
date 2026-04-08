@@ -119,8 +119,22 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 .auditoria-list{display:grid;gap:12px}.auditoria-item{border:1px solid #dbe2ea;border-radius:14px;background:#f8fafc;padding:14px}.auditoria-item-header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}.auditoria-item pre{margin-top:10px;background:#0f172a;color:#e2e8f0}.auditoria-meta{color:#64748b;font-size:13px}.auditoria-empty{color:#64748b}
 
 body.modal-open{overflow:hidden}
-.consulta-nf-toolbar{display:grid;grid-template-columns:minmax(280px,1fr) auto;gap:12px;align-items:end}
+.consulta-nf-toolbar{display:grid;grid-template-columns:minmax(260px,1.3fr) minmax(190px,.8fr) auto;gap:12px;align-items:end}
 .consulta-nf-result-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.consulta-nf-summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.consulta-nf-summary-card{display:grid;gap:6px;padding:14px 16px;border:1px solid #dbe2ea;border-radius:14px;background:#f8fafc}
+.consulta-nf-summary-card span{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#64748b}
+.consulta-nf-summary-card strong{font-size:24px;line-height:1.1;color:#0f172a}
+.pending-notas-group{display:grid;gap:10px;margin-top:14px}
+.pending-notas-group h4{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:0;font-size:15px;color:#0f172a}
+.pending-notas-group h4 span{font-size:12px;font-weight:700;color:#92400e}
+.pending-notas-group-highlight{padding:14px;border:1px solid #f59e0b;border-radius:16px;background:#fffbeb}
+.pending-nota-card{display:grid;gap:10px;width:100%}
+.pending-note-company{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:700;margin-left:8px}
+.pending-nota-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;color:#475569;font-size:12px}
+.pending-nota-meta span{display:block}
+.operational-table td.empresa-notas-cell{white-space:normal;min-width:170px}
+.agendamento-consulta-card{min-width:0}
 .pending-nota-item-warning{border-color:#f59e0b;background:#fffbeb}
 .pending-note-due-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;margin-left:auto}
 .nf-series-item-warning{display:inline-block;background:#fef3c7;border:1px solid #f59e0b;border-radius:999px;padding:3px 8px;color:#92400e}
@@ -142,3 +156,92 @@ body.modal-open{overflow:hidden}
 .workflow-id-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:center}
 .workflow-id-row input{min-width:0}
 @media (max-width:680px){.workflow-id-row{grid-template-columns:1fr}.workflow-id-row button{width:100%}}
+
+@media (max-width:720px){.pending-nota-meta{grid-template-columns:1fr}.consulta-nf-summary-card strong{font-size:20px}}
+
+/* Ajustes adicionais - consulta NF, destinos e fornecedores pendentes */
+#internalFornecedorPendenteSelect,
+#internalFornecedorPendenteSelect option,
+#fornecedorPendenteSelect,
+#fornecedorPendenteSelect option {
+  font-weight: 700;
+}
+
+.pending-nota-check {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.pending-note-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pending-note-company {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pending-note-due-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.store-logo,
+.store-logo-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.store-logo-empty {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.store-logo-image {
+  height: 24px;
+  width: auto;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.consulta-nf-result-grid td .store-logo-image {
+  height: 22px;
+}
+
+.operational-table td.empresa-notas-cell {
+  min-width: 180px;
+}
+
+.consulta-nf-toolbar label:first-child {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .pending-note-tags {
+    width: 100%;
+  }
+}
