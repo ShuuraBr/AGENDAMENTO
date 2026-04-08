@@ -17,7 +17,8 @@ import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
 import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento } from "../utils/relatorio-entradas.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
-import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, searchByNumeroNf } from "../utils/nf-monitoring.js";
+import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, sendMonthlyNearDueDigestIfNeeded, searchByNumeroNf } from "../utils/nf-monitoring.js";
+import { encodeNotaObservacao } from "../utils/nota-metadata.js";
 
 const router = Router();
 router.use(authRequired);
@@ -141,6 +142,60 @@ async function loadAgendamentosForConsulta({ numeroNf = '', dataAgendada = '' } 
 
 function buildScheduleIntro(item) {
   return `O agendamento foi efetuado para o dia ${formatDateBR(item.dataAgendada)}, às ${item.horaAgendada || "-"}. Solicitamos chegada com 10 minutos de antecedência.`;
+}
+
+function fiscalRecipient() {
+  return String(
+    process.env.FISCAL_EMAIL
+    || process.env.EMAIL_FISCAL
+    || process.env.SETOR_FISCAL_EMAIL
+    || process.env.FISCAL_SETOR_EMAIL
+    || process.env.FINANCEIRO_EMAIL
+    || process.env.EMAIL_FINANCEIRO
+    || ''
+  ).trim();
+}
+
+function buildManualNotaFiscalMail({ fornecedor = '', nota = {}, actor = null } = {}) {
+  const operador = String(actor?.nome || actor?.name || actor?.email || actor?.sub || 'Não identificado').trim();
+  const numeroNf = String(nota?.numeroNf || '').trim() || '-';
+  const serie = String(nota?.serie || '').trim() || '-';
+  const volumes = Number(nota?.volumes || 0);
+  const peso = Number(nota?.peso || 0);
+  const destino = String(nota?.destino || '').trim() || '-';
+  return {
+    subject: `Alerta fiscal: NF sem pré-lançamento (${numeroNf}${serie !== '-' ? ` / ${serie}` : ''})`,
+    text: [
+      'Foi inserida manualmente uma nota fiscal que não consta no relatório terceirizado (sem pré-lançamento).',
+      '',
+      `Fornecedor: ${fornecedor || '-'}`,
+      `NF: ${numeroNf}`,
+      `Série: ${serie}`,
+      `Qtd. volumes: ${volumes}`,
+      `Peso: ${peso}`,
+      `Destino: ${destino}`,
+      `Operador responsável: ${operador}`
+    ].join('\n'),
+    html: `
+      <p>Foi inserida manualmente uma nota fiscal que <strong>não consta no relatório terceirizado</strong> (sem pré-lançamento).</p>
+      <p>
+        <strong>Fornecedor:</strong> ${fornecedor || '-'}<br>
+        <strong>NF:</strong> ${numeroNf}<br>
+        <strong>Série:</strong> ${serie}<br>
+        <strong>Qtd. volumes:</strong> ${volumes}<br>
+        <strong>Peso:</strong> ${peso}<br>
+        <strong>Destino:</strong> ${destino}<br>
+        <strong>Operador responsável:</strong> ${operador}
+      </p>
+    `
+  };
+}
+
+async function sendFiscalMissingPrelaunchEmail({ fornecedor = '', nota = {}, actor = null } = {}) {
+  const to = fiscalRecipient();
+  if (!to) return { sent: false, reason: 'E-mail do fiscal não configurado.' };
+  const mail = buildManualNotaFiscalMail({ fornecedor, nota, actor });
+  return sendMail({ to, subject: mail.subject, text: mail.text, html: mail.html });
 }
 
 async function dispatchDriverFeedbackSurvey(item, req, actor = req.user) {
@@ -277,7 +332,7 @@ async function createAgendamentoInDatabase(payload) {
           volumes: Number(nota?.volumes || 0),
           peso: Number(nota?.peso || 0),
           valorNf: Number(nota?.valorNf || 0),
-          observacao: String(nota?.observacao || "").trim()
+          observacao: encodeNotaObservacao(nota)
         }))
       });
     }
@@ -479,6 +534,59 @@ router.post("/:id/analise-vencimento", requireProfiles("ADMIN", "OPERADOR", "GES
     };
     const analysis = await buildAwarenessAnalysisFromPayload(found, merged);
     res.json(analysis);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+router.post("/notas/manual-alerta", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+  try {
+    const fornecedor = String(req.body?.fornecedor || '').trim();
+    const nota = {
+      numeroNf: String(req.body?.numeroNf || '').trim(),
+      serie: String(req.body?.serie || '').trim(),
+      volumes: Number(req.body?.volumes || 0),
+      peso: Number(req.body?.peso || 0),
+      destino: String(req.body?.destino || '').trim(),
+      observacao: String(req.body?.observacao || '').trim()
+    };
+
+    if (!fornecedor) throw new Error('Fornecedor é obrigatório para alertar o fiscal.');
+    validateNf(nota);
+
+    const sent = await sendFiscalMissingPrelaunchEmail({ fornecedor, nota, actor: req.user });
+    await auditLog({
+      usuarioId: req.user.sub,
+      perfil: req.user.perfil,
+      acao: "ALERTA_FISCAL_PRE_LANCAMENTO",
+      entidade: "AGENDAMENTO",
+      entidadeId: null,
+      detalhes: { fornecedor, nota, sent },
+      ip: req.ip
+    });
+
+    res.json({ ok: true, ...sent });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+router.post("/financeiro/resumo-mensal", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+  try {
+    const result = await sendMonthlyNearDueDigestIfNeeded({
+      triggeredBy: req.user?.nome || req.user?.name || req.user?.sub || 'painel-interno',
+      forceSend: true
+    });
+    await auditLog({
+      usuarioId: req.user.sub,
+      perfil: req.user.perfil,
+      acao: "ENVIAR_RESUMO_FINANCEIRO",
+      entidade: "AGENDAMENTO",
+      entidadeId: null,
+      detalhes: result,
+      ip: req.ip
+    });
+    res.json({ ok: true, ...result });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -792,7 +900,7 @@ router.post("/:id/notas", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async 
           volumes: Number(payload.volumes || 0),
           peso: Number(payload.peso || 0),
           valorNf: Number(payload.valorNf || 0),
-          observacao: payload.observacao || ""
+          observacao: encodeNotaObservacao(payload)
         }
       });
     } catch {
@@ -803,7 +911,7 @@ router.post("/:id/notas", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async 
         volumes: Number(payload.volumes || 0),
         peso: Number(payload.peso || 0),
         valorNf: Number(payload.valorNf || 0),
-        observacao: payload.observacao || ""
+        observacao: encodeNotaObservacao(payload)
       });
     }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "ADD_NF", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: payload, ip: req.ip });

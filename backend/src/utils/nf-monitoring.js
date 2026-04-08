@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { prisma } from './prisma.js';
 import { sendMail } from './email.js';
 import { readAgendamentos } from './file-store.js';
+import { normalizeAgendamentoNotas } from './nota-metadata.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -131,6 +132,142 @@ function financeRecipient() {
     || process.env.SETOR_FINANCEIRO_EMAIL
     || ''
   );
+}
+
+function escapeHtml(value = '') {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function digestRowTheme(item = {}) {
+  const dias = Number(item?.diasParaPrimeiroVencimento);
+  if (Number.isFinite(dias) && dias <= 1) {
+    return {
+      label: dias < 0 ? 'Vencida' : dias === 0 ? 'Vence hoje' : 'Urgente',
+      badgeBg: '#fee2e2',
+      badgeColor: '#991b1b',
+      rowBg: '#fff7f7'
+    };
+  }
+  if (Number.isFinite(dias) && dias <= 3) {
+    return {
+      label: 'Atenção',
+      badgeBg: '#fef3c7',
+      badgeColor: '#92400e',
+      rowBg: '#fffdf4'
+    };
+  }
+  return {
+    label: 'Monitorar',
+    badgeBg: '#dbeafe',
+    badgeColor: '#1d4ed8',
+    rowBg: '#f8fbff'
+  };
+}
+
+function buildMonthlyDigestHtmlReport({ rows = [], monthKey = '', triggeredBy = '', qtdFornecedores = 0 } = {}) {
+  if (!rows.length) {
+    return `
+      <div style="font-family:Arial,sans-serif;color:#0f172a">
+        <h2 style="margin:0 0 12px">Resumo financeiro mensal</h2>
+        <p style="margin:0">Nenhuma NF encontrada para o período analisado.</p>
+      </div>
+    `;
+  }
+
+  const urgentes = rows.filter((item) => Number.isFinite(Number(item?.diasParaPrimeiroVencimento)) && Number(item.diasParaPrimeiroVencimento) <= 1).length;
+  const atencao = rows.filter((item) => Number.isFinite(Number(item?.diasParaPrimeiroVencimento)) && Number(item.diasParaPrimeiroVencimento) >= 2 && Number(item.diasParaPrimeiroVencimento) <= 3).length;
+  const generatedAt = new Date();
+  const generatedAtBr = `${String(generatedAt.getDate()).padStart(2, '0')}/${String(generatedAt.getMonth() + 1).padStart(2, '0')}/${generatedAt.getFullYear()} ${String(generatedAt.getHours()).padStart(2, '0')}:${String(generatedAt.getMinutes()).padStart(2, '0')}`;
+
+  return `
+    <div style="margin:0;padding:24px;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a">
+      <div style="max-width:1180px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden">
+        <div style="padding:24px 28px;background:linear-gradient(135deg,#0f172a 0%,#1e293b 65%,#334155 100%);color:#ffffff">
+          <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85;margin-bottom:8px">Relatório visual financeiro</div>
+          <div style="font-size:28px;font-weight:700;line-height:1.2">Resumo mensal de NFs com vencimento próximo</div>
+          <div style="margin-top:10px;font-size:14px;opacity:.9">Mês de referência: ${escapeHtml(monthKey)} · Gerado em ${escapeHtml(generatedAtBr)} · Disparo: ${escapeHtml(normalizeText(triggeredBy) || 'sistema')}</div>
+        </div>
+
+        <div style="padding:22px 28px 6px;background:#ffffff">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:12px 12px">
+            <tr>
+              <td style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:16px;padding:16px;vertical-align:top">
+                <div style="font-size:12px;color:#1d4ed8;text-transform:uppercase;letter-spacing:.05em">Total de NFs</div>
+                <div style="font-size:28px;font-weight:700;color:#0f172a;margin-top:6px">${rows.length}</div>
+              </td>
+              <td style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:16px;padding:16px;vertical-align:top">
+                <div style="font-size:12px;color:#15803d;text-transform:uppercase;letter-spacing:.05em">Fornecedores</div>
+                <div style="font-size:28px;font-weight:700;color:#0f172a;margin-top:6px">${qtdFornecedores}</div>
+              </td>
+              <td style="background:#fff7ed;border:1px solid #fed7aa;border-radius:16px;padding:16px;vertical-align:top">
+                <div style="font-size:12px;color:#c2410c;text-transform:uppercase;letter-spacing:.05em">Urgentes</div>
+                <div style="font-size:28px;font-weight:700;color:#0f172a;margin-top:6px">${urgentes}</div>
+              </td>
+              <td style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:16px;padding:16px;vertical-align:top">
+                <div style="font-size:12px;color:#7c3aed;text-transform:uppercase;letter-spacing:.05em">Em atenção</div>
+                <div style="font-size:28px;font-weight:700;color:#0f172a;margin-top:6px">${atencao}</div>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="padding:0 28px 22px">
+          <div style="display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:8px 14px;font-size:12px;color:#475569">
+            Legenda: <span style="color:#991b1b;font-weight:700">Urgente</span> até 1 dia · <span style="color:#92400e;font-weight:700">Atenção</span> entre 2 e 3 dias · <span style="color:#1d4ed8;font-weight:700">Monitorar</span> acima de 3 dias
+          </div>
+        </div>
+
+        <div style="padding:0 20px 24px">
+          <div style="overflow-x:auto;border-top:1px solid #e2e8f0">
+            <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px;color:#0f172a">
+              <thead>
+                <tr style="background:#f8fafc">
+                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Status</th>
+                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Fornecedor</th>
+                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Empresa</th>
+                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Destino</th>
+                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">NF</th>
+                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Série</th>
+                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Entrada</th>
+                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">1º vencimento</th>
+                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Dias</th>
+                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Situação relatório</th>
+                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Agendamento</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map((item) => {
+                  const theme = digestRowTheme(item);
+                  return `
+                    <tr style="background:${theme.rowBg}">
+                      <td style="padding:12px;border-bottom:1px solid #e2e8f0">
+                        <span style="display:inline-block;padding:6px 10px;border-radius:999px;background:${theme.badgeBg};color:${theme.badgeColor};font-weight:700;font-size:12px">${escapeHtml(theme.label)}</span>
+                      </td>
+                      <td style="padding:12px;border-bottom:1px solid #e2e8f0">${escapeHtml(item.fornecedor || '-')}</td>
+                      <td style="padding:12px;border-bottom:1px solid #e2e8f0">${escapeHtml(item.empresa || '-')}</td>
+                      <td style="padding:12px;border-bottom:1px solid #e2e8f0">${escapeHtml(item.destino || '-')}</td>
+                      <td style="padding:12px;border-bottom:1px solid #e2e8f0;font-weight:700">${escapeHtml(item.numeroNf || '-')}</td>
+                      <td style="padding:12px;border-bottom:1px solid #e2e8f0">${escapeHtml(item.serie || '-')}</td>
+                      <td style="padding:12px;border-bottom:1px solid #e2e8f0">${escapeHtml(item.dataEntradaBr || '-')}</td>
+                      <td style="padding:12px;border-bottom:1px solid #e2e8f0">${escapeHtml(item.dataPrimeiroVencimentoBr || '-')}</td>
+                      <td style="padding:12px;border-bottom:1px solid #e2e8f0;font-weight:700">${escapeHtml(item.diasParaPrimeiroVencimento == null ? '-' : item.diasParaPrimeiroVencimento)}</td>
+                      <td style="padding:12px;border-bottom:1px solid #e2e8f0">${escapeHtml(item.statusRelatorio || '-')}</td>
+                      <td style="padding:12px;border-bottom:1px solid #e2e8f0">${escapeHtml(item.agendamentoId || '-')}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function readMonitorState() {
@@ -267,7 +404,7 @@ function enrichNoteWithRelatorio(nota = {}, row = null, scheduledDateValue = nul
 }
 
 export async function analyzeNotesForSchedule({ notas = [], dataAgendada = '', fornecedor = '' } = {}) {
-  const selected = Array.isArray(notas) ? notas : [];
+  const selected = normalizeAgendamentoNotas(Array.isArray(notas) ? notas : []);
   const rows = await getRelatorioRowsSnapshot();
   const matchedRows = [];
   const enrichedNotas = selected.map((nota) => {
@@ -295,7 +432,7 @@ export async function analyzeNotesForSchedule({ notas = [], dataAgendada = '', f
 
 export async function enrichAgendamentoWithMonitoring(item = {}) {
   const analysis = await analyzeNotesForSchedule({
-    notas: Array.isArray(item.notasFiscais) ? item.notasFiscais : Array.isArray(item.notas) ? item.notas : [],
+    notas: normalizeAgendamentoNotas(Array.isArray(item.notasFiscais) ? item.notasFiscais : Array.isArray(item.notas) ? item.notas : []),
     dataAgendada: item.dataAgendada,
     fornecedor: item.fornecedor
   });
@@ -358,43 +495,52 @@ export async function sendFinanceAwarenessEmail({ agendamento, analysis, actor }
   return sendMail({ to, subject: mail.subject, text: mail.text, html: mail.html });
 }
 
-export async function sendMonthlyNearDueDigestIfNeeded({ triggeredBy = '' } = {}) {
+export async function sendMonthlyNearDueDigestIfNeeded({ triggeredBy = '', forceSend = false } = {}) {
   const to = financeRecipient();
   if (!to) return { sent: false, reason: 'E-mail do financeiro não configurado.' };
 
+  const now = new Date();
+  const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
   const rows = await getRelatorioRowsSnapshot();
   const nearDue = rows
-    .filter((row) => row.alertaVencimentoProximo)
+    .filter((row) => row.alertaVencimentoProximo && String(row.dataPrimeiroVencimento || '').startsWith(monthKey))
     .sort((a, b) => {
+      const dueA = String(a.dataPrimeiroVencimento || '9999-99-99');
+      const dueB = String(b.dataPrimeiroVencimento || '9999-99-99');
+      if (dueA !== dueB) return dueA.localeCompare(dueB);
       const fa = normalizeText(a.fornecedor).localeCompare(normalizeText(b.fornecedor), 'pt-BR');
       if (fa !== 0) return fa;
       return normalizeDigits(a.numeroNf).localeCompare(normalizeDigits(b.numeroNf));
     });
 
-  if (!nearDue.length) return { sent: false, reason: 'Nenhuma NF com vencimento próximo.' };
+  if (!nearDue.length) return { sent: false, reason: 'Nenhuma NF com vencimento próximo no mês atual.' };
 
-  const now = new Date();
-  const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
   const signature = crypto.createHash('sha256').update(JSON.stringify(nearDue.map((item) => ({ fornecedor: item.fornecedor, numeroNf: item.numeroNf, serie: item.serie, dataPrimeiroVencimento: item.dataPrimeiroVencimento, agendamentoId: item.agendamentoId })))).digest('hex');
   const state = readMonitorState();
   const digestState = state.monthlyDigest || {};
 
-  if (digestState.monthKey === monthKey && digestState.signature === signature) {
+  if (!forceSend && digestState.monthKey === monthKey && digestState.signature === signature) {
     return { sent: false, reason: 'Resumo mensal já enviado para este cenário.' };
   }
 
-  const linhasText = nearDue.map((item) => `Fornecedor: ${item.fornecedor || '-'} | NF: ${item.numeroNf || '-'} | Série: ${item.serie || '-'} | 1º vencimento: ${item.dataPrimeiroVencimentoBr || '-'} | Agendamento vinculado: ${item.agendamentoId || 'não'}`).join('\n');
-  const htmlList = nearDue.map((item) => `<li>Fornecedor: ${item.fornecedor || '-'} | NF: ${item.numeroNf || '-'} | Série: ${item.serie || '-'} | 1º vencimento: ${item.dataPrimeiroVencimentoBr || '-'} | Agendamento vinculado: ${item.agendamentoId || 'não'}</li>`).join('');
+  const qtdFornecedores = new Set(nearDue.map((item) => normalizeText(item.fornecedor).toLowerCase()).filter(Boolean)).size;
   const subject = `Resumo financeiro mensal: NFs com vencimento próximo (${monthKey})`;
   const text = [
     'Resumo mensal de notas com 1º vencimento próximo.',
     '',
     `Mês de referência: ${monthKey}`,
     `Disparo: ${normalizeText(triggeredBy) || 'sistema'}`,
+    `Total de NFs: ${nearDue.length}`,
+    `Total de fornecedores: ${qtdFornecedores}`,
     '',
-    linhasText
+    'O detalhamento foi enviado no próprio corpo do e-mail, em formato visual.'
   ].join('\n');
-  const html = `<p>Resumo mensal de notas com 1º vencimento próximo.</p><p><strong>Mês de referência:</strong> ${monthKey}<br><strong>Disparo:</strong> ${normalizeText(triggeredBy) || 'sistema'}</p><ul>${htmlList}</ul>`;
+  const html = buildMonthlyDigestHtmlReport({
+    rows: nearDue,
+    monthKey,
+    triggeredBy,
+    qtdFornecedores
+  });
   const sent = await sendMail({ to, subject, text, html });
 
   if (sent?.sent) {
@@ -408,7 +554,7 @@ export async function sendMonthlyNearDueDigestIfNeeded({ triggeredBy = '' } = {}
     });
   }
 
-  return sent;
+  return { ...sent, totalNotas: nearDue.length, totalFornecedores: qtdFornecedores, formato: 'html_visual' };
 }
 
 export async function searchByNumeroNf(numeroNf = '') {
@@ -423,6 +569,6 @@ export async function searchByNumeroNf(numeroNf = '') {
   } catch {
     ags = readAgendamentos();
   }
-  const agendamentos = ags.filter((item) => Array.isArray(item.notasFiscais) && item.notasFiscais.some((nota) => normalizeDigits(nota.numeroNf).includes(targetDigits)));
+  const agendamentos = ags.filter((item) => normalizeAgendamentoNotas(Array.isArray(item.notasFiscais) ? item.notasFiscais : []).some((nota) => normalizeDigits(nota.numeroNf).includes(targetDigits)));
   return { relatorio, agendamentos };
 }
