@@ -85,6 +85,7 @@ let watcherHandle = null;
 let watcherBusy = false;
 let relatorioDbDisabled = false;
 let relatorioDbDisableReason = null;
+let relatorioImportPromise = null;
 
 function disableRelatorioDb(error, context = 'operacao_desconhecida') {
   relatorioDbDisabled = true;
@@ -681,6 +682,20 @@ function writeRawFallback(rows = []) {
   fs.writeFileSync(rawFallbackFile, JSON.stringify(rows, null, 2), 'utf8');
 }
 
+function withRelatorioImportLock(task) {
+  if (relatorioImportPromise) return relatorioImportPromise;
+
+  relatorioImportPromise = (async () => {
+    try {
+      return await task();
+    } finally {
+      relatorioImportPromise = null;
+    }
+  })();
+
+  return relatorioImportPromise;
+}
+
 async function ensureRelatorioTable() {
   if (relatorioDbDisabled) return false;
 
@@ -815,7 +830,7 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
       sourceFileName || null,
       JSON.stringify(row.normalizedRow)
     ];
-    await prisma.$executeRawUnsafe(`INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${placeholders})`, ...values);
+    await prisma.$executeRawUnsafe(`INSERT IGNORE INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${placeholders})`, ...values);
   }
 }
 
@@ -919,59 +934,61 @@ export async function unlinkRelatorioRowsFromAgendamento(agendamentoId) {
 }
 
 export async function importRelatorioSpreadsheet({ filePath, originalName = '', actor = null, source = 'manual', ip = null } = {}) {
-  const rows = parseSpreadsheetFile(filePath);
-  if (!rows.length) throw new Error('Nenhuma linha válida foi encontrada na planilha.');
+  return withRelatorioImportLock(async () => {
+    const rows = parseSpreadsheetFile(filePath);
+    if (!rows.length) throw new Error('Nenhuma linha válida foi encontrada na planilha.');
 
-  const validRows = filterValidRows(rows);
-  if (!validRows.length) throw new Error('Nenhum fornecedor com NF válida foi encontrado na planilha.');
+    const validRows = filterValidRows(rows);
+    if (!validRows.length) throw new Error('Nenhum fornecedor com NF válida foi encontrado na planilha.');
 
-  const groups = normalizeImportedItems(validRows);
-  let persistedIn = 'arquivo';
+    const groups = normalizeImportedItems(validRows);
+    let persistedIn = 'arquivo';
 
-  try {
-    await replaceDatabaseSnapshot(validRows, originalName || path.basename(filePath));
-    persistedIn = 'banco';
-  } catch (error) {
-    console.error('Falha ao persistir planilha no banco. Mantendo fallback em arquivo:', error?.message || error);
-  }
+    try {
+      await replaceDatabaseSnapshot(validRows, originalName || path.basename(filePath));
+      persistedIn = 'banco';
+    } catch (error) {
+      console.error('Falha ao persistir planilha no banco. Mantendo fallback em arquivo:', error?.message || error);
+    }
 
-  writeFallback(groups);
-  writeRawFallback(validRows);
+    writeFallback(groups);
+    writeRawFallback(validRows);
 
-  const summary = {
-    ok: true,
-    totalLinhasLidas: rows.length,
-    totalLinhasValidas: validRows.length,
-    totalFornecedores: groups.length,
-    totalNotas: groups.reduce((acc, item) => acc + Number(item.quantidadeNotas || 0), 0),
-    totalPesoKg: toFixedNumber(groups.reduce((acc, item) => acc + Number(item.pesoTotalKg || 0), 0), 3),
-    totalValorNf: toFixedNumber(groups.reduce((acc, item) => acc + Number(item.valorTotalNf || 0), 0), 2),
-    persistedIn,
-    source,
-    fileName: originalName || path.basename(filePath),
-    importedAt: new Date().toISOString()
-  };
+    const summary = {
+      ok: true,
+      totalLinhasLidas: rows.length,
+      totalLinhasValidas: validRows.length,
+      totalFornecedores: groups.length,
+      totalNotas: groups.reduce((acc, item) => acc + Number(item.quantidadeNotas || 0), 0),
+      totalPesoKg: toFixedNumber(groups.reduce((acc, item) => acc + Number(item.pesoTotalKg || 0), 0), 3),
+      totalValorNf: toFixedNumber(groups.reduce((acc, item) => acc + Number(item.valorTotalNf || 0), 0), 2),
+      persistedIn,
+      source,
+      fileName: originalName || path.basename(filePath),
+      importedAt: new Date().toISOString()
+    };
 
-  const stats = fs.statSync(filePath);
-  writeState({
-    ...readState(),
-    lastImport: summary,
-    lastProcessedKey: buildFileKey(summary.fileName, stats)
-  });
-
-  if (actor?.sub || actor?.id) {
-    await auditLog({
-      usuarioId: actor.sub || actor.id,
-      perfil: actor.perfil,
-      acao: 'IMPORTAR_PLANILHA',
-      entidade: 'RELATORIO_ENTRADAS',
-      detalhes: summary,
-      ip
+    const stats = fs.statSync(filePath);
+    writeState({
+      ...readState(),
+      lastImport: summary,
+      lastProcessedKey: buildFileKey(summary.fileName, stats)
     });
-  }
 
-  console.log(`[IMPORTACAO_RELATORIO] arquivo=${summary.fileName} validas=${summary.totalLinhasValidas} fornecedores=${summary.totalFornecedores} persistedIn=${summary.persistedIn}`);
-  return summary;
+    if (actor?.sub || actor?.id) {
+      await auditLog({
+        usuarioId: actor.sub || actor.id,
+        perfil: actor.perfil,
+        acao: 'IMPORTAR_PLANILHA',
+        entidade: 'RELATORIO_ENTRADAS',
+        detalhes: summary,
+        ip
+      });
+    }
+
+    console.log(`[IMPORTACAO_RELATORIO] arquivo=${summary.fileName} validas=${summary.totalLinhasValidas} fornecedores=${summary.totalFornecedores} persistedIn=${summary.persistedIn}`);
+    return summary;
+  });
 }
 
 export function getRelatorioImportStatus() {

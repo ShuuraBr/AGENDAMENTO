@@ -193,6 +193,7 @@
     if (normalized.includes('ACCOELHO') || normalized === 'COELHO') return 'AC COELHO';
     if (normalized.includes('SRACABAMENTOS') || normalized.includes('ACABAMENTOS')) return 'SR ACABAMENTOS';
     if (normalized.includes('FINITURA')) return 'FINITURA';
+    if (normalized.includes('2FILIAL')) return 'OBJ';
     if (normalized.includes('OBJ') || normalized.includes('OBJETIVA')) return 'OBJ';
     return '';
   }
