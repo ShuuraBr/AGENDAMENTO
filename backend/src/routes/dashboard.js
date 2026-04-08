@@ -36,7 +36,6 @@ function buildKpis(all, docs, origem) {
     documentos: docs,
     volumes: enriched.reduce((a, b) => a + Number(b.quantidadeVolumes || 0), 0),
     pesoKg: Number(enriched.reduce((a, b) => a + Number(b.pesoTotalKg || 0), 0).toFixed(3)),
-    valorTotal: Number(enriched.reduce((a, b) => a + Number(b.valorTotalNf || 0), 0).toFixed(2)),
     origem
   };
 }
