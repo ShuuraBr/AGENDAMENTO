@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import pyscreeze
 pyscreeze.USE_IMAGE_NOT_FOUND_EXCEPTION = False
 pyautogui.FAILSAFE = True # Para parar a automação a qualquer momento leve o mouse até uma extremidade da tela
+objetiva = r'H:\00 - HTML\AGENDAMENTO\tratando_tabelas\objetiva'
 pyautogui.PAUSE = 2
 subprocess.Popen([r"C:\Santri\adm.exe"])
 while not pyautogui.locateOnScreen(r'H:\00 - HTML\AGENDAMENTO\tratando_tabelas\bem_vindo.png',grayscale=True, confidence=0.8):
@@ -47,7 +48,6 @@ while True:
         pyautogui.doubleClick(x, y)
         print("Imagem secundario encontrada")
         break  # sai do loop após clicar
-<<<<<<< HEAD
     time.sleep(1)
 while True:
     localizacao = pyautogui.locateOnScreen(r'H:\00 - HTML\AGENDAMENTO\tratando_tabelas\observacao.png',grayscale=True,confidence=0.7)
@@ -68,6 +68,3 @@ while True:
         break  # sai do loop após clicar
     time.sleep(1)
 
-=======
-    time.sleep(1)
->>>>>>> d656b9b73dd2497e38bff2cb4e2918c09b79569e
