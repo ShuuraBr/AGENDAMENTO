@@ -6,6 +6,7 @@ import { readUsuarios } from "../utils/file-store.js";
 import { signInternalSession } from "../utils/security.js";
 import { auditLog } from "../utils/audit.js";
 import { loginRateLimit, registerLoginFailure, clearLoginFailures } from "../middlewares/rateLimit.js";
+import { getAccessProfileSummary, normalizeProfile } from "../utils/permissions.js";
 
 const router = Router();
 
@@ -53,10 +54,13 @@ router.post("/login", loginRateLimit, async (req, res) => {
       return res.status(401).json({ message: "Credenciais inválidas." });
     }
 
+    const access = getAccessProfileSummary(normalizeProfile(user.perfil));
+
     const token = signInternalSession({
       sub: user.id,
       nome: user.nome,
-      perfil: user.perfil
+      perfil: access.codigo,
+      permissions: access.permissoes
     });
 
     await clearLoginFailures(req, email, user);
@@ -77,7 +81,10 @@ router.post("/login", loginRateLimit, async (req, res) => {
         id: user.id,
         nome: user.nome,
         email: user.email,
-        perfil: user.perfil
+        perfil: access.codigo,
+        perfilNome: access.nome,
+        permissoes: access.permissoes,
+        permissions: access.permissoes
       }
     });
   } catch (err) {

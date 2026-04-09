@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
-import { authRequired, requireProfiles } from "../middlewares/auth.js";
+import { authRequired, requirePermission } from "../middlewares/auth.js";
 import { prisma } from "../utils/prisma.js";
 import { generateProtocol, generatePublicToken } from "../utils/security.js";
 import { qrSvg } from "../utils/qrcode.js";
@@ -15,7 +15,7 @@ import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js
 import { auditLog } from "../utils/audit.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
-import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento } from "../utils/relatorio-entradas.js";
+import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento, persistManualPendingNota } from "../utils/relatorio-entradas.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
 import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, sendMonthlyNearDueDigestIfNeeded, searchByNumeroNf } from "../utils/nf-monitoring.js";
 import { encodeNotaObservacao } from "../utils/nota-metadata.js";
@@ -156,6 +156,23 @@ function fiscalRecipient() {
   ).trim();
 }
 
+function fiscalCcRecipients() {
+  const raw = [
+    process.env.FISCAL_CC_EMAILS,
+    process.env.FISCAL_EMAIL_CC,
+    process.env.EMAIL_FISCAL_CC,
+    process.env.SETOR_FISCAL_CC,
+    process.env.SETOR_FISCAL_CC_EMAILS
+  ].filter(Boolean).join(',');
+
+  const emails = raw
+    .split(/[;,]/)
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+
+  return emails.length ? [...new Set(emails)].join(', ') : '';
+}
+
 function buildManualNotaFiscalMail({ fornecedor = '', nota = {}, actor = null } = {}) {
   const operador = String(actor?.nome || actor?.name || actor?.email || actor?.sub || 'Não identificado').trim();
   const numeroNf = String(nota?.numeroNf || '').trim() || '-';
@@ -194,8 +211,9 @@ function buildManualNotaFiscalMail({ fornecedor = '', nota = {}, actor = null } 
 async function sendFiscalMissingPrelaunchEmail({ fornecedor = '', nota = {}, actor = null } = {}) {
   const to = fiscalRecipient();
   if (!to) return { sent: false, reason: 'E-mail do fiscal não configurado.' };
+  const cc = fiscalCcRecipients();
   const mail = buildManualNotaFiscalMail({ fornecedor, nota, actor });
-  return sendMail({ to, subject: mail.subject, text: mail.text, html: mail.html });
+  return sendMail({ to, cc: cc || undefined, subject: mail.subject, text: mail.text, html: mail.html });
 }
 
 async function dispatchDriverFeedbackSurvey(item, req, actor = req.user) {
@@ -430,7 +448,7 @@ async function sendApprovalNotifications(item, req) {
   return { results, links };
 }
 
-router.get("/", async (req, res) => {
+router.get("/", requirePermission("agendamentos.view"), async (req, res) => {
   const q = req.query || {};
   const where = {
     ...(q.status ? { status: String(q.status) } : {}),
@@ -458,7 +476,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-router.get("/consulta-nf", async (req, res) => {
+router.get("/consulta-nf", requirePermission("agendamentos.consulta_nf"), async (req, res) => {
   try {
     const numeroNf = String(req.query?.numeroNf || req.query?.nf || '').trim();
     const dataAgendada = String(req.query?.dataAgendada || req.query?.data || '').trim();
@@ -509,7 +527,7 @@ router.get("/consulta-nf", async (req, res) => {
   }
 });
 
-router.post("/analise-vencimento", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/analise-vencimento", requirePermission("agendamentos.create"), async (req, res) => {
   try {
     const payload = req.body || {};
     const analysis = await analyzeNotesForSchedule({
@@ -523,7 +541,7 @@ router.post("/analise-vencimento", requireProfiles("ADMIN", "OPERADOR", "GESTOR"
   }
 });
 
-router.post("/:id/analise-vencimento", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/:id/analise-vencimento", requirePermission("agendamentos.reschedule"), async (req, res) => {
   try {
     const found = await full(req.params.id);
     if (!found) throw new Error('Agendamento não encontrado.');
@@ -539,7 +557,7 @@ router.post("/:id/analise-vencimento", requireProfiles("ADMIN", "OPERADOR", "GES
   }
 });
 
-router.post("/notas/manual-alerta", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/notas/manual-alerta", requirePermission("agendamentos.notas"), async (req, res) => {
   try {
     const fornecedor = String(req.body?.fornecedor || '').trim();
     const nota = {
@@ -548,30 +566,35 @@ router.post("/notas/manual-alerta", requireProfiles("ADMIN", "OPERADOR", "GESTOR
       volumes: Number(req.body?.volumes || 0),
       peso: Number(req.body?.peso || 0),
       destino: String(req.body?.destino || '').trim(),
-      observacao: String(req.body?.observacao || '').trim()
+      observacao: String(req.body?.observacao || '').trim() || 'NF inserida manualmente - sem pré-lançamento',
+      origemManual: true,
+      inseridaManual: true,
+      preLancamentoPendente: true,
+      disponivelNoRelatorio: false
     };
 
     if (!fornecedor) throw new Error('Fornecedor é obrigatório para alertar o fiscal.');
     validateNf(nota);
 
-    const sent = await sendFiscalMissingPrelaunchEmail({ fornecedor, nota, actor: req.user });
+    const persistedNota = await persistManualPendingNota({ fornecedor, nota, actor: req.user });
+    const sent = await sendFiscalMissingPrelaunchEmail({ fornecedor, nota: persistedNota, actor: req.user });
     await auditLog({
       usuarioId: req.user.sub,
       perfil: req.user.perfil,
       acao: "ALERTA_FISCAL_PRE_LANCAMENTO",
       entidade: "AGENDAMENTO",
       entidadeId: null,
-      detalhes: { fornecedor, nota, sent },
+      detalhes: { fornecedor, nota: persistedNota, sent, cc: fiscalCcRecipients() || null },
       ip: req.ip
     });
 
-    res.json({ ok: true, ...sent });
+    res.json({ ok: true, nota: persistedNota, ...sent, cc: fiscalCcRecipients() || '' });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
 });
 
-router.post("/financeiro/resumo-mensal", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/financeiro/resumo-mensal", requirePermission("financeiro.summary"), async (req, res) => {
   try {
     const result = await sendMonthlyNearDueDigestIfNeeded({
       triggeredBy: req.user?.nome || req.user?.name || req.user?.sub || 'painel-interno',
@@ -598,7 +621,7 @@ router.get("/:id", async (req, res) => {
   res.json(await enrichResponseItem({ ...item, semaforo: trafficColor(item.status), notificacoes: await safeNotificationSummary(item.id) }));
 });
 
-router.post("/", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
   try {
     const payload = req.body || {};
     payload.cpfMotorista = normalizeCpf(payload.cpfMotorista || payload.cpf || '');
@@ -671,7 +694,7 @@ async function transition(id, target, data = {}, req) {
   return updated;
 }
 
-router.post("/:id/definir-doca", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/:id/definir-doca", requirePermission("agendamentos.definir_doca"), async (req, res) => {
   try {
     const found = await full(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -700,7 +723,7 @@ router.post("/:id/definir-doca", requireProfiles("ADMIN", "OPERADOR", "GESTOR"),
   }
 });
 
-router.post("/:id/aprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/:id/aprovar", requirePermission("agendamentos.approve"), async (req, res) => {
   try {
     const found = await full(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -750,7 +773,7 @@ router.post("/:id/aprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), asyn
   }
 });
 
-router.post("/:id/reprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/:id/reprovar", requirePermission("agendamentos.reprove"), async (req, res) => {
   try {
     const item = await transition(req.params.id, "REPROVADO", { motivoReprovacao: req.body?.motivo || "Reprovado" }, req);
     await unlinkRelatorioRowsFromAgendamento(item?.id);
@@ -758,7 +781,7 @@ router.post("/:id/reprovar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), asy
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/reagendar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/:id/reagendar", requirePermission("agendamentos.reschedule"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -798,7 +821,7 @@ router.post("/:id/reagendar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), as
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/cancelar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/:id/cancelar", requirePermission("agendamentos.cancel"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -815,11 +838,11 @@ router.post("/:id/cancelar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), asy
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/iniciar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/:id/iniciar", requirePermission("agendamentos.start"), async (req, res) => {
   try { res.json(await transition(req.params.id, "EM_DESCARGA", { inicioDescargaEm: new Date() }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/finalizar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/:id/finalizar", requirePermission("agendamentos.finish"), async (req, res) => {
   try {
     const found = await full(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -837,7 +860,7 @@ router.post("/:id/finalizar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), as
   }
 });
 
-router.post("/:id/no-show", requireProfiles("ADMIN", "OPERADOR", "GESTOR", "PORTARIA"), async (req, res) => {
+router.post("/:id/no-show", requirePermission("agendamentos.no_show"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -854,7 +877,7 @@ router.post("/:id/no-show", requireProfiles("ADMIN", "OPERADOR", "GESTOR", "PORT
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/checkin", requireProfiles("ADMIN", "OPERADOR", "GESTOR", "PORTARIA"), async (req, res) => {
+router.post("/:id/checkin", requirePermission("agendamentos.checkin"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -867,7 +890,7 @@ router.post("/:id/checkin", requireProfiles("ADMIN", "OPERADOR", "GESTOR", "PORT
   }
 });
 
-router.post("/:id/documentos", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), upload.single("arquivo"), async (req, res) => {
+router.post("/:id/documentos", requirePermission("agendamentos.documentos"), upload.single("arquivo"), async (req, res) => {
   try {
     const ag = await mustExist(req.params.id);
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
@@ -883,7 +906,7 @@ router.post("/:id/documentos", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), u
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/notas", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/:id/notas", requirePermission("agendamentos.notas"), async (req, res) => {
   try {
     const ag = await mustExist(req.params.id);
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
@@ -919,7 +942,7 @@ router.post("/:id/notas", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async 
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/enviar-informacoes", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/:id/enviar-informacoes", requirePermission("agendamentos.notify"), async (req, res) => {
   try {
     const item = await full(req.params.id);
     if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
@@ -929,7 +952,7 @@ router.post("/:id/enviar-informacoes", requireProfiles("ADMIN", "OPERADOR", "GES
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/enviar-confirmacao", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/:id/enviar-confirmacao", requirePermission("agendamentos.notify"), async (req, res) => {
   try {
     const ag = await full(req.params.id);
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authRequired } from "../middlewares/auth.js";
+import { authRequired, requirePermission } from "../middlewares/auth.js";
 import { prisma } from "../utils/prisma.js";
 import { docaPainel } from "../utils/operations.js";
 import { fetchAgendamentosRaw, fetchDocaPainelRaw } from "../utils/db-fallback.js";
@@ -66,7 +66,7 @@ function normalizeLog(item = {}) {
   };
 }
 
-router.get("/operacional", async (req, res) => {
+router.get("/operacional", requirePermission("dashboard.view"), async (req, res) => {
   const q = req.query || {};
   const where = {
     ...(q.status ? { status: String(q.status) } : {}),
@@ -105,7 +105,7 @@ router.get("/operacional", async (req, res) => {
   }
 });
 
-router.get("/docas", async (req, res) => {
+router.get("/docas", requirePermission("docas.view"), async (req, res) => {
   try {
     return res.json(await docaPainel(req.query?.dataAgendada || null));
   } catch (error) {
@@ -119,7 +119,7 @@ router.get("/docas", async (req, res) => {
   }
 });
 
-router.get("/logs", async (req, res) => {
+router.get("/logs", requirePermission("logs.view"), async (req, res) => {
   const limit = Math.max(10, Math.min(300, Number(req.query?.limit || 80)));
   const entidade = String(req.query?.entidade || "").trim();
   const acao = String(req.query?.acao || "").trim();

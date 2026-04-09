@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authRequired, requireProfiles } from '../middlewares/auth.js';
+import { authRequired, requirePermission } from '../middlewares/auth.js';
 import {
   countRelatorioRowsInDatabase,
   getImportDirectory,
@@ -14,7 +14,7 @@ import {
 const router = Router();
 router.use(authRequired);
 
-router.get('/status', requireProfiles('ADMIN', 'GESTOR', 'OPERADOR'), async (_req, res) => {
+router.get('/status', requirePermission('relatorio.view'), async (_req, res) => {
   const files = listSupportedImportFiles().map((item) => ({
     nome: item.name,
     tamanho: item.size,
@@ -38,7 +38,7 @@ router.get('/status', requireProfiles('ADMIN', 'GESTOR', 'OPERADOR'), async (_re
   });
 });
 
-router.post('/importar', requireProfiles('ADMIN', 'GESTOR'), relatorioSpreadsheetUpload.single('arquivo'), async (req, res) => {
+router.post('/importar', requirePermission('relatorio.manage'), relatorioSpreadsheetUpload.single('arquivo'), async (req, res) => {
   try {
     if (!req.file?.path) return res.status(400).json({ message: 'Envie a planilha no campo arquivo.' });
     const summary = await importRelatorioSpreadsheet({
@@ -54,7 +54,7 @@ router.post('/importar', requireProfiles('ADMIN', 'GESTOR'), relatorioSpreadshee
   }
 });
 
-router.post('/processar-pasta', requireProfiles('ADMIN', 'GESTOR'), async (req, res) => {
+router.post('/processar-pasta', requirePermission('relatorio.manage'), async (req, res) => {
   try {
     const result = await syncLatestRelatorioFromFolder({
       forceWhenDatabaseEmpty: true,

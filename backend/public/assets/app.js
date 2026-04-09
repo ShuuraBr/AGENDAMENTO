@@ -22,6 +22,44 @@
     missingRelatorioAlertKeys: new Set()
   };
 
+  const PROFILE_PERMISSIONS = {
+    ADMIN: [
+      "dashboard.view", "docas.view", "logs.view", "cadastros.view", "cadastros.manage", "users.manage",
+      "agendamentos.view", "agendamentos.create", "agendamentos.consulta_nf", "agendamentos.definir_doca",
+      "agendamentos.approve", "agendamentos.reprove", "agendamentos.reschedule", "agendamentos.cancel",
+      "agendamentos.start", "agendamentos.finish", "agendamentos.no_show", "agendamentos.checkin",
+      "agendamentos.documentos", "agendamentos.notas", "agendamentos.notify", "financeiro.summary",
+      "relatorio.view", "relatorio.manage", "relatorio.terceirizado.view", "relatorio.terceirizado.manage"
+    ],
+    GESTOR: [
+      "dashboard.view", "docas.view", "logs.view", "cadastros.view", "cadastros.manage",
+      "agendamentos.view", "agendamentos.create", "agendamentos.consulta_nf", "agendamentos.definir_doca",
+      "agendamentos.approve", "agendamentos.reprove", "agendamentos.reschedule", "agendamentos.cancel",
+      "agendamentos.start", "agendamentos.finish", "agendamentos.no_show", "agendamentos.checkin",
+      "agendamentos.documentos", "agendamentos.notas", "agendamentos.notify", "financeiro.summary",
+      "relatorio.view", "relatorio.manage", "relatorio.terceirizado.view", "relatorio.terceirizado.manage"
+    ],
+    OPERADOR: [
+      "dashboard.view", "docas.view", "cadastros.view", "agendamentos.view", "agendamentos.create",
+      "agendamentos.consulta_nf", "agendamentos.definir_doca", "agendamentos.approve", "agendamentos.reprove",
+      "agendamentos.reschedule", "agendamentos.cancel", "agendamentos.start", "agendamentos.finish",
+      "agendamentos.no_show", "agendamentos.checkin", "agendamentos.documentos", "agendamentos.notas",
+      "agendamentos.notify", "relatorio.view", "relatorio.terceirizado.view"
+    ],
+    PORTARIA: [
+      "docas.view", "agendamentos.view", "agendamentos.consulta_nf", "agendamentos.no_show", "agendamentos.checkin"
+    ]
+  };
+
+  const VIEW_PERMISSIONS = {
+    dashboard: "dashboard.view",
+    docas: "docas.view",
+    cadastros: "cadastros.view",
+    agendamentos: "agendamentos.view",
+    "consulta-nf": "agendamentos.consulta_nf",
+    checkin: "agendamentos.checkin"
+  };
+
   const CADASTRO_CONFIG = {
     fornecedores: {
       titulo: "Cadastro de fornecedores",
@@ -509,7 +547,8 @@
     state.currentUser = {
       id: payload.sub || null,
       nome: payload.nome || "",
-      perfil: payload.perfil || ""
+      perfil: payload.perfil || "",
+      permissions: Array.isArray(payload.permissions) ? payload.permissions : []
     };
     return state.currentUser;
   }
@@ -518,19 +557,101 @@
     return String(state.currentUser?.perfil || syncCurrentUserFromToken()?.perfil || "").toUpperCase();
   }
 
+  function getCurrentPermissions() {
+    const explicit = Array.isArray(state.currentUser?.permissions || syncCurrentUserFromToken()?.permissions)
+      ? (state.currentUser?.permissions || syncCurrentUserFromToken()?.permissions || [])
+      : [];
+    if (explicit.length) return [...new Set(explicit.map((item) => String(item || '').trim()).filter(Boolean))];
+    return PROFILE_PERMISSIONS[currentProfile()] || [];
+  }
+
+  function hasPermission(permission) {
+    return getCurrentPermissions().includes(String(permission || '').trim());
+  }
+
+  function canAccessView(viewId) {
+    const permission = VIEW_PERMISSIONS[viewId];
+    return !permission || hasPermission(permission);
+  }
+
+  function firstAllowedPrivateView() {
+    const candidates = ["dashboard", "docas", "agendamentos", "consulta-nf", "checkin", "cadastros"];
+    return candidates.find((viewId) => canAccessView(viewId)) || 'public-home';
+  }
+
   function isAdmin() {
     return currentProfile() === "ADMIN";
   }
 
+  function syncFormPermission(form, enabled) {
+    if (!form) return;
+    form.classList.toggle('readonly-form', !enabled);
+    form.querySelectorAll('input, select, textarea, button').forEach((field) => {
+      if (field.dataset && field.dataset.keepEnabled === 'true') return;
+      if (field.type === 'hidden') return;
+      field.disabled = !enabled;
+    });
+  }
+
   function applyRoleAccess() {
+    document.querySelectorAll('#privateNav [data-view]').forEach((btn) => {
+      btn.classList.toggle('hidden', !canAccessView(btn.dataset.view));
+    });
+
     const usersTab = document.querySelector('.cad-tab[data-tipo="usuarios"]');
-    if (usersTab) usersTab.classList.toggle('hidden', !isAdmin());
-    if (!isAdmin() && state.cadastroTipo === 'usuarios') {
+    if (usersTab) usersTab.classList.toggle('hidden', !hasPermission('users.manage'));
+    if (!hasPermission('users.manage') && state.cadastroTipo === 'usuarios') {
       state.cadastroTipo = 'fornecedores';
       setActiveButton('.cad-tab', document.querySelector('.cad-tab[data-tipo="fornecedores"]'));
       renderCadastroForm();
       loadCadastro().catch(() => {});
     }
+
+    const canManageCadastros = hasPermission('cadastros.manage') && (state.cadastroTipo !== 'usuarios' || hasPermission('users.manage'));
+    const saveCadastroBtn = byId('saveCadastro');
+    const novoCadastroBtn = byId('btnNovoCadastro');
+    if (saveCadastroBtn) saveCadastroBtn.classList.toggle('hidden', !canManageCadastros);
+    if (novoCadastroBtn) novoCadastroBtn.classList.toggle('hidden', !canManageCadastros);
+    syncFormPermission(byId('cadastroForm'), canManageCadastros);
+
+    const canCreateAgendamento = hasPermission('agendamentos.create');
+    syncFormPermission(byId('agendamentoForm'), canCreateAgendamento);
+    const agendamentoSubmit = byId('agendamentoForm')?.querySelector('button[type="submit"]');
+    if (agendamentoSubmit) agendamentoSubmit.classList.toggle('hidden', !canCreateAgendamento);
+
+    const actionPermissions = {
+      btnAprovar: 'agendamentos.approve',
+      btnReprovar: 'agendamentos.reprove',
+      btnReagendar: 'agendamentos.reschedule',
+      btnCancelar: 'agendamentos.cancel',
+      btnIniciar: 'agendamentos.start',
+      btnFinalizar: 'agendamentos.finish',
+      btnNoShow: 'agendamentos.no_show',
+      btnVoucher: 'agendamentos.view',
+      btnQr: 'agendamentos.view',
+      btnEnviarInfos: 'agendamentos.notify',
+      btnResumoFinanceiro: 'financeiro.summary',
+      loadAgendamentos: 'agendamentos.view',
+      loadDashboard: 'dashboard.view',
+      loadDocas: 'docas.view'
+    };
+    Object.entries(actionPermissions).forEach(([id, permission]) => {
+      const el = byId(id);
+      if (!el) return;
+      const allowed = hasPermission(permission);
+      el.classList.toggle('hidden', !allowed);
+      el.disabled = !allowed;
+    });
+
+    const checkinAllowed = hasPermission('agendamentos.checkin');
+    [byId('checkinForm'), byId('startCamera'), byId('stopCamera')].forEach((el) => {
+      if (!el) return;
+      if (el.tagName === 'FORM') syncFormPermission(el, checkinAllowed);
+      else {
+        el.classList.toggle('hidden', !checkinAllowed);
+        el.disabled = !checkinAllowed;
+      }
+    });
   }
 
   function logout() {
@@ -547,6 +668,10 @@
     byId("publicNav")?.classList.toggle("hidden", logged);
     byId("privateNav")?.classList.toggle("hidden", !logged);
     applyRoleAccess();
+    if (logged) {
+      const activeView = document.querySelector('.view.active')?.id || '';
+      if (activeView && !canAccessView(activeView)) showView(firstAllowedPrivateView());
+    }
     if (!logged && state.token) logout();
   }
 
@@ -582,10 +707,15 @@
   }
 
   function showView(id) {
+    const logged = !!state.token && !isTokenExpired(state.token);
+    let target = id;
+    if (logged && !canAccessView(target)) target = firstAllowedPrivateView();
+    if (!logged && VIEW_PERMISSIONS[target]) target = 'login';
+
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
-    byId(id)?.classList.add("active");
+    byId(target)?.classList.add("active");
     document.querySelectorAll("[data-view]").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.view === id);
+      btn.classList.toggle("active", btn.dataset.view === target);
     });
   }
 
@@ -1131,7 +1261,7 @@
   }
 
   async function loadFilterOptions() {
-    if (!state.token || isTokenExpired(state.token)) return;
+    if (!state.token || isTokenExpired(state.token) || !hasPermission('dashboard.view')) return;
     try {
       const items = await api('/api/agendamentos');
       populateSelectOptions(byId('fStatus'), items.map((item) => item.status), 'Status');
@@ -1144,6 +1274,7 @@
 
   function renderOperationalTable(items, { targetId, includeActions = false } = {}) {
     const wrap = byId(targetId);
+    const allowDockActions = includeActions && hasPermission('agendamentos.definir_doca');
     if (!wrap) return;
     if (!Array.isArray(items) || !items.length) {
       wrap.innerHTML = '<p>Nenhum registro.</p>';
@@ -1168,7 +1299,7 @@
             <th>SR ACABAMENTOS</th>
             <th>Volumes</th>
             <th>Peso kg</th>
-            ${includeActions ? '<th>Ações</th>' : ''}
+            ${allowDockActions ? '<th>Ações</th>' : ''}
           </tr>
         </thead>
         <tbody>
@@ -1189,7 +1320,7 @@
               <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'SR ACABAMENTOS')}</td>
               <td>${escapeHtml(formatDecimalBR(item.quantidadeVolumes || 0, 3))}</td>
               <td>${escapeHtml(formatDecimalBR(item.pesoTotalKg || 0, 3))}</td>
-              ${includeActions ? `<td>
+              ${allowDockActions ? `<td>
                 <div class="row gap8 wrap action-cell">
                   <button type="button" class="btn-secondary" data-select-agendamento="${escapeHtml(item.id)}">Usar ID</button>
                   <select data-doca-select="${escapeHtml(item.id)}" class="dock-select">${docaSelectOptions(item.doca?.id || item.docaId || item.doca || '')}</select>
@@ -1202,7 +1333,7 @@
       </table>
     `;
 
-    if (includeActions) {
+    if (allowDockActions) {
       wrap.querySelectorAll('[data-select-agendamento]').forEach((btn) => {
         btn.addEventListener('click', () => {
           const field = byId('agendamentoId');
@@ -1267,6 +1398,7 @@
 
   async function fillSelects() {
     if (!state.token || isTokenExpired(state.token)) return;
+    if (!hasPermission('cadastros.view') && !hasPermission('agendamentos.create')) return;
     try {
       const janelas = await api("/api/cadastros/janelas");
       const janelaOptions = janelas.map((j) => `<option value="${j.id}">${escapeHtml(j.codigo)}</option>`).join("");
@@ -1277,6 +1409,7 @@
   }
 
   async function loadDashboard() {
+    if (!hasPermission('dashboard.view')) return;
     const params = new URLSearchParams();
     Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
     const data = await api(`/api/dashboard/operacional?${params.toString()}`);
@@ -1332,6 +1465,7 @@
   }
 
   async function loadDocas() {
+    if (!hasPermission('docas.view')) return;
     const date = byId("docaData")?.value || "";
     const data = await api(`/api/dashboard/docas${date ? `?dataAgendada=${encodeURIComponent(date)}` : ""}`);
     const wrap = byId("docaPainel");
@@ -1346,7 +1480,7 @@
         <div class="mt12">
           <strong>Fila (${d.fila.length})</strong>
           ${d.fila.length ? d.fila.map((f) => {
-            const needsDoca = d.codigo === "A DEFINIR" && ["CHEGOU", "APROVADO", "PENDENTE_APROVACAO"].includes(f.status);
+            const needsDoca = hasPermission('agendamentos.definir_doca') && d.codigo === "A DEFINIR" && ["CHEGOU", "APROVADO", "PENDENTE_APROVACAO"].includes(f.status);
             return `
               <div class="fila-item">
                 <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
@@ -1414,6 +1548,7 @@
     state.cadastroEditId = record?.id || null;
     byId("cadastroMsg").textContent = state.cadastroEditId ? `Modo edição: ID ${state.cadastroEditId}` : "Modo novo cadastro";
     applyInputMasks(byId("cadastroForm"));
+    applyRoleAccess();
   }
 
   function getCadastroPayload() {
@@ -1458,7 +1593,8 @@
   }
 
   async function loadCadastro() {
-    if (state.cadastroTipo === "usuarios" && !isAdmin()) {
+    if (!hasPermission('cadastros.view')) return;
+    if (state.cadastroTipo === "usuarios" && !hasPermission('users.manage')) {
       byId("cadastroMsg").textContent = "Apenas administradores podem acessar o cadastro de usuários.";
       state.cadastroTipo = "fornecedores";
       renderCadastroForm();
@@ -1470,6 +1606,10 @@
   }
 
   async function saveCadastro() {
+    if (!hasPermission('cadastros.manage') || (state.cadastroTipo === "usuarios" && !hasPermission('users.manage'))) {
+      byId("cadastroMsg").textContent = "Seu perfil não pode alterar este cadastro.";
+      return;
+    }
     const config = CADASTRO_CONFIG[state.cadastroTipo];
     const payload = getCadastroPayload();
     let endpoint = config.endpoint;
@@ -1486,6 +1626,7 @@
   }
 
   async function loadAgendamentos() {
+    if (!hasPermission('agendamentos.view')) return;
     const params = new URLSearchParams();
     Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
     const items = await api(`/api/agendamentos?${params.toString()}`);
@@ -1731,6 +1872,17 @@ Deseja liberar manualmente a descarga deste veículo?`);
 
     byId("btnLogout")?.addEventListener("click", logout);
 
+    byId('toggleLoginPassword')?.addEventListener('click', () => {
+      const input = byId('loginSenha');
+      const button = byId('toggleLoginPassword');
+      if (!input || !button) return;
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      button.textContent = show ? 'Ocultar' : 'Mostrar';
+      button.setAttribute('aria-pressed', show ? 'true' : 'false');
+      button.setAttribute('aria-label', show ? 'Ocultar senha' : 'Visualizar senha');
+    });
+
     byId("applyFilters")?.addEventListener("click", async () => {
       try { await loadDashboard(); await loadAgendamentos(); } catch (err) { alert(err.message); }
     });
@@ -1772,7 +1924,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
     document.querySelectorAll(".cad-tab").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.preventDefault();
-        if (btn.dataset.tipo === "usuarios" && !isAdmin()) {
+        if (btn.dataset.tipo === "usuarios" && !hasPermission('users.manage')) {
           byId("cadastroMsg").textContent = "Apenas administradores podem acessar o cadastro de usuários.";
           return;
         }
@@ -1983,7 +2135,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
       const msg = byId('manualNotaMsg');
       try {
         const formData = new FormData(e.target);
-        const nota = appendManualNotaToPendingFornecedor({
+        const draftNota = {
           numeroNf: String(formData.get('numeroNf') || '').trim(),
           serie: String(formData.get('serie') || '').trim(),
           volumes: Number(formData.get('volumes') || 0),
@@ -1992,13 +2144,14 @@ Deseja liberar manualmente a descarga deste veículo?`);
           empresa: '',
           valorNf: 0,
           observacao: 'NF inserida manualmente - sem pré-lançamento'
-        });
-        try {
-          await notifyFiscalForManualNota(nota);
-          byId('agendamentoMsg').textContent = `NF ${nota.numeroNf}${nota.serie ? ` / Série ${nota.serie}` : ''} inserida manualmente e alerta fiscal enviado.`;
-        } catch (alertErr) {
-          byId('agendamentoMsg').textContent = `NF ${nota.numeroNf}${nota.serie ? ` / Série ${nota.serie}` : ''} inserida manualmente, mas o alerta ao fiscal falhou: ${alertErr.message}`;
-        }
+        };
+        const response = await notifyFiscalForManualNota(draftNota);
+        const nota = appendManualNotaToPendingFornecedor(response?.nota || draftNota);
+        const ccInfo = String(response?.cc || '').trim();
+        const emailSent = !!response?.sent;
+        byId('agendamentoMsg').textContent = emailSent
+          ? `NF ${nota.numeroNf}${nota.serie ? ` / Série ${nota.serie}` : ''} inserida manualmente, salva no banco e alerta fiscal enviado${ccInfo ? ` com cópia para ${ccInfo}` : ''}.`
+          : `NF ${nota.numeroNf}${nota.serie ? ` / Série ${nota.serie}` : ''} inserida manualmente e salva no banco. O alerta ao fiscal não foi enviado: ${response?.reason || 'motivo não informado'}.`;
         if (msg) msg.textContent = 'NF adicionada ao agendamento com sucesso.';
         closeManualNotaModal();
       } catch (err) {

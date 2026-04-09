@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authRequired, requireProfiles } from "../middlewares/auth.js";
+import { authRequired, requirePermission } from "../middlewares/auth.js";
 import { prisma } from "../utils/prisma.js";
 import { normalizeCpf, normalizeChaveAcesso } from "../utils/validators.js";
 
@@ -27,7 +27,7 @@ function summarizeNotas(notas = []) {
   };
 }
 
-router.get("/pendentes", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (_req, res) => {
+router.get("/pendentes", requirePermission("relatorio.terceirizado.view"), async (_req, res) => {
   const itens = await prisma.relatorioTerceirizado.findMany({
     where: { status: "AGUARDANDO_CHEGADA", agendamentoId: null },
     orderBy: [{ fornecedor: "asc" }, { id: "desc" }]
@@ -48,7 +48,7 @@ router.get("/pendentes", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (
   })));
 });
 
-router.post("/importar", requireProfiles("ADMIN", "OPERADOR", "GESTOR"), async (req, res) => {
+router.post("/importar", requirePermission("relatorio.terceirizado.manage"), async (req, res) => {
   try {
     const registros = Array.isArray(req.body) ? req.body : Array.isArray(req.body?.items) ? req.body.items : [];
     if (!registros.length) return res.status(400).json({ message: "Envie uma lista de registros para importação." });

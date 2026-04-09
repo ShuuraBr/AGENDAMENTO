@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authRequired, requireProfiles } from "../middlewares/auth.js";
+import { authRequired, requirePermission } from "../middlewares/auth.js";
 import { prisma } from "../utils/prisma.js";
 import { validateProfile } from "../utils/validators.js";
 import bcrypt from "bcryptjs";
@@ -39,7 +39,7 @@ async function listItems(tipo, m) {
   }
 }
 
-router.get("/:tipo", async (req, res) => {
+router.get("/:tipo", requirePermission("cadastros.view"), async (req, res) => {
   try {
     const m = model(req.params.tipo);
     if (!m) return res.status(400).json({ message: "Tipo inválido." });
@@ -50,7 +50,7 @@ router.get("/:tipo", async (req, res) => {
   }
 });
 
-router.post("/:tipo", requireProfiles("ADMIN", "GESTOR"), async (req, res) => {
+router.post("/:tipo", requirePermission("cadastros.manage"), async (req, res) => {
   try {
     const tipo = req.params.tipo;
     const m = model(tipo);
@@ -80,7 +80,7 @@ router.post("/:tipo", requireProfiles("ADMIN", "GESTOR"), async (req, res) => {
   }
 });
 
-router.put("/:tipo/:id", requireProfiles("ADMIN", "GESTOR"), async (req, res) => {
+router.put("/:tipo/:id", requirePermission("cadastros.manage"), async (req, res) => {
   try {
     const tipo = req.params.tipo;
     const m = model(tipo);

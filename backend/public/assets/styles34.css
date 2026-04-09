@@ -293,3 +293,8 @@ body.modal-open{overflow:hidden}
 
 
 .pending-search-toolbar{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:12px;align-items:end}.pending-search-field{display:grid;gap:6px;font-size:13px;font-weight:700;color:#334155}.pending-search-field input{font-weight:400}.pending-notas-empty-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.pending-nota-item-manual{border-style:dashed;border-color:#2563eb;background:#eff6ff}.pending-note-manual-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:700}.manual-nota-modal-card{width:min(860px,100%)}.manual-nota-form{display:grid;gap:14px}@media (max-width:720px){.pending-search-toolbar{grid-template-columns:1fr}.pending-search-toolbar button{width:100%}}
+
+
+.password-input-wrap{position:relative;display:flex;align-items:center}.password-input-wrap input{padding-right:96px}.password-toggle-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);padding:7px 12px;border-radius:8px;background:#475569;font-size:12px;line-height:1;z-index:2}.password-toggle-btn:hover{opacity:.96}
+
+.readonly-form{opacity:.78}.readonly-form input:disabled,.readonly-form select:disabled,.readonly-form textarea:disabled{background:#e2e8f0;cursor:not-allowed}

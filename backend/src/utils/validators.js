@@ -1,4 +1,6 @@
-const allowedProfiles = ["ADMIN", "OPERADOR", "PORTARIA", "GESTOR"];
+import { PROFILE_LABELS } from "./permissions.js";
+
+const allowedProfiles = Object.keys(PROFILE_LABELS);
 
 export function validateProfile(profile) {
   if (!allowedProfiles.includes(profile)) {
