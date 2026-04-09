@@ -27,7 +27,7 @@ const fallbackFile = path.join(dataDir, 'fornecedores-pendentes.json');
 const rawFallbackFile = path.join(dataDir, 'relatorio-terceirizado-raw.json');
 const stateFile = path.join(dataDir, 'importacao-relatorio-state.json');
 
-const SUPPORTED_EXTENSIONS = new Set(['.ods', '.csv', '.json']);
+const SUPPORTED_EXTENSIONS = new Set(['.ods', '.csv', '.json', '.xlsx']);
 const TABLE_NAME = 'RelatorioTerceirizado';
 const WATCH_INTERVAL_MS = 60 * 1000;
 
@@ -79,6 +79,21 @@ const SHEET_COLUMNS = [
   'ICMS desonerado',
   'ICMS descontado PIS/COFINS',
   'CFOP',
+  'PIS retido',
+  'COFINS retida',
+  'INSS retido',
+  'IRRF retido',
+  'CSLL retido',
+  'ISSQN retido',
+  'Número do CT-e',
+  'Transportadora',
+  'Data de emissão do CT-e',
+  'Valor do CT-e',
+  'Data de entrada do CT-e',
+  'Identificação NF-e',
+  'Identificação CT-e/NF-e principal',
+  'Identificação CT-e/NF-e auxiliar',
+  'Fornecedor substituto tributário',
   'Destino'
 ];
 
@@ -87,6 +102,7 @@ let watcherBusy = false;
 let relatorioDbDisabled = false;
 let relatorioDbDisableReason = null;
 let relatorioImportPromise = null;
+let relatorioTableColumnsCache = null;
 
 function disableRelatorioDb(error, context = 'operacao_desconhecida') {
   relatorioDbDisabled = true;
@@ -139,6 +155,8 @@ function sqlLiteral(value) {
 
 function xmlUnescape(value = '') {
   return String(value || '')
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_match, dec) => String.fromCodePoint(parseInt(dec, 10)))
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
@@ -154,6 +172,23 @@ function trimTrailingEmpty(cells = []) {
 
 function normalizeCellValue(value) {
   return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function getCaseInsensitiveValue(row = {}, expectedColumn = '') {
+  const direct = row?.[expectedColumn];
+  if (direct !== undefined && direct !== null) return direct;
+  const target = normalizeCellValue(expectedColumn).toLowerCase();
+  for (const [key, value] of Object.entries(row || {})) {
+    if (normalizeCellValue(key).toLowerCase() === target) return value;
+  }
+  return '';
+}
+
+function pickSpreadsheetValue(row = {}, expectedColumn = '') {
+  const value = getCaseInsensitiveValue(row, expectedColumn);
+  if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  if (expectedColumn === 'Destino') return getCaseInsensitiveValue(row, 'destino');
+  return '';
 }
 
 function parseNumber(value) {
@@ -204,7 +239,7 @@ function buildDueFields(dateValue = '') {
 function normalizeSpreadsheetRow(row = {}) {
   const normalized = {};
   for (const column of SHEET_COLUMNS) {
-    normalized[column] = normalizeCellValue(row[column] ?? '');
+    normalized[column] = normalizeCellValue(pickSpreadsheetValue(row, column));
   }
   return normalized;
 }
@@ -582,10 +617,11 @@ export async function persistManualPendingNota({ fornecedor = '', nota = {}, act
         'manual-ui',
         JSON.stringify(row)
       ];
-      const placeholders = columns.map(() => '?').join(', ');
+      const filtered = await filterColumnsForRelatorioInsert(columns, values);
+      const placeholders = filtered.columns.map(() => '?').join(', ');
       await prisma.$executeRawUnsafe(
-        `INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${columns.map((column) => quoteIdentifier(column)).join(', ')}) VALUES (${placeholders})`,
-        ...values
+        `INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${filtered.columns.map((column) => quoteIdentifier(column)).join(', ')}) VALUES (${placeholders})`,
+        ...filtered.values
       );
     }
   } catch (error) {
@@ -766,10 +802,101 @@ function readZipEntry(filePath, entryName) {
   throw new Error(`Arquivo ${entryName} não encontrado no ZIP.`);
 }
 
+function xlsxColumnToIndex(ref = '') {
+  const letters = String(ref || '').match(/[A-Z]+/i)?.[0] || '';
+  let value = 0;
+  for (const char of letters.toUpperCase()) value = (value * 26) + (char.charCodeAt(0) - 64);
+  return Math.max(0, value - 1);
+}
+
+function parseXlsxSharedStrings(xml = '') {
+  const items = [];
+  const matches = String(xml || '').match(/<si\b[\s\S]*?<\/si>/g) || [];
+  for (const entry of matches) {
+    const parts = [...entry.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((match) => xmlUnescape(match[1] || ''));
+    items.push(parts.join(''));
+  }
+  return items;
+}
+
+function readOptionalZipEntry(filePath, entryName) {
+  try {
+    return readZipEntry(filePath, entryName);
+  } catch {
+    return null;
+  }
+}
+
+function escapeRegex(value = '') {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function resolveFirstXlsxSheetPath(filePath) {
+  const workbookXml = readOptionalZipEntry(filePath, 'xl/workbook.xml')?.toString('utf8') || '';
+  const relsXml = readOptionalZipEntry(filePath, 'xl/_rels/workbook.xml.rels')?.toString('utf8') || '';
+  const firstSheetId = workbookXml.match(/<sheet[^>]*r:id="([^"]+)"/i)?.[1] || '';
+  const relationPattern = new RegExp(`<Relationship[^>]*Id="${escapeRegex(firstSheetId)}"[^>]*Target="([^"]+)"`, 'i');
+  const target = relsXml.match(relationPattern)?.[1] || 'worksheets/sheet1.xml';
+  return target.startsWith('xl/') ? target : `xl/${target.replace(/^\/+/, '')}`;
+}
+
+function extractXlsxCellValue(cellXml = '', sharedStrings = []) {
+  const type = cellXml.match(/\bt="([^"]+)"/i)?.[1] || '';
+  if (type === 'inlineStr') {
+    const parts = [...cellXml.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((match) => xmlUnescape(match[1] || ''));
+    return parts.join('');
+  }
+  const raw = xmlUnescape(cellXml.match(/<v[^>]*>([\s\S]*?)<\/v>/i)?.[1] || '');
+  if (type === 's') {
+    const index = Number(raw || 0);
+    return Number.isFinite(index) ? String(sharedStrings[index] ?? '') : '';
+  }
+  if (type === 'b') return raw === '1' ? 'TRUE' : 'FALSE';
+  return raw;
+}
+
+function parseXlsxSheetXml(xml = '', sharedStrings = []) {
+  const rows = [];
+  const rowMatches = String(xml || '').match(/<row\b[\s\S]*?<\/row>/g) || [];
+  let headers = [];
+
+  for (const rowXml of rowMatches) {
+    const cells = [];
+    const cellMatches = rowXml.match(/<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g) || [];
+    for (const cellXml of cellMatches) {
+      const ref = cellXml.match(/\br="([A-Z]+\d+)"/i)?.[1] || '';
+      const index = xlsxColumnToIndex(ref);
+      cells[index] = extractXlsxCellValue(cellXml, sharedStrings);
+    }
+    const dense = trimTrailingEmpty(cells.map((value) => normalizeCellValue(value)));
+    if (!dense.length) continue;
+    if (!headers.length) {
+      headers = dense;
+      continue;
+    }
+    const row = {};
+    headers.forEach((header, index) => {
+      if (!header) return;
+      row[header] = dense[index] ?? '';
+    });
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function parseXlsxFile(filePath) {
+  const sharedStringsXml = readOptionalZipEntry(filePath, 'xl/sharedStrings.xml');
+  const sharedStrings = sharedStringsXml ? parseXlsxSharedStrings(sharedStringsXml.toString('utf8')) : [];
+  const sheetPath = resolveFirstXlsxSheetPath(filePath);
+  const sheetXml = readZipEntry(filePath, sheetPath).toString('utf8');
+  return parseXlsxSheetXml(sheetXml, sharedStrings);
+}
+
 function parseSpreadsheetFile(filePath) {
   const ext = extnameSafe(filePath).toLowerCase();
   if (!SUPPORTED_EXTENSIONS.has(ext)) {
-    throw new Error('Formato de planilha não suportado. Use .ods, .csv ou .json.');
+    throw new Error('Formato de planilha não suportado. Use .ods, .xlsx, .csv ou .json.');
   }
 
   if (ext === '.csv') return parseCsv(fs.readFileSync(filePath, 'utf8'));
@@ -778,6 +905,7 @@ function parseSpreadsheetFile(filePath) {
     const xml = readZipEntry(filePath, 'content.xml').toString('utf8');
     return parseOdsContentXml(xml);
   }
+  if (ext === '.xlsx') return parseXlsxFile(filePath);
 
   return [];
 }
@@ -860,11 +988,32 @@ async function ensureRelatorioTable() {
          FROM ${quoteIdentifier(TABLE_NAME)}
         LIMIT 1`
     );
+    await getRelatorioTableColumns();
     return true;
   } catch (error) {
     disableRelatorioDb(error, 'ensureRelatorioTable:readOnlyProbe');
     return false;
   }
+}
+
+async function getRelatorioTableColumns() {
+  if (relatorioTableColumnsCache) return relatorioTableColumnsCache;
+  const rows = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
+  relatorioTableColumnsCache = new Set((rows || []).map((row) => String(row?.Field || row?.COLUMN_NAME || '').trim()).filter(Boolean));
+  return relatorioTableColumnsCache;
+}
+
+async function filterColumnsForRelatorioInsert(columns = [], values = []) {
+  const availableColumns = await getRelatorioTableColumns();
+  const filteredColumns = [];
+  const filteredValues = [];
+  columns.forEach((column, index) => {
+    if (availableColumns.has(column)) {
+      filteredColumns.push(column);
+      filteredValues.push(values[index]);
+    }
+  });
+  return { columns: filteredColumns, values: filteredValues };
 }
 
 async function countRelatorioRowsInDatabase() {
@@ -965,8 +1114,7 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   const seenRowHashes = new Set();
 
   for (const row of rows) {
-    const normalizedRow = {};
-    for (const column of SHEET_COLUMNS) normalizedRow[column] = normalizeCellValue(row[column] ?? '');
+    const normalizedRow = normalizeSpreadsheetRow(row);
     const rowHash = buildRowHash(normalizedRow);
     if (seenRowHashes.has(rowHash)) continue;
     seenRowHashes.add(rowHash);
@@ -974,8 +1122,6 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   }
 
   const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
-  const columnSql = columns.map((column) => quoteIdentifier(column)).join(', ');
-  const placeholders = columns.map(() => '?').join(', ');
 
   for (const row of deduplicatedRows) {
     const values = [
@@ -985,7 +1131,10 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
       sourceFileName || null,
       JSON.stringify(row.normalizedRow)
     ];
-    await prisma.$executeRawUnsafe(`INSERT IGNORE INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${placeholders})`, ...values);
+    const filtered = await filterColumnsForRelatorioInsert(columns, values);
+    const columnSql = filtered.columns.map((column) => quoteIdentifier(column)).join(', ');
+    const placeholders = filtered.columns.map(() => '?').join(', ');
+    await prisma.$executeRawUnsafe(`INSERT IGNORE INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${placeholders})`, ...filtered.values);
   }
 }
 
@@ -1298,7 +1447,7 @@ export const relatorioSpreadsheetUpload = multer({
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname || '').toLowerCase();
     if (!SUPPORTED_EXTENSIONS.has(ext)) {
-      return cb(new Error('Formato inválido. Envie .ods, .csv ou .json.'));
+      return cb(new Error('Formato inválido. Envie .ods, .xlsx, .csv ou .json.'));
     }
     cb(null, true);
   }

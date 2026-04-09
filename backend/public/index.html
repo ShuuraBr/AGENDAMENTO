@@ -242,9 +242,11 @@
               <h3>Dados da operação</h3>
               <div class="form-grid operator-grid mt12">
                 <label>Fornecedor pendente
-                  <select name="fornecedorPendenteInterno" id="internalFornecedorPendenteSelect" required>
-                    <option value="">Selecione o fornecedor pendente</option>
-                  </select>
+                  <input type="hidden" name="fornecedorPendenteInterno" id="internalFornecedorPendenteSelect" value="" />
+                  <div class="multi-select" id="internalFornecedorDropdown">
+                    <button type="button" class="multi-select-trigger" id="internalFornecedorDropdownTrigger" aria-expanded="false">Selecione o fornecedor pendente</button>
+                    <div class="multi-select-menu hidden" id="internalFornecedorDropdownMenu"></div>
+                  </div>
                 </label>
                 <label>Transportadora<input name="transportadora" value="" required /></label>
                 <label>Placa<input name="placa" value="" required /></label>
