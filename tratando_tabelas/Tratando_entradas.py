@@ -75,7 +75,9 @@ while True:
         print("Imagem processar encontrada")
         break  # sai do loop após clicar
     time.sleep(1)
-time.sleep(2)
+while not pyautogui.locateOnScreen(r'H:\00 - HTML\AGENDAMENTO\tratando_tabelas\entradas_encontradas.png',grayscale=True, confidence=0.8):
+    print("tela foi processada")
+    time.sleep(5)
 pyautogui.press("down")
 pyautogui.press("enter")
 pyautogui.press("F4") #Para selecionar a barra de endereço
@@ -85,6 +87,7 @@ time.sleep(1)
 pyautogui.press("enter")
 pyautogui.press('tab', presses=7) #Apertando o Tab até encontrar a parte do nome do arquivo
 pyautogui.write("entradas_objetiva") #Inserindo o nome do arquivo
+pyautogui.hotkey("alt","l")
 while not pyautogui.locateOnScreen(r'H:\00 - HTML\AGENDAMENTO\tratando_tabelas\sucesso.png',grayscale=True, confidence=0.8):
     print("tabela_objetiva salva")
     time.sleep(5)
