@@ -846,9 +846,28 @@ function parseRowFromDatabase(row = {}) {
   return output;
 }
 
+export async function cleanupOrphanRelatorioAgendamentoLinks() {
+  try {
+    if (!(await ensureRelatorioTable())) return { cleaned: 0, source: 'disabled' };
+    const cleaned = await prisma.$executeRawUnsafe(
+      `UPDATE ${quoteIdentifier(TABLE_NAME)} rel
+          LEFT JOIN ${quoteIdentifier('Agendamento')} ag
+            ON ag.id = rel.agendamentoId
+          SET rel.agendamentoId = NULL
+        WHERE rel.agendamentoId IS NOT NULL
+          AND ag.id IS NULL`
+    );
+    return { cleaned: Number(cleaned || 0), source: 'database' };
+  } catch (error) {
+    console.error('[RELATORIO_IMPORT] Falha ao reconciliar vínculos órfãos do relatório:', error?.message || error);
+    return { cleaned: 0, source: 'error', reason: error?.message || String(error || 'erro') };
+  }
+}
+
 export async function listFornecedoresPendentesImportados() {
   try {
     if (await ensureRelatorioTable()) {
+      await cleanupOrphanRelatorioAgendamentoLinks();
       const rows = await prisma.$queryRawUnsafe(
       `SELECT rowHash, agendamentoId, dadosOriginaisJson, importedAt, updatedAt
          FROM ${quoteIdentifier(TABLE_NAME)}

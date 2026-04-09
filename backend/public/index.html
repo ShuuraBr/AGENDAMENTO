@@ -260,6 +260,12 @@
             <div class="card inner mt16">
               <h3>Notas pendentes do fornecedor</h3>
               <p class="hint">Após selecionar o fornecedor pendente, marque as NF que farão parte deste agendamento. Notas com 1º vencimento próximo ficam agrupadas no início para facilitar a identificação.</p>
+              <div class="pending-search-toolbar mt12">
+                <label class="pending-search-field">Buscar NF
+                  <input id="internalPendingSearch" type="text" placeholder="Pesquisar número da NF ou série" />
+                </label>
+                <button type="button" id="btnClearPendingSearch" class="btn-secondary">Limpar busca</button>
+              </div>
               <div id="internalPendingNotas" class="mt12"></div>
             </div>
             <div class="card inner mt16">
@@ -295,6 +301,7 @@
             <button id="btnVoucher">Voucher</button>
             <button id="btnQr">QR Code</button>
             <button id="btnEnviarInfos">Enviar informações</button>
+            <button id="btnResumoFinanceiro" class="btn-secondary">Enviar resumo financeiro</button>
           </div>
           <p id="operacaoMsg" class="msg"></p>
           <div id="agendamentosList" class="mt16"></div>
@@ -348,6 +355,29 @@
       </div>
     </section>
   </main>
+
+  <div id="manualNotaModal" class="app-modal hidden">
+    <div class="app-modal-backdrop" data-manual-nota-close></div>
+    <div class="app-modal-card manual-nota-modal-card">
+      <div class="app-modal-header">
+        <h3>Inserir nota fiscal manualmente</h3>
+      </div>
+      <form id="manualNotaForm" class="manual-nota-form mt16">
+        <div class="form-grid operator-grid">
+          <label>Número da nota<input name="numeroNf" type="text" inputmode="numeric" required /></label>
+          <label>Série<input name="serie" type="text" required /></label>
+          <label>Qtd. volumes<input name="volumes" type="number" min="0" step="1" required /></label>
+          <label>Peso<input name="peso" type="number" min="0" step="0.001" required /></label>
+          <label class="form-group-full">Destino<input name="destino" type="text" required /></label>
+        </div>
+        <p id="manualNotaMsg" class="msg"></p>
+        <div class="app-modal-actions">
+          <button type="button" class="btn-secondary" data-manual-nota-close>Cancelar</button>
+          <button type="submit">Confirmar inserção</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <script src="/assets/app.js"></script>
 </body>

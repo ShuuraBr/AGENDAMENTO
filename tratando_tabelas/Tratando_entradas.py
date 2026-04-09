@@ -47,6 +47,7 @@ while True:
         pyautogui.doubleClick(x, y)
         print("Imagem secundario encontrada")
         break  # sai do loop após clicar
+<<<<<<< HEAD
     time.sleep(1)
 while True:
     localizacao = pyautogui.locateOnScreen(r'H:\00 - HTML\AGENDAMENTO\tratando_tabelas\observacao.png',grayscale=True,confidence=0.7)
@@ -67,3 +68,6 @@ while True:
         break  # sai do loop após clicar
     time.sleep(1)
 
+=======
+    time.sleep(1)
+>>>>>>> d656b9b73dd2497e38bff2cb4e2918c09b79569e

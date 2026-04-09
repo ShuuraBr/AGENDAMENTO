@@ -20,6 +20,7 @@ import { ensureLatestRelatorioImport, listFornecedoresPendentesImportados, getRe
 import { auditLog } from "../utils/audit.js";
 import { getFeedbackRequestByToken, submitFeedbackByToken, maskCpf } from "../utils/driver-feedback.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
+import { encodeNotaObservacao } from "../utils/nota-metadata.js";
 
 const router = express.Router();
 const ACTIVE_STATUSES = ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"];
@@ -293,7 +294,7 @@ async function createPublicAgendamentoInDatabase({ agendamentoPayload, notas, cp
           volumes: Number(nota?.volumes || 0),
           peso: Number(nota?.peso || 0),
           valorNf: Number(nota?.valorNf || 0),
-          observacao: String(nota?.observacao || "").trim()
+          observacao: encodeNotaObservacao(nota)
         }))
       });
     }
@@ -318,7 +319,7 @@ router.post("/solicitacao", async (req, res) => {
           volumes: Number(nota?.volumes || 0),
           peso: Number(nota?.peso || 0),
           valorNf: Number(nota?.valorNf || 0),
-          observacao: String(nota?.observacao || "").trim()
+          observacao: encodeNotaObservacao(nota)
         }))
       : [];
     validateNfBatch(notas);
