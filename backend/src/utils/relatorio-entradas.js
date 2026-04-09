@@ -27,7 +27,7 @@ const fallbackFile = path.join(dataDir, 'fornecedores-pendentes.json');
 const rawFallbackFile = path.join(dataDir, 'relatorio-terceirizado-raw.json');
 const stateFile = path.join(dataDir, 'importacao-relatorio-state.json');
 
-const SUPPORTED_EXTENSIONS = new Set(['.ods', '.csv', '.json']);
+const SUPPORTED_EXTENSIONS = new Set(['.ods', '.csv', '.json', '.xlsx']);
 const TABLE_NAME = 'RelatorioTerceirizado';
 const WATCH_INTERVAL_MS = 60 * 1000;
 
@@ -79,7 +79,22 @@ const SHEET_COLUMNS = [
   'ICMS desonerado',
   'ICMS descontado PIS/COFINS',
   'CFOP',
-  'Destino'
+  'PIS retido',
+  'COFINS retida',
+  'INSS retido',
+  'IRRF retido',
+  'CSLL retido',
+  'ISSQN retido',
+  'Número do CT-e',
+  'Transportadora',
+  'Data de emissão do CT-e',
+  'Valor do CT-e',
+  'Data de entrada do CT-e',
+  'Identificação NF-e',
+  'Identificação CT-e/NF-e principal',
+  'Identificação CT-e/NF-e auxiliar',
+  'Fornecedor substituto tributário',
+  'destino'
 ];
 
 let watcherHandle = null;
@@ -201,11 +216,23 @@ function buildDueFields(dateValue = '') {
   };
 }
 
+function findSpreadsheetValue(row = {}, column = '') {
+  if (row && Object.prototype.hasOwnProperty.call(row, column) && row[column] != null && row[column] !== '') {
+    return row[column];
+  }
+  const target = normalizeCellValue(column).toLowerCase();
+  for (const [key, value] of Object.entries(row || {})) {
+    if (normalizeCellValue(key).toLowerCase() === target && value != null && value !== '') return value;
+  }
+  return '';
+}
+
 function normalizeSpreadsheetRow(row = {}) {
   const normalized = {};
   for (const column of SHEET_COLUMNS) {
-    normalized[column] = normalizeCellValue(row[column] ?? '');
+    normalized[column] = normalizeCellValue(findSpreadsheetValue(row, column));
   }
+  normalized['Destino'] = normalized['destino'] || normalizeCellValue(findSpreadsheetValue(row, 'Destino'));
   return normalized;
 }
 
@@ -479,6 +506,7 @@ function buildManualSpreadsheetRow(fornecedor = '', nota = {}, actor = null) {
   row['Volume total'] = String(toFixedNumber(parseNumber(nota?.volumes || 0), 3));
   row['Peso total'] = String(toFixedNumber(parseNumber(nota?.peso || 0), 3));
   row['Destino'] = normalizeCellValue(nota?.destino || '');
+  row['destino'] = row['Destino'];
   row['Status'] = 'NF INSERIDA MANUALMENTE';
   row['Empresa'] = normalizeCellValue(nota?.empresa || nota?.destino || '');
   row['Data do cadastro'] = new Date().toISOString();
@@ -721,6 +749,125 @@ function parseOdsContentXml(contentXml = '') {
     });
 }
 
+function parseXmlNodes(xml = '', tagName = '') {
+  const regex = new RegExp(`<${tagName}\b([^>]*)>([\s\S]*?)<\/${tagName}>`, 'gi');
+  const nodes = [];
+  let match;
+  while ((match = regex.exec(xml))) {
+    nodes.push({ attrs: match[1] || '', inner: match[2] || '' });
+  }
+  return nodes;
+}
+
+function columnLettersToIndex(letters = '') {
+  return String(letters || '').toUpperCase().split('').reduce((acc, char) => acc * 26 + (char.charCodeAt(0) - 64), 0) - 1;
+}
+
+function excelSerialDateToIso(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return normalizeCellValue(value);
+  const millis = Math.round((numeric - 25569) * 86400 * 1000);
+  const date = new Date(millis);
+  if (Number.isNaN(date.getTime())) return normalizeCellValue(value);
+  return date.toISOString().slice(0, 10);
+}
+
+function parseXlsxSharedStrings(xml = '') {
+  return parseXmlNodes(xml, 'si').map((node) => {
+    const richTexts = [...String(node.inner || '').matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/gi)].map((match) => xmlUnescape(match[1] || ''));
+    if (richTexts.length) return normalizeCellValue(richTexts.join(''));
+    return normalizeCellValue(cellTextFromXml(node.inner || ''));
+  });
+}
+
+function parseXlsxStyles(xml = '') {
+  const builtInDateFormats = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47]);
+  const customFormats = new Map();
+  for (const match of String(xml || '').matchAll(/<numFmt\b[^>]*numFmtId="(\d+)"[^>]*formatCode="([^"]*)"[^>]*\/?>/gi)) {
+    customFormats.set(Number(match[1]), xmlUnescape(match[2] || '').toLowerCase());
+  }
+
+  const cellXfsMatch = String(xml || '').match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/i);
+  const styles = [];
+  if (!cellXfsMatch) return styles;
+
+  for (const match of String(cellXfsMatch[1] || '').matchAll(/<xf\b([^>]*)\/?>/gi)) {
+    const attrs = match[1] || '';
+    const numFmtId = Number(getAttr(attrs, 'numFmtId') || 0);
+    const formatCode = customFormats.get(numFmtId) || '';
+    const sanitized = formatCode.replace(/"[^"]*"/g, '').replace(/\[[^\]]*\]/g, '');
+    const isDate = builtInDateFormats.has(numFmtId) || /(^|[^a-z])(yy|yyyy|mm|dd|m|d|hh|h|ss|s)([^a-z]|$)/i.test(sanitized);
+    styles.push({ isDate });
+  }
+  return styles;
+}
+
+function parseXlsxWorksheet(xml = '', sharedStrings = [], styles = []) {
+  const rows = [];
+  for (const rowMatch of String(xml || '').matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/gi)) {
+    const rowInner = rowMatch[1] || '';
+    const cells = [];
+    let sequentialIndex = 0;
+
+    for (const cellMatch of rowInner.matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>|<c\b([^>]*)\/?>/gi)) {
+      const attrs = cellMatch[1] || cellMatch[3] || '';
+      const inner = cellMatch[2] || '';
+      const ref = getAttr(attrs, 'r');
+      const columnLetters = (ref.match(/[A-Z]+/i) || [''])[0];
+      const columnIndex = columnLetters ? columnLettersToIndex(columnLetters) : sequentialIndex;
+      sequentialIndex = columnIndex + 1;
+      while (cells.length < columnIndex) cells.push('');
+
+      const type = getAttr(attrs, 't');
+      const styleIndex = Number(getAttr(attrs, 's') || 0);
+      const rawValue = xmlUnescape((inner.match(/<v[^>]*>([\s\S]*?)<\/v>/i) || [])[1] || '');
+      const inlineValue = (inner.match(/<is\b[^>]*>([\s\S]*?)<\/is>/i) || [])[1] || '';
+      let value = '';
+
+      if (type === 'inlineStr') value = cellTextFromXml(inlineValue);
+      else if (type === 's') value = sharedStrings[Number(rawValue || 0)] || '';
+      else if (type === 'b') value = rawValue === '1' ? 'TRUE' : 'FALSE';
+      else if (styles[styleIndex]?.isDate && rawValue !== '') value = excelSerialDateToIso(rawValue);
+      else value = rawValue || cellTextFromXml(inner);
+
+      cells[columnIndex] = normalizeCellValue(value);
+    }
+
+    rows.push(trimTrailingEmpty(cells));
+  }
+
+  const headerIndex = rows.findIndex((row) => row.some((cell) => cell === 'Fornecedor') && row.some((cell) => cell.includes('Nr. nota')));
+  if (headerIndex < 0) return [];
+
+  const headers = rows[headerIndex].map(normalizeCellValue);
+  return rows.slice(headerIndex + 1)
+    .filter((row) => row.some((cell) => normalizeCellValue(cell) !== ''))
+    .map((row) => {
+      const item = {};
+      headers.forEach((header, index) => {
+        if (header) item[header] = row[index] ?? '';
+      });
+      return item;
+    });
+}
+
+function parseXlsxFile(filePath) {
+  const workbookXml = readZipEntry(filePath, 'xl/workbook.xml').toString('utf8');
+  const relsXml = readZipEntry(filePath, 'xl/_rels/workbook.xml.rels').toString('utf8');
+  const sharedStringsXml = (() => { try { return readZipEntry(filePath, 'xl/sharedStrings.xml').toString('utf8'); } catch { return ''; } })();
+  const stylesXml = (() => { try { return readZipEntry(filePath, 'xl/styles.xml').toString('utf8'); } catch { return ''; } })();
+
+  const firstSheet = (workbookXml.match(/<sheet\b[^>]*r:id="([^"]+)"[^>]*\/?>/i) || [])[1] || '';
+  const relationshipRegex = new RegExp(`<Relationship\b[^>]*Id="${firstSheet}"[^>]*Target="([^"]+)"[^>]*\/?>`, 'i');
+  const worksheetTarget = (relsXml.match(relationshipRegex) || [])[1] || 'worksheets/sheet1.xml';
+  const worksheetPath = `xl/${String(worksheetTarget).replace(/^\/+/,'').replace(/^xl\//,'')}`;
+
+  const sharedStrings = sharedStringsXml ? parseXlsxSharedStrings(sharedStringsXml) : [];
+  const styles = stylesXml ? parseXlsxStyles(stylesXml) : [];
+  const worksheetXml = readZipEntry(filePath, worksheetPath).toString('utf8');
+  return parseXlsxWorksheet(worksheetXml, sharedStrings, styles);
+}
+
 function readZipEntry(filePath, entryName) {
   const buffer = fs.readFileSync(filePath);
   let eocd = -1;
@@ -769,7 +916,7 @@ function readZipEntry(filePath, entryName) {
 function parseSpreadsheetFile(filePath) {
   const ext = extnameSafe(filePath).toLowerCase();
   if (!SUPPORTED_EXTENSIONS.has(ext)) {
-    throw new Error('Formato de planilha não suportado. Use .ods, .csv ou .json.');
+    throw new Error('Formato de planilha não suportado. Use .ods, .csv, .json ou .xlsx.');
   }
 
   if (ext === '.csv') return parseCsv(fs.readFileSync(filePath, 'utf8'));
@@ -778,6 +925,7 @@ function parseSpreadsheetFile(filePath) {
     const xml = readZipEntry(filePath, 'content.xml').toString('utf8');
     return parseOdsContentXml(xml);
   }
+  if (ext === '.xlsx') return parseXlsxFile(filePath);
 
   return [];
 }
@@ -1298,7 +1446,7 @@ export const relatorioSpreadsheetUpload = multer({
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname || '').toLowerCase();
     if (!SUPPORTED_EXTENSIONS.has(ext)) {
-      return cb(new Error('Formato inválido. Envie .ods, .csv ou .json.'));
+      return cb(new Error('Formato inválido. Envie .ods, .csv, .json ou .xlsx.'));
     }
     cb(null, true);
   }
