@@ -1731,6 +1731,17 @@ Deseja liberar manualmente a descarga deste veículo?`);
 
     byId("btnLogout")?.addEventListener("click", logout);
 
+    byId('toggleLoginPassword')?.addEventListener('click', () => {
+      const input = byId('loginSenha');
+      const button = byId('toggleLoginPassword');
+      if (!input || !button) return;
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      button.textContent = show ? 'Ocultar' : 'Mostrar';
+      button.setAttribute('aria-pressed', show ? 'true' : 'false');
+      button.setAttribute('aria-label', show ? 'Ocultar senha' : 'Visualizar senha');
+    });
+
     byId("applyFilters")?.addEventListener("click", async () => {
       try { await loadDashboard(); await loadAgendamentos(); } catch (err) { alert(err.message); }
     });
@@ -1983,7 +1994,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
       const msg = byId('manualNotaMsg');
       try {
         const formData = new FormData(e.target);
-        const nota = appendManualNotaToPendingFornecedor({
+        const draftNota = {
           numeroNf: String(formData.get('numeroNf') || '').trim(),
           serie: String(formData.get('serie') || '').trim(),
           volumes: Number(formData.get('volumes') || 0),
@@ -1992,13 +2003,14 @@ Deseja liberar manualmente a descarga deste veículo?`);
           empresa: '',
           valorNf: 0,
           observacao: 'NF inserida manualmente - sem pré-lançamento'
-        });
-        try {
-          await notifyFiscalForManualNota(nota);
-          byId('agendamentoMsg').textContent = `NF ${nota.numeroNf}${nota.serie ? ` / Série ${nota.serie}` : ''} inserida manualmente e alerta fiscal enviado.`;
-        } catch (alertErr) {
-          byId('agendamentoMsg').textContent = `NF ${nota.numeroNf}${nota.serie ? ` / Série ${nota.serie}` : ''} inserida manualmente, mas o alerta ao fiscal falhou: ${alertErr.message}`;
-        }
+        };
+        const response = await notifyFiscalForManualNota(draftNota);
+        const nota = appendManualNotaToPendingFornecedor(response?.nota || draftNota);
+        const ccInfo = String(response?.cc || '').trim();
+        const emailSent = !!response?.sent;
+        byId('agendamentoMsg').textContent = emailSent
+          ? `NF ${nota.numeroNf}${nota.serie ? ` / Série ${nota.serie}` : ''} inserida manualmente, salva no banco e alerta fiscal enviado${ccInfo ? ` com cópia para ${ccInfo}` : ''}.`
+          : `NF ${nota.numeroNf}${nota.serie ? ` / Série ${nota.serie}` : ''} inserida manualmente e salva no banco. O alerta ao fiscal não foi enviado: ${response?.reason || 'motivo não informado'}.`;
         if (msg) msg.textContent = 'NF adicionada ao agendamento com sucesso.';
         closeManualNotaModal();
       } catch (err) {

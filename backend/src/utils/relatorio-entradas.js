@@ -245,6 +245,8 @@ function normalizeImportedItems(rows = []) {
 
     const current = groups.get(fornecedor);
     const dueFields = buildDueFields(normalizedRow['Data 1º vencimento']);
+    const isManualNote = normalizeCellValue(normalizedRow['Entrada']).toUpperCase() === 'MANUAL'
+      || normalizeCellValue(normalizedRow['Status']).toUpperCase().includes('MANUAL');
     const note = {
       rowHash: normalizeCellValue(row?.rowHash || '') || buildRowHash(normalizedRow),
       numeroNf,
@@ -257,7 +259,14 @@ function normalizeImportedItems(rows = []) {
       peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
       valorNf: toFixedNumber(parseNumber(normalizedRow['Valor da nota']), 2),
       observacao: buildNoteObservation(normalizedRow),
-      ...dueFields
+      origemManual: isManualNote,
+      inseridaManual: isManualNote,
+      preLancamentoPendente: isManualNote,
+      disponivelNoRelatorio: !isManualNote,
+      ...dueFields,
+      tooltipVencimento: isManualNote
+        ? 'NF inserida manualmente; sem pré-lançamento no relatório terceirizado.'
+        : dueFields.tooltipVencimento
     };
 
     const noteKey = note.rowHash || `${note.numeroNf}::${note.serie}::${note.valorNf}::${note.peso}::${note.volumes}`;
@@ -444,6 +453,151 @@ export async function canonicalizeNotasSelecionadasComRelatorio(fornecedor, nota
   } catch {
     return normalizedSelection;
   }
+}
+
+
+function manualNotaRowHash(fornecedor = '', nota = {}) {
+  const key = [
+    'MANUAL',
+    normalizeCellValue(fornecedor),
+    normalizeCellValue(nota?.numeroNf || ''),
+    normalizeCellValue(nota?.serie || ''),
+    normalizeCellValue(nota?.destino || ''),
+    toFixedNumber(parseNumber(nota?.volumes || 0), 3),
+    toFixedNumber(parseNumber(nota?.peso || 0), 3)
+  ].join('|');
+  return crypto.createHash('sha256').update(key).digest('hex');
+}
+
+function buildManualSpreadsheetRow(fornecedor = '', nota = {}, actor = null) {
+  const row = {};
+  for (const column of SHEET_COLUMNS) row[column] = '';
+  row['Entrada'] = 'MANUAL';
+  row['Fornecedor'] = normalizeCellValue(fornecedor);
+  row['Nr. nota'] = normalizeCellValue(nota?.numeroNf || '');
+  row['Série'] = normalizeCellValue(nota?.serie || '');
+  row['Volume total'] = String(toFixedNumber(parseNumber(nota?.volumes || 0), 3));
+  row['Peso total'] = String(toFixedNumber(parseNumber(nota?.peso || 0), 3));
+  row['Destino'] = normalizeCellValue(nota?.destino || '');
+  row['Status'] = 'NF INSERIDA MANUALMENTE';
+  row['Empresa'] = normalizeCellValue(nota?.empresa || nota?.destino || '');
+  row['Data do cadastro'] = new Date().toISOString();
+  const operador = normalizeCellValue(actor?.nome || actor?.name || actor?.email || actor?.sub || '');
+  row['Prazo médio'] = operador ? `Operador: ${operador}` : '';
+  row.rowHash = manualNotaRowHash(fornecedor, nota);
+  return row;
+}
+
+function readFallbackGroups() {
+  try {
+    if (!fs.existsSync(fallbackFile)) return [];
+    return JSON.parse(fs.readFileSync(fallbackFile, 'utf8')) || [];
+  } catch {
+    return [];
+  }
+}
+
+function upsertManualNotaIntoFallback(fornecedor = '', nota = {}) {
+  const currentGroups = readFallbackGroups();
+  const groups = Array.isArray(currentGroups) ? currentGroups : [];
+  const fornecedorNormalized = normalizeCellValue(fornecedor);
+  const notaNormalizada = normalizeSelectedNota({
+    ...nota,
+    rowHash: manualNotaRowHash(fornecedorNormalized, nota),
+    empresa: nota?.empresa || nota?.destino || '',
+    observacao: nota?.observacao || 'NF inserida manualmente - sem pré-lançamento',
+    origemManual: true,
+    inseridaManual: true,
+    preLancamentoPendente: true,
+    disponivelNoRelatorio: false,
+    tooltipVencimento: 'NF inserida manualmente; sem pré-lançamento no relatório terceirizado.'
+  });
+
+  const existingGroup = groups.find((item) => normalizeCellValue(item?.fornecedor || item?.nome || '') === fornecedorNormalized);
+  const targetGroup = existingGroup || { id: fornecedorNormalized || `manual-${Date.now()}`, fornecedor: fornecedorNormalized, nome: fornecedorNormalized, notas: [], notasFiscais: [] };
+  const notasAtuais = Array.isArray(targetGroup.notas) ? targetGroup.notas : Array.isArray(targetGroup.notasFiscais) ? targetGroup.notasFiscais : [];
+  const duplicate = notasAtuais.some((item) => normalizeCellValue(item?.numeroNf || '') === notaNormalizada.numeroNf && normalizeCellValue(item?.serie || '') === notaNormalizada.serie);
+  if (duplicate) {
+    throw new Error('Esta NF manual já está cadastrada para este fornecedor.');
+  }
+
+  const notas = [...notasAtuais, notaNormalizada];
+  targetGroup.fornecedor = fornecedorNormalized;
+  targetGroup.nome = fornecedorNormalized;
+  targetGroup.notas = notas;
+  targetGroup.notasFiscais = notas;
+  targetGroup.quantidadeNotas = notas.length;
+  targetGroup.quantidadeVolumes = Number(notas.reduce((acc, item) => acc + Number(item?.volumes || 0), 0).toFixed(3));
+  targetGroup.pesoTotalKg = Number(notas.reduce((acc, item) => acc + Number(item?.peso || 0), 0).toFixed(3));
+  targetGroup.valorTotalNf = Number(notas.reduce((acc, item) => acc + Number(item?.valorNf || 0), 0).toFixed(2));
+  targetGroup.updatedAt = new Date().toISOString();
+  if (!existingGroup) {
+    targetGroup.createdAt = targetGroup.updatedAt;
+    groups.unshift(targetGroup);
+  }
+
+  writeFallback(groups);
+  return notaNormalizada;
+}
+
+export async function persistManualPendingNota({ fornecedor = '', nota = {}, actor = null } = {}) {
+  const fornecedorNormalized = normalizeCellValue(fornecedor);
+  const normalizedNota = normalizeSelectedNota({
+    ...nota,
+    empresa: nota?.empresa || nota?.destino || '',
+    observacao: nota?.observacao || 'NF inserida manualmente - sem pré-lançamento',
+    origemManual: true,
+    inseridaManual: true,
+    preLancamentoPendente: true,
+    disponivelNoRelatorio: false,
+    tooltipVencimento: 'NF inserida manualmente; sem pré-lançamento no relatório terceirizado.'
+  });
+  normalizedNota.rowHash = manualNotaRowHash(fornecedorNormalized, normalizedNota);
+
+  try {
+    if (await ensureRelatorioTable()) {
+      const duplicateRows = await prisma.$queryRawUnsafe(
+        `SELECT rowHash
+           FROM ${quoteIdentifier(TABLE_NAME)}
+          WHERE agendamentoId IS NULL
+            AND LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(?)
+            AND TRIM(${quoteIdentifier('Nr. nota')}) = ?
+            AND COALESCE(TRIM(${quoteIdentifier('Série')}), '') = ?
+          LIMIT 1`,
+        fornecedorNormalized,
+        normalizedNota.numeroNf,
+        normalizedNota.serie
+      );
+
+      if (Array.isArray(duplicateRows) && duplicateRows.length) {
+        throw new Error('Esta NF manual já está cadastrada para este fornecedor.');
+      }
+
+      const row = buildManualSpreadsheetRow(fornecedorNormalized, normalizedNota, actor);
+      const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
+      const values = [
+        row.rowHash,
+        null,
+        ...SHEET_COLUMNS.map((column) => row[column] ?? ''),
+        'manual-ui',
+        JSON.stringify(row)
+      ];
+      const placeholders = columns.map(() => '?').join(', ');
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${columns.map((column) => quoteIdentifier(column)).join(', ')}) VALUES (${placeholders})`,
+        ...values
+      );
+    }
+  } catch (error) {
+    if (String(error?.message || '').includes('já está cadastrada')) {
+      throw error;
+    }
+    if (!relatorioDbDisabled) {
+      console.error('[RELATORIO_IMPORT] Falha ao persistir NF manual no banco, aplicando fallback em arquivo:', error?.message || error);
+    }
+  }
+
+  return upsertManualNotaIntoFallback(fornecedorNormalized, normalizedNota);
 }
 
 function parseCsvLine(line = '', delimiter = ';') {

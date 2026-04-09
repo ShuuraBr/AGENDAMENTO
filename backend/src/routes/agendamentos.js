@@ -15,7 +15,7 @@ import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js
 import { auditLog } from "../utils/audit.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
-import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento } from "../utils/relatorio-entradas.js";
+import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento, persistManualPendingNota } from "../utils/relatorio-entradas.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
 import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, sendMonthlyNearDueDigestIfNeeded, searchByNumeroNf } from "../utils/nf-monitoring.js";
 import { encodeNotaObservacao } from "../utils/nota-metadata.js";
@@ -156,6 +156,23 @@ function fiscalRecipient() {
   ).trim();
 }
 
+function fiscalCcRecipients() {
+  const raw = [
+    process.env.FISCAL_CC_EMAILS,
+    process.env.FISCAL_EMAIL_CC,
+    process.env.EMAIL_FISCAL_CC,
+    process.env.SETOR_FISCAL_CC,
+    process.env.SETOR_FISCAL_CC_EMAILS
+  ].filter(Boolean).join(',');
+
+  const emails = raw
+    .split(/[;,]/)
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+
+  return emails.length ? [...new Set(emails)].join(', ') : '';
+}
+
 function buildManualNotaFiscalMail({ fornecedor = '', nota = {}, actor = null } = {}) {
   const operador = String(actor?.nome || actor?.name || actor?.email || actor?.sub || 'Não identificado').trim();
   const numeroNf = String(nota?.numeroNf || '').trim() || '-';
@@ -194,8 +211,9 @@ function buildManualNotaFiscalMail({ fornecedor = '', nota = {}, actor = null } 
 async function sendFiscalMissingPrelaunchEmail({ fornecedor = '', nota = {}, actor = null } = {}) {
   const to = fiscalRecipient();
   if (!to) return { sent: false, reason: 'E-mail do fiscal não configurado.' };
+  const cc = fiscalCcRecipients();
   const mail = buildManualNotaFiscalMail({ fornecedor, nota, actor });
-  return sendMail({ to, subject: mail.subject, text: mail.text, html: mail.html });
+  return sendMail({ to, cc: cc || undefined, subject: mail.subject, text: mail.text, html: mail.html });
 }
 
 async function dispatchDriverFeedbackSurvey(item, req, actor = req.user) {
@@ -548,24 +566,29 @@ router.post("/notas/manual-alerta", requireProfiles("ADMIN", "OPERADOR", "GESTOR
       volumes: Number(req.body?.volumes || 0),
       peso: Number(req.body?.peso || 0),
       destino: String(req.body?.destino || '').trim(),
-      observacao: String(req.body?.observacao || '').trim()
+      observacao: String(req.body?.observacao || '').trim() || 'NF inserida manualmente - sem pré-lançamento',
+      origemManual: true,
+      inseridaManual: true,
+      preLancamentoPendente: true,
+      disponivelNoRelatorio: false
     };
 
     if (!fornecedor) throw new Error('Fornecedor é obrigatório para alertar o fiscal.');
     validateNf(nota);
 
-    const sent = await sendFiscalMissingPrelaunchEmail({ fornecedor, nota, actor: req.user });
+    const persistedNota = await persistManualPendingNota({ fornecedor, nota, actor: req.user });
+    const sent = await sendFiscalMissingPrelaunchEmail({ fornecedor, nota: persistedNota, actor: req.user });
     await auditLog({
       usuarioId: req.user.sub,
       perfil: req.user.perfil,
       acao: "ALERTA_FISCAL_PRE_LANCAMENTO",
       entidade: "AGENDAMENTO",
       entidadeId: null,
-      detalhes: { fornecedor, nota, sent },
+      detalhes: { fornecedor, nota: persistedNota, sent, cc: fiscalCcRecipients() || null },
       ip: req.ip
     });
 
-    res.json({ ok: true, ...sent });
+    res.json({ ok: true, nota: persistedNota, ...sent, cc: fiscalCcRecipients() || '' });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }

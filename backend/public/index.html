@@ -50,7 +50,13 @@
         <h2>Login do colaborador</h2>
         <form id="loginForm" autocomplete="off">
           <label>Login / E-mail<input name="email" type="text" value="" placeholder="Digite seu login" autocomplete="off" /></label>
-          <label>Senha<input name="senha" type="password" value="" placeholder="Digite sua senha" autocomplete="new-password" /></label>
+          <label>
+            Senha
+            <div class="password-input-wrap">
+              <input id="loginSenha" name="senha" type="password" value="" placeholder="Digite sua senha" autocomplete="new-password" />
+              <button type="button" class="password-toggle-btn" id="toggleLoginPassword" aria-label="Visualizar senha" aria-pressed="false">Mostrar</button>
+            </div>
+          </label>
           <button type="submit">Entrar</button>
         </form>
         <p id="loginMsg" class="msg"></p>
