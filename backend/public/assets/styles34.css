@@ -314,3 +314,19 @@ body.modal-open{overflow:hidden}
 .pending-fornecedor-header h4{margin:0;font-size:16px;color:#0f172a}
 .pending-fornecedor-header span{font-size:12px;font-weight:700;color:#475569}
 .pending-notas-empty-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+
+.multi-select-control{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:8px;align-items:start}
+.icon-clear-btn{height:44px;min-width:44px;padding:0;border-radius:10px;background:#e2e8f0;color:#0f172a;font-weight:800}
+.icon-clear-btn:disabled{opacity:.45;cursor:not-allowed}
+.form-actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.btn-danger-soft{background:#991b1b}
+.btn-danger-soft:hover{opacity:.96}
+.doca-card-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:transparent;border:0;padding:0;color:inherit;text-align:left}
+.doca-card-toggle small{color:#475569;font-weight:600}
+.doca-detail-panel{margin-top:12px;padding-top:12px;border-top:1px dashed rgba(15,23,42,.16)}
+.doca-detail-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:8px}
+.doca-detail-summary span{display:block;padding:8px 10px;border-radius:10px;background:#f8fafc;color:#0f172a;font-size:12px}
+.doca-detail-notes{margin-top:10px;display:grid;gap:8px}
+.doca-note-row{display:grid;gap:4px;padding:10px;border:1px solid #dbe2ea;border-radius:12px;background:#fff}
+.doca-note-row strong{font-size:13px}
+.doca-note-row small{color:#475569}

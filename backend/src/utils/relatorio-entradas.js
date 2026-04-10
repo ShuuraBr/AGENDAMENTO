@@ -84,7 +84,7 @@ const SHEET_COLUMNS = [
   'INSS retido',
   'IRRF retido',
   'CSLL retido',
-  'ISSQN retido',
+  'ISSQN retido2',
   'Número do CT-e',
   'Transportadora',
   'Data de emissão do CT-e',
@@ -103,6 +103,46 @@ let relatorioDbDisabled = false;
 let relatorioDbDisableReason = null;
 let relatorioImportPromise = null;
 let relatorioTableColumnsCache = null;
+
+const RELATORIO_BASE_COLUMNS = [
+  ['id', 'INT NOT NULL AUTO_INCREMENT'],
+  ['rowHash', 'VARCHAR(64) NULL'],
+  ['agendamentoId', 'INT NULL'],
+  ...SHEET_COLUMNS.map((column) => [column, 'TEXT NULL']),
+  ['origemArquivo', 'VARCHAR(255) NULL'],
+  ['importedAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP'],
+  ['updatedAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'],
+  ['dadosOriginaisJson', 'LONGTEXT NULL']
+];
+
+function buildCreateTableSql() {
+  const lines = RELATORIO_BASE_COLUMNS.map(([name, definition]) => `${quoteIdentifier(name)} ${definition}`);
+  lines.push(`PRIMARY KEY (${quoteIdentifier('id')})`);
+  return `
+    CREATE TABLE IF NOT EXISTS ${quoteIdentifier(TABLE_NAME)} (
+      ${lines.join(',\n      ')}
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `;
+}
+
+async function ensureRelatorioTableSchema() {
+  const tableRows = await prisma.$queryRawUnsafe('SHOW TABLES LIKE ?', TABLE_NAME);
+  if (!Array.isArray(tableRows) || !tableRows.length) {
+    await prisma.$executeRawUnsafe(buildCreateTableSql());
+  }
+
+  const currentColumnsRows = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
+  const currentColumns = new Set((currentColumnsRows || []).map((row) => String(row?.Field || row?.COLUMN_NAME || '').trim()).filter(Boolean));
+
+  for (const [name, definition] of RELATORIO_BASE_COLUMNS) {
+    if (currentColumns.has(name)) continue;
+    await runSqlIgnoringLegacyConstraint(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN ${quoteIdentifier(name)} ${definition}`);
+  }
+
+  await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD UNIQUE INDEX ${quoteIdentifier('uk_relatorio_rowhash')} (${quoteIdentifier('rowHash')})`);
+  await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD INDEX ${quoteIdentifier('idx_relatorio_agendamento')} (${quoteIdentifier('agendamentoId')})`);
+  relatorioTableColumnsCache = null;
+}
 
 function disableRelatorioDb(error, context = 'operacao_desconhecida') {
   relatorioDbDisabled = true;
@@ -172,6 +212,17 @@ function trimTrailingEmpty(cells = []) {
 
 function normalizeCellValue(value) {
   return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function dedupeHeaderNames(headers = []) {
+  const counts = new Map();
+  return (Array.isArray(headers) ? headers : []).map((header) => {
+    const normalized = normalizeCellValue(header);
+    if (!normalized) return '';
+    const current = (counts.get(normalized) || 0) + 1;
+    counts.set(normalized, current);
+    return current === 1 ? normalized : `${normalized}${current}`;
+  });
 }
 
 function getCaseInsensitiveValue(row = {}, expectedColumn = '') {
@@ -670,7 +721,7 @@ function parseCsv(content = '') {
   const lines = String(content || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim() !== '');
   if (!lines.length) return [];
   const delimiter = lines[0].includes(';') ? ';' : ',';
-  const headers = parseCsvLine(lines[0], delimiter).map(normalizeCellValue);
+  const headers = dedupeHeaderNames(parseCsvLine(lines[0], delimiter).map(normalizeCellValue));
 
   return lines.slice(1).map((line) => {
     const cols = parseCsvLine(line, delimiter);
@@ -744,7 +795,7 @@ function parseOdsContentXml(contentXml = '') {
   const headerIndex = rows.findIndex((row) => row.some((cell) => cell === 'Fornecedor') && row.some((cell) => cell.includes('Nr. nota')));
   if (headerIndex < 0) return [];
 
-  const headers = rows[headerIndex].map(normalizeCellValue);
+  const headers = dedupeHeaderNames(rows[headerIndex].map(normalizeCellValue));
   return rows
     .slice(headerIndex + 1)
     .filter((row) => row.some((cell) => normalizeCellValue(cell) !== ''))
@@ -871,7 +922,7 @@ function parseXlsxSheetXml(xml = '', sharedStrings = []) {
     const dense = trimTrailingEmpty(cells.map((value) => normalizeCellValue(value)));
     if (!dense.length) continue;
     if (!headers.length) {
-      headers = dense;
+      headers = dedupeHeaderNames(dense);
       continue;
     }
     const row = {};
@@ -960,6 +1011,81 @@ function writeFallback(groups = []) {
   fs.writeFileSync(fallbackFile, JSON.stringify(groups, null, 2), 'utf8');
 }
 
+function removePendingNotasFromFallback({ fornecedor = '', notas = [] } = {}) {
+  const fornecedorNormalized = normalizeCellValue(fornecedor);
+  const selected = new Set((Array.isArray(notas) ? notas : []).map((nota) => buildPendingNoteKey(nota)).filter(Boolean));
+  if (!selected.size) return { removed: 0, source: 'arquivo' };
+
+  const groups = readFallbackGroups();
+  let removed = 0;
+  const updatedGroups = groups.map((group) => {
+    const sameFornecedor = normalizeCellValue(group?.fornecedor || group?.nome || '') === fornecedorNormalized;
+    if (!sameFornecedor) return group;
+    const sourceNotas = Array.isArray(group?.notas) ? group.notas : Array.isArray(group?.notasFiscais) ? group.notasFiscais : [];
+    const keptNotas = sourceNotas.filter((nota) => {
+      const keep = !selected.has(buildPendingNoteKey(nota));
+      if (!keep) removed += 1;
+      return keep;
+    });
+    const quantidadeVolumes = toFixedNumber(keptNotas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0), 3);
+    const pesoTotalKg = toFixedNumber(keptNotas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0), 3);
+    const valorTotalNf = toFixedNumber(keptNotas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0), 2);
+    return {
+      ...group,
+      notas: keptNotas,
+      notasFiscais: keptNotas,
+      quantidadeNotas: keptNotas.length,
+      quantidadeVolumes,
+      pesoTotalKg,
+      valorTotalNf
+    };
+  }).filter((group) => Number(group?.quantidadeNotas || 0) > 0 || (Array.isArray(group?.notas) && group.notas.length > 0) || (Array.isArray(group?.notasFiscais) && group.notasFiscais.length > 0));
+
+  writeFallback(updatedGroups);
+  return { removed, source: 'arquivo' };
+}
+
+export async function removePendingNotasFromRelatorio({ fornecedor = '', notas = [] } = {}) {
+  const fornecedorNormalized = normalizeCellValue(fornecedor);
+  const selectedNotas = Array.isArray(notas) ? notas.map(normalizeSelectedNota).filter((nota) => nota.numeroNf || nota.rowHash) : [];
+  if (!fornecedorNormalized || !selectedNotas.length) return { removed: 0, source: 'none' };
+
+  const fallbackResult = removePendingNotasFromFallback({ fornecedor: fornecedorNormalized, notas: selectedNotas });
+
+  try {
+    if (!(await ensureRelatorioTable())) return fallbackResult;
+
+    let removed = 0;
+    for (const nota of selectedNotas) {
+      if (nota.rowHash) {
+        const count = await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash = ? AND agendamentoId IS NULL`, nota.rowHash);
+        removed += Number(count || 0);
+        continue;
+      }
+      const numeroNf = normalizeCellValue(nota.numeroNf || '');
+      const serie = normalizeCellValue(nota.serie || '');
+      if (!numeroNf) continue;
+      const conditions = [
+        `LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(?)`,
+        `TRIM(${quoteIdentifier('Nr. nota')}) = ?`,
+        `${quoteIdentifier('agendamentoId')} IS NULL`
+      ];
+      const args = [fornecedorNormalized, numeroNf];
+      if (serie) {
+        conditions.push(`COALESCE(TRIM(${quoteIdentifier('Série')}), '') = ?`);
+        args.push(serie);
+      }
+      const count = await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)} WHERE ${conditions.join(' AND ')}`, ...args);
+      removed += Number(count || 0);
+    }
+
+    return { removed, source: 'database' };
+  } catch (error) {
+    console.error('[RELATORIO_IMPORT] Falha ao remover notas pendentes do relatório:', error?.message || error);
+    return { ...fallbackResult, source: fallbackResult.source || 'arquivo', reason: error?.message || String(error || 'erro') };
+  }
+}
+
 function writeRawFallback(rows = []) {
   ensureDir(dataDir);
   fs.writeFileSync(rawFallbackFile, JSON.stringify(rows, null, 2), 'utf8');
@@ -983,6 +1109,7 @@ async function ensureRelatorioTable() {
   if (relatorioDbDisabled) return false;
 
   try {
+    await ensureRelatorioTableSchema();
     await prisma.$queryRawUnsafe(
       `SELECT rowHash, agendamentoId, dadosOriginaisJson
          FROM ${quoteIdentifier(TABLE_NAME)}
@@ -991,7 +1118,7 @@ async function ensureRelatorioTable() {
     await getRelatorioTableColumns();
     return true;
   } catch (error) {
-    disableRelatorioDb(error, 'ensureRelatorioTable:readOnlyProbe');
+    disableRelatorioDb(error, 'ensureRelatorioTable');
     return false;
   }
 }

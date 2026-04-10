@@ -33,7 +33,26 @@ async function createPrismaClient() {
   if (!PrismaClient) {
     throw new Error('PrismaClient não disponível. Execute npm install e npm run prisma:generate.');
   }
-  return new PrismaClient({ log: ['error', 'warn'] });
+  const client = new PrismaClient({ log: ['error', 'warn'] });
+  await client.$connect();
+  return client;
+}
+
+function isPrismaEnginePanic(error) {
+  const message = String(error?.message || error || '');
+  return message.includes('PANIC: timer has gone away')
+    || message.includes('PrismaClientRustPanicError')
+    || message.includes('This is a non-recoverable error');
+}
+
+export async function resetPrismaClient() {
+  const current = prismaClient;
+  prismaClient = null;
+  prismaLoadError = null;
+  prismaLoadingPromise = null;
+  if (current && typeof current.$disconnect === 'function') {
+    try { await current.$disconnect(); } catch {}
+  }
 }
 
 export async function getPrismaClient() {
@@ -68,15 +87,25 @@ function createModelProxy(pathParts = []) {
     },
     apply(_target, _thisArg, args) {
       return (async () => {
-        const client = await getPrismaClient();
-        let current = client;
-        for (const part of pathParts) {
-          current = current?.[part];
+        const execute = async () => {
+          const client = await getPrismaClient();
+          let current = client;
+          for (const part of pathParts) {
+            current = current?.[part];
+          }
+          if (typeof current !== 'function') {
+            throw new Error(`Operação Prisma inválida: ${pathParts.join('.')}`);
+          }
+          return current.apply(client, args);
+        };
+
+        try {
+          return await execute();
+        } catch (error) {
+          if (!isPrismaEnginePanic(error)) throw error;
+          await resetPrismaClient();
+          return execute();
         }
-        if (typeof current !== 'function') {
-          throw new Error(`Operação Prisma inválida: ${pathParts.join('.')}`);
-        }
-        return current.apply(client, args);
       })();
     }
   });

@@ -142,6 +142,18 @@ function trafficColor(status) {
   return "VERMELHO";
 }
 
+function enrichFilaItemRaw(item = {}) {
+  return {
+    ...item,
+    totalNotas: Number(item?.quantidadeNotas || 0),
+    totalVolumes: Number(item?.quantidadeVolumes || 0),
+    pesoTotalKg: Number(item?.pesoTotalKg || 0),
+    totalItens: Number(item?.totalItens || 0),
+    destinos: [],
+    notasDetalhes: []
+  };
+}
+
 export async function fetchDocaPainelRaw(dataAgendada = null) {
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
@@ -161,7 +173,7 @@ export async function fetchDocaPainelRaw(dataAgendada = null) {
   const [docas, agendamentos] = await Promise.all([
     client.$queryRawUnsafe(`SELECT id, codigo, descricao FROM ${qid(docaTable)} ORDER BY codigo ASC`),
     client.$queryRawUnsafe(`
-      SELECT a.id, a.protocolo, a.status, a.motorista, a.placa, a.fornecedor, a.transportadora, a.horaAgendada, a.docaId, a.janelaId, a.dataAgendada
+      SELECT a.id, a.protocolo, a.status, a.motorista, a.placa, a.fornecedor, a.transportadora, a.horaAgendada, a.docaId, a.janelaId, a.dataAgendada, a.quantidadeNotas, a.quantidadeVolumes, a.pesoTotalKg
       FROM ${qid(agTable)} a
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
       ORDER BY a.horaAgendada ASC, a.id ASC
@@ -176,7 +188,8 @@ export async function fetchDocaPainelRaw(dataAgendada = null) {
         const pb = queuePriority(b.status);
         if (pa !== pb) return pa - pb;
         return String(a.horaAgendada || "").localeCompare(String(b.horaAgendada || ""));
-      });
+      })
+      .map(enrichFilaItemRaw);
 
     const ativo = fila.find((a) => ["CHEGOU", "EM_DESCARGA"].includes(String(a.status || ""))) || fila[0] || null;
 

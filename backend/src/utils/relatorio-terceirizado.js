@@ -316,10 +316,7 @@ async function ensureRelatorioTable(client) {
       ${qid('importedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       ${qid('updatedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (${qid('id')}),
-      UNIQUE KEY ${qid('uk_relatorio_rowhash')} (${qid('rowHash')}),
-      KEY ${qid('idx_relatorio_agendamento')} (${qid('agendamentoId')}),
-      KEY ${qid('idx_relatorio_fornecedor')} (${qid('Fornecedor')}(191)),
-      KEY ${qid('idx_relatorio_nota')} (${qid('Nr. nota')}(191))
+      UNIQUE KEY ${qid('uk_relatorio_rowhash')} (${qid('rowHash')})
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `;
   await client.$executeRawUnsafe(sql);
