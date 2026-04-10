@@ -6,6 +6,7 @@ function occupiesDoca(status) {
 
 import { prisma } from "./prisma.js";
 import { readAgendamentos } from "./file-store.js";
+import { normalizeAgendamentoNotas } from "./nota-metadata.js";
 
 export function queuePriority(status) {
   const map = {
@@ -51,11 +52,37 @@ export function trafficColor(status) {
   return "VERMELHO";
 }
 
+function enrichFilaItem(item = {}) {
+  const notas = normalizeAgendamentoNotas(item?.notasFiscais || item?.notas || []);
+  const destinos = [...new Set(notas.map((nota) => String(nota?.destino || '').trim()).filter(Boolean))];
+  const quantidadeNotas = Number(item?.quantidadeNotas || notas.length || 0);
+  const quantidadeVolumes = Number(item?.quantidadeVolumes || notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0));
+  const pesoTotalKg = Number(item?.pesoTotalKg || notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0));
+  const quantidadeItens = Number(notas.reduce((acc, nota) => acc + Number(nota?.quantidadeItens || 0), 0));
+  return {
+    ...item,
+    notasFiscais: notas,
+    quantidadeNotas,
+    quantidadeVolumes,
+    pesoTotalKg,
+    quantidadeItens,
+    destinos,
+    detalhesNotas: notas.map((nota) => ({
+      numeroNf: nota.numeroNf || '',
+      serie: nota.serie || '',
+      destino: nota.destino || '',
+      peso: Number(nota.peso || 0),
+      volumes: Number(nota.volumes || 0),
+      quantidadeItens: Number(nota.quantidadeItens || 0)
+    }))
+  };
+}
+
 export async function docaPainel(dataAgendada = null) {
   const where = dataAgendada ? { dataAgendada: String(dataAgendada) } : {};
   const [docas, agendamentos] = await Promise.all([
     prisma.doca.findMany({ orderBy: { codigo: "asc" } }),
-    prisma.agendamento.findMany({ where, orderBy: { horaAgendada: "asc" } })
+    prisma.agendamento.findMany({ where, orderBy: { horaAgendada: "asc" }, include: { notasFiscais: true } })
   ]);
 
   return docas.map(doca => {
@@ -66,7 +93,8 @@ export async function docaPainel(dataAgendada = null) {
         const pb = queuePriority(b.status);
         if (pa !== pb) return pa - pb;
         return String(a.horaAgendada).localeCompare(String(b.horaAgendada));
-      });
+      })
+      .map(enrichFilaItem);
 
     const ativo = fila.find(a => ["CHEGOU", "EM_DESCARGA"].includes(a.status)) || fila[0] || null;
 
@@ -76,7 +104,12 @@ export async function docaPainel(dataAgendada = null) {
       descricao: doca.descricao,
       ocupacaoAtual: ativo ? ativo.status : "LIVRE",
       semaforo: ativo ? trafficColor(ativo.status) : "VERDE",
-      fila
+      fila,
+      totalAgendamentos: fila.length,
+      totalNotas: fila.reduce((acc, item) => acc + Number(item?.quantidadeNotas || 0), 0),
+      totalVolumes: fila.reduce((acc, item) => acc + Number(item?.quantidadeVolumes || 0), 0),
+      totalPesoKg: Number(fila.reduce((acc, item) => acc + Number(item?.pesoTotalKg || 0), 0).toFixed(3)),
+      totalItens: fila.reduce((acc, item) => acc + Number(item?.quantidadeItens || 0), 0)
     };
   });
 }

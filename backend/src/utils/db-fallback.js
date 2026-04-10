@@ -1,4 +1,5 @@
 import { getPrismaClient } from "./prisma.js";
+import { normalizeAgendamentoNotas } from "./nota-metadata.js";
 
 function qid(name) {
   return `\`${String(name).replace(/`/g, "``")}\``;
@@ -146,9 +147,10 @@ export async function fetchDocaPainelRaw(dataAgendada = null) {
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
 
-  const [agTable, docaTable] = await Promise.all([
+  const [agTable, docaTable, notaTable] = await Promise.all([
     resolveTableName(["Agendamento", "agendamento", "agendamentos"]),
-    resolveTableName(["Doca", "doca", "docas"])
+    resolveTableName(["Doca", "doca", "docas"]),
+    resolveTableName(["NotaFiscal", "notaFiscal", "notafiscal", "nota_fiscal"])
   ]);
 
   const where = [];
@@ -158,15 +160,49 @@ export async function fetchDocaPainelRaw(dataAgendada = null) {
     args.push(String(dataAgendada));
   }
 
-  const [docas, agendamentos] = await Promise.all([
+  const [docas, agendamentos, notas] = await Promise.all([
     client.$queryRawUnsafe(`SELECT id, codigo, descricao FROM ${qid(docaTable)} ORDER BY codigo ASC`),
     client.$queryRawUnsafe(`
-      SELECT a.id, a.protocolo, a.status, a.motorista, a.placa, a.fornecedor, a.transportadora, a.horaAgendada, a.docaId, a.janelaId, a.dataAgendada
+      SELECT a.id, a.protocolo, a.status, a.motorista, a.placa, a.fornecedor, a.transportadora, a.horaAgendada, a.docaId, a.janelaId, a.dataAgendada, a.quantidadeNotas, a.quantidadeVolumes, a.pesoTotalKg
       FROM ${qid(agTable)} a
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
       ORDER BY a.horaAgendada ASC, a.id ASC
-    `, ...args)
+    `, ...args),
+    client.$queryRawUnsafe(`SELECT id, agendamentoId, numeroNf, serie, volumes, peso, valorNf, observacao FROM ${qid(notaTable)}`)
   ]);
+
+  const notasByAgendamento = new Map();
+  for (const nota of notas || []) {
+    const key = Number(nota.agendamentoId || 0);
+    if (!notasByAgendamento.has(key)) notasByAgendamento.set(key, []);
+    notasByAgendamento.get(key).push(nota);
+  }
+
+  const enrichFilaItem = (item = {}) => {
+    const notasItem = normalizeAgendamentoNotas(notasByAgendamento.get(Number(item.id || 0)) || []);
+    const destinos = [...new Set(notasItem.map((nota) => String(nota?.destino || '').trim()).filter(Boolean))];
+    const quantidadeNotas = Number(item?.quantidadeNotas || notasItem.length || 0);
+    const quantidadeVolumes = Number(item?.quantidadeVolumes || notasItem.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0));
+    const pesoTotalKg = Number(item?.pesoTotalKg || notasItem.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0));
+    const quantidadeItens = Number(notasItem.reduce((acc, nota) => acc + Number(nota?.quantidadeItens || 0), 0));
+    return {
+      ...item,
+      notasFiscais: notasItem,
+      quantidadeNotas,
+      quantidadeVolumes,
+      pesoTotalKg,
+      quantidadeItens,
+      destinos,
+      detalhesNotas: notasItem.map((nota) => ({
+        numeroNf: nota.numeroNf || '',
+        serie: nota.serie || '',
+        destino: nota.destino || '',
+        peso: Number(nota.peso || 0),
+        volumes: Number(nota.volumes || 0),
+        quantidadeItens: Number(nota.quantidadeItens || 0)
+      }))
+    };
+  };
 
   return docas.map((doca) => {
     const fila = agendamentos
@@ -176,7 +212,8 @@ export async function fetchDocaPainelRaw(dataAgendada = null) {
         const pb = queuePriority(b.status);
         if (pa !== pb) return pa - pb;
         return String(a.horaAgendada || "").localeCompare(String(b.horaAgendada || ""));
-      });
+      })
+      .map(enrichFilaItem);
 
     const ativo = fila.find((a) => ["CHEGOU", "EM_DESCARGA"].includes(String(a.status || ""))) || fila[0] || null;
 
@@ -186,7 +223,12 @@ export async function fetchDocaPainelRaw(dataAgendada = null) {
       descricao: doca.descricao || "",
       ocupacaoAtual: ativo ? ativo.status : "LIVRE",
       semaforo: ativo ? trafficColor(ativo.status) : "VERDE",
-      fila
+      fila,
+      totalAgendamentos: fila.length,
+      totalNotas: fila.reduce((acc, item) => acc + Number(item?.quantidadeNotas || 0), 0),
+      totalVolumes: fila.reduce((acc, item) => acc + Number(item?.quantidadeVolumes || 0), 0),
+      totalPesoKg: Number(fila.reduce((acc, item) => acc + Number(item?.pesoTotalKg || 0), 0).toFixed(3)),
+      totalItens: fila.reduce((acc, item) => acc + Number(item?.quantidadeItens || 0), 0)
     };
   });
 }

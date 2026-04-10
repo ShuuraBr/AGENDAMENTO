@@ -15,7 +15,7 @@ import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js
 import { auditLog } from "../utils/audit.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
-import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento, persistManualPendingNota } from "../utils/relatorio-entradas.js";
+import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento, persistManualPendingNota, removeNotasPendentesFromRelatorio } from "../utils/relatorio-entradas.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
 import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, sendMonthlyNearDueDigestIfNeeded, searchByNumeroNf } from "../utils/nf-monitoring.js";
 import { encodeNotaObservacao } from "../utils/nota-metadata.js";
@@ -216,6 +216,70 @@ async function sendFiscalMissingPrelaunchEmail({ fornecedor = '', nota = {}, act
   return sendMail({ to, cc: cc || undefined, subject: mail.subject, text: mail.text, html: mail.html });
 }
 
+
+function splitRecipientList(...values) {
+  return [...new Set(values
+    .flatMap((value) => String(value || '').split(/[;,]/))
+    .map((item) => item.trim())
+    .filter(Boolean))];
+}
+
+function occurrenceRecipients() {
+  return splitRecipientList(
+    process.env.COMPRADORES_EMAILS,
+    process.env.EMAILS_COMPRADORES,
+    process.env.COORDENADORES_EMAILS,
+    process.env.EMAILS_COORDENADORES,
+    process.env.OCORRENCIA_EMAILS,
+    process.env.URGENCIA_AGENDAMENTO_EMAILS
+  );
+}
+
+function buildNotasHtmlTable(notas = []) {
+  const rows = (Array.isArray(notas) ? notas : []).map((nota) => `
+    <tr>
+      <td style="border:1px solid #d1d5db;padding:6px;">${nota?.numeroNf || '-'}</td>
+      <td style="border:1px solid #d1d5db;padding:6px;">${nota?.serie || '-'}</td>
+      <td style="border:1px solid #d1d5db;padding:6px;">${nota?.destino || '-'}</td>
+      <td style="border:1px solid #d1d5db;padding:6px;text-align:right;">${Number(nota?.quantidadeItens || 0)}</td>
+      <td style="border:1px solid #d1d5db;padding:6px;text-align:right;">${Number(nota?.volumes || 0)}</td>
+      <td style="border:1px solid #d1d5db;padding:6px;text-align:right;">${Number(nota?.peso || 0).toFixed(3)}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:12px;">
+      <thead>
+        <tr style="background:#f3f4f6;">
+          <th style="border:1px solid #d1d5db;padding:6px;text-align:left;">NF</th>
+          <th style="border:1px solid #d1d5db;padding:6px;text-align:left;">Série</th>
+          <th style="border:1px solid #d1d5db;padding:6px;text-align:left;">Destino</th>
+          <th style="border:1px solid #d1d5db;padding:6px;text-align:right;">Itens</th>
+          <th style="border:1px solid #d1d5db;padding:6px;text-align:right;">Volumes</th>
+          <th style="border:1px solid #d1d5db;padding:6px;text-align:right;">Peso</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function buildNotasTextTable(notas = []) {
+  const header = ['NF', 'Série', 'Destino', 'Itens', 'Volumes', 'Peso'];
+  const lines = [header.join(' | '), '---|---|---|---|---|---'];
+  for (const nota of Array.isArray(notas) ? notas : []) {
+    lines.push([
+      nota?.numeroNf || '-',
+      nota?.serie || '-',
+      nota?.destino || '-',
+      Number(nota?.quantidadeItens || 0),
+      Number(nota?.volumes || 0),
+      Number(nota?.peso || 0).toFixed(3)
+    ].join(' | '));
+  }
+  return lines.join('\n');
+}
+
 async function dispatchDriverFeedbackSurvey(item, req, actor = req.user) {
   const result = await sendDriverFeedbackRequestEmail({
     agendamento: item,
@@ -376,7 +440,8 @@ async function sendApprovalNotifications(item, req) {
     `Token do motorista: ${item.publicTokenMotorista}`,
     `Voucher PDF: ${links.voucher}`,
     `Check-in: ${links.checkin}`,
-    `Check-out: ${links.checkout}`
+    `Check-out: ${links.checkout}`,
+    'O motorista responsável pela entrega deve estar portando o voucher para descarregar.'
   ].join("\n");
 
   const commonHtml = `
@@ -390,6 +455,7 @@ async function sendApprovalNotifications(item, req) {
     <p><a href="${links.voucher}">Voucher em PDF</a></p>
     <p><a href="${links.checkin}">Check-in</a></p>
     <p><a href="${links.checkout}">Check-out</a></p>
+    <p><strong>Aviso:</strong> o motorista responsável pela entrega deve estar portando o voucher para descarregar.</p>
   `;
 
   if (item.emailMotorista) {
@@ -615,6 +681,54 @@ router.post("/financeiro/resumo-mensal", requirePermission("financeiro.summary")
   }
 });
 
+
+router.post('/ocorrencia', requirePermission('agendamentos.notify'), async (req, res) => {
+  try {
+    const fornecedor = String(req.body?.fornecedor || '').trim();
+    const transportadora = String(req.body?.transportadora || '').trim();
+    const motivo = String(req.body?.motivo || 'Transportadora negou o agendamento.').trim();
+    const notasFiscais = Array.isArray(req.body?.notasFiscais) ? req.body.notasFiscais : [];
+    if (!fornecedor) throw new Error('Fornecedor é obrigatório para registrar a ocorrência.');
+    if (!transportadora) throw new Error('Transportadora é obrigatória para registrar a ocorrência.');
+    if (!notasFiscais.length) throw new Error('Selecione ao menos uma NF para registrar a ocorrência.');
+
+    const removed = await removeNotasPendentesFromRelatorio({ fornecedor, notas: notasFiscais });
+    const recipients = occurrenceRecipients();
+    let mailResult = { sent: false, reason: 'Destinatários de ocorrência não configurados.' };
+
+    if (recipients.length) {
+      const to = recipients.join(', ');
+      const subject = `Urgente: transportadora ${transportadora} negou agendamento`;
+      const intro = `Urgente: após contato com a transportadora "${transportadora}" para o agendamento das notas abaixo, a mesma negou agendamento.`;
+      mailResult = await sendMail({
+        to,
+        subject,
+        text: `${intro}
+
+Fornecedor: ${fornecedor}
+Motivo: ${motivo}
+
+${buildNotasTextTable(notasFiscais)}`,
+        html: `<p>${intro}</p><p><strong>Fornecedor:</strong> ${fornecedor}<br><strong>Motivo:</strong> ${motivo}</p>${buildNotasHtmlTable(notasFiscais)}`
+      });
+    }
+
+    await auditLog({
+      usuarioId: req.user.sub,
+      perfil: req.user.perfil,
+      acao: 'OCORRENCIA_AGENDAMENTO',
+      entidade: 'RELATORIO_ENTRADAS',
+      entidadeId: null,
+      detalhes: { fornecedor, transportadora, motivo, totalNotas: notasFiscais.length, removed, mailResult },
+      ip: req.ip
+    });
+
+    res.json({ ok: true, removed, mailResult });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
 router.get("/:id", async (req, res) => {
   const item = await full(req.params.id);
   if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
@@ -649,7 +763,7 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
     }
     payload.docaId = Number(payload.docaId || defaultDoca?.id || 1);
 
-    try { await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada }); } catch {}
+    await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada });
 
     let item;
     try {
@@ -704,14 +818,12 @@ router.post("/:id/definir-doca", requirePermission("agendamentos.definir_doca"),
       throw new Error("Não é possível alterar a doca para este status.");
     }
 
-    try {
-      await assertJanelaDocaDisponivel({
-        docaId,
-        janelaId: found.janelaId,
-        dataAgendada: found.dataAgendada,
-        ignoreAgendamentoId: found.id
-      });
-    } catch {}
+    await assertJanelaDocaDisponivel({
+      docaId,
+      janelaId: found.janelaId,
+      dataAgendada: found.dataAgendada,
+      ignoreAgendamentoId: found.id
+    });
 
     let item;
     try { item = await prisma.agendamento.update({ where: { id: found.id }, data: { docaId } }); }
@@ -968,8 +1080,9 @@ router.post("/:id/enviar-confirmacao", requirePermission("agendamentos.notify"),
       text: `${scheduleIntro}
 Protocolo: ${ag.protocolo}
 Doca: ${textoDoca}
-Consulta: ${links.consulta}`,
-      html: `<p>${scheduleIntro}</p><p><strong>Protocolo:</strong> ${ag.protocolo}</p><p><strong>Data:</strong> ${formatDateBR(ag.dataAgendada)}</p><p><strong>Hora:</strong> ${ag.horaAgendada}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><a href="${links.consulta}">Consulta do agendamento</a></p>`,
+Consulta: ${links.consulta}
+O motorista responsável pela entrega deve estar portando o voucher para descarregar.`,
+      html: `<p>${scheduleIntro}</p><p><strong>Protocolo:</strong> ${ag.protocolo}</p><p><strong>Data:</strong> ${formatDateBR(ag.dataAgendada)}</p><p><strong>Hora:</strong> ${ag.horaAgendada}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><a href="${links.consulta}">Consulta do agendamento</a></p><p><strong>Aviso:</strong> o motorista responsável pela entrega deve estar portando o voucher para descarregar.</p>`,
       attachments: [{ filename: `voucher-${ag.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
     });
 

@@ -36,6 +36,27 @@ async function createPrismaClient() {
   return new PrismaClient({ log: ['error', 'warn'] });
 }
 
+function isPrismaPanic(error) {
+  const name = String(error?.name || '');
+  const message = String(error?.message || '');
+  return name.includes('PrismaClientRustPanicError')
+    || message.includes('PANIC: timer has gone away')
+    || message.includes('This is a non-recoverable error');
+}
+
+export async function resetPrismaClient(reason = 'unknown') {
+  const current = prismaClient;
+  prismaClient = null;
+  prismaLoadError = null;
+  prismaLoadingPromise = null;
+  if (current && typeof current.$disconnect === 'function') {
+    try {
+      await current.$disconnect();
+    } catch {}
+  }
+  console.error(`[PRISMA_RESET] Cliente Prisma reinicializado. Motivo: ${reason}`);
+}
+
 export async function getPrismaClient() {
   if (prismaClient) return prismaClient;
   if (prismaLoadError) throw prismaLoadError;
@@ -60,6 +81,18 @@ export function getPrismaLoadError() {
   return prismaLoadError;
 }
 
+async function invokePath(pathParts = [], args = []) {
+  const client = await getPrismaClient();
+  let current = client;
+  for (const part of pathParts) {
+    current = current?.[part];
+  }
+  if (typeof current !== 'function') {
+    throw new Error(`Operação Prisma inválida: ${pathParts.join('.')}`);
+  }
+  return current.apply(client, args);
+}
+
 function createModelProxy(pathParts = []) {
   return new Proxy(function () {}, {
     get(_target, prop) {
@@ -68,15 +101,13 @@ function createModelProxy(pathParts = []) {
     },
     apply(_target, _thisArg, args) {
       return (async () => {
-        const client = await getPrismaClient();
-        let current = client;
-        for (const part of pathParts) {
-          current = current?.[part];
+        try {
+          return await invokePath(pathParts, args);
+        } catch (error) {
+          if (!isPrismaPanic(error)) throw error;
+          await resetPrismaClient(error?.message || 'panic');
+          return invokePath(pathParts, args);
         }
-        if (typeof current !== 'function') {
-          throw new Error(`Operação Prisma inválida: ${pathParts.join('.')}`);
-        }
-        return current.apply(client, args);
       })();
     }
   });

@@ -30,6 +30,23 @@ const stateFile = path.join(dataDir, 'importacao-relatorio-state.json');
 const SUPPORTED_EXTENSIONS = new Set(['.ods', '.csv', '.json', '.xlsx']);
 const TABLE_NAME = 'RelatorioTerceirizado';
 const WATCH_INTERVAL_MS = 60 * 1000;
+const RELATORIO_IMPORT_VERSION = '2026-04-10-v2';
+
+
+const DATE_COLUMNS = new Set([
+  'Data emissão',
+  'Data de Entrada',
+  'Data 1º vencimento',
+  'Data do cadastro',
+  'Data de emissão do CT-e',
+  'Data de entrada do CT-e'
+]);
+
+const COLUMN_ALIASES = {
+  destino: 'Destino',
+  'ISSQN retido': 'ISSQN retido',
+  'ISSQN retido2': 'ISSQN retido2'
+};
 
 const SHEET_COLUMNS = [
   'Entrada',
@@ -84,7 +101,7 @@ const SHEET_COLUMNS = [
   'INSS retido',
   'IRRF retido',
   'CSLL retido',
-  'ISSQN retido',
+  'ISSQN retido2',
   'Número do CT-e',
   'Transportadora',
   'Data de emissão do CT-e',
@@ -137,7 +154,7 @@ function extnameSafe(filePathOrName) {
 }
 
 function buildFileKey(name, stats = {}) {
-  return `${pathToDisplayName(name)}:${Number(stats?.mtimeMs || 0)}:${Number(stats?.size || 0)}`;
+  return `${RELATORIO_IMPORT_VERSION}:${pathToDisplayName(name)}:${Number(stats?.mtimeMs || 0)}:${Number(stats?.size || 0)}`;
 }
 
 function ensureDir(dir) {
@@ -174,12 +191,59 @@ function normalizeCellValue(value) {
   return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function formatDateToBr(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear());
+  return `${day}/${month}/${year}`;
+}
+
+function excelSerialToDate(serial) {
+  const num = Number(serial);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  const utcDays = Math.floor(num - 25569);
+  const utcValue = utcDays * 86400;
+  const dateInfo = new Date(utcValue * 1000);
+  if (Number.isNaN(dateInfo.getTime())) return null;
+  return new Date(dateInfo.getUTCFullYear(), dateInfo.getUTCMonth(), dateInfo.getUTCDate());
+}
+
+function normalizeSpreadsheetValueByColumn(column = '', value = '') {
+  if (value instanceof Date) return DATE_COLUMNS.has(column) ? formatDateToBr(value) : normalizeCellValue(value.toISOString());
+  const normalized = normalizeCellValue(value);
+  if (!DATE_COLUMNS.has(column)) return normalized;
+  if (!normalized) return '';
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(normalized) || /^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
+  if (/^\d+(?:\.\d+)?$/.test(normalized)) {
+    const converted = excelSerialToDate(Number(normalized));
+    if (converted) return formatDateToBr(converted);
+  }
+  return normalized;
+}
+
+function makeUniqueHeaders(headers = []) {
+  const seen = new Map();
+  return headers.map((header) => {
+    const baseRaw = normalizeCellValue(header);
+    if (!baseRaw) return '';
+    const canonicalBase = COLUMN_ALIASES[baseRaw] || baseRaw;
+    const count = (seen.get(canonicalBase) || 0) + 1;
+    seen.set(canonicalBase, count);
+    if (count === 1) return canonicalBase;
+    if (canonicalBase === 'ISSQN retido' && count === 2) return 'ISSQN retido2';
+    return `${canonicalBase} ${count}`;
+  });
+}
+
 function getCaseInsensitiveValue(row = {}, expectedColumn = '') {
   const direct = row?.[expectedColumn];
   if (direct !== undefined && direct !== null) return direct;
   const target = normalizeCellValue(expectedColumn).toLowerCase();
   for (const [key, value] of Object.entries(row || {})) {
-    if (normalizeCellValue(key).toLowerCase() === target) return value;
+    const normalizedKey = normalizeCellValue(key);
+    const canonicalKey = COLUMN_ALIASES[normalizedKey] || normalizedKey;
+    if (canonicalKey.toLowerCase() === target) return value;
   }
   return '';
 }
@@ -239,7 +303,7 @@ function buildDueFields(dateValue = '') {
 function normalizeSpreadsheetRow(row = {}) {
   const normalized = {};
   for (const column of SHEET_COLUMNS) {
-    normalized[column] = normalizeCellValue(pickSpreadsheetValue(row, column));
+    normalized[column] = normalizeSpreadsheetValueByColumn(column, pickSpreadsheetValue(row, column));
   }
   return normalized;
 }
@@ -293,6 +357,7 @@ function normalizeImportedItems(rows = []) {
       volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
       peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
       valorNf: toFixedNumber(parseNumber(normalizedRow['Valor da nota']), 2),
+      quantidadeItens: toFixedNumber(parseNumber(normalizedRow['Qtd. itens']), 0),
       observacao: buildNoteObservation(normalizedRow),
       origemManual: isManualNote,
       inseridaManual: isManualNote,
@@ -427,6 +492,7 @@ function normalizeSelectedNota(nota = {}) {
     volumes: toFixedNumber(parseNumber(nota?.volumes || 0), 3),
     peso: toFixedNumber(parseNumber(nota?.peso || 0), 3),
     valorNf: toFixedNumber(parseNumber(nota?.valorNf || 0), 2),
+    quantidadeItens: toFixedNumber(parseNumber(nota?.quantidadeItens || 0), 0),
     observacao: normalizeCellValue(nota?.observacao || '')
   };
 }
@@ -445,6 +511,7 @@ function normalizeNoteFromSpreadsheetRow(row = {}) {
     volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
     peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
     valorNf: toFixedNumber(parseNumber(normalizedRow['Valor da nota']), 2),
+    quantidadeItens: toFixedNumber(parseNumber(normalizedRow['Qtd. itens']), 0),
     observacao: buildNoteObservation(normalizedRow),
     ...buildDueFields(normalizedRow['Data 1º vencimento'])
   };
@@ -514,6 +581,7 @@ function buildManualSpreadsheetRow(fornecedor = '', nota = {}, actor = null) {
   row['Volume total'] = String(toFixedNumber(parseNumber(nota?.volumes || 0), 3));
   row['Peso total'] = String(toFixedNumber(parseNumber(nota?.peso || 0), 3));
   row['Destino'] = normalizeCellValue(nota?.destino || '');
+  row['Qtd. itens'] = String(toFixedNumber(parseNumber(nota?.quantidadeItens || 0), 0));
   row['Status'] = 'NF INSERIDA MANUALMENTE';
   row['Empresa'] = normalizeCellValue(nota?.empresa || nota?.destino || '');
   row['Data do cadastro'] = new Date().toISOString();
@@ -670,7 +738,7 @@ function parseCsv(content = '') {
   const lines = String(content || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim() !== '');
   if (!lines.length) return [];
   const delimiter = lines[0].includes(';') ? ';' : ',';
-  const headers = parseCsvLine(lines[0], delimiter).map(normalizeCellValue);
+  const headers = makeUniqueHeaders(parseCsvLine(lines[0], delimiter));
 
   return lines.slice(1).map((line) => {
     const cols = parseCsvLine(line, delimiter);
@@ -744,7 +812,7 @@ function parseOdsContentXml(contentXml = '') {
   const headerIndex = rows.findIndex((row) => row.some((cell) => cell === 'Fornecedor') && row.some((cell) => cell.includes('Nr. nota')));
   if (headerIndex < 0) return [];
 
-  const headers = rows[headerIndex].map(normalizeCellValue);
+  const headers = makeUniqueHeaders(rows[headerIndex]);
   return rows
     .slice(headerIndex + 1)
     .filter((row) => row.some((cell) => normalizeCellValue(cell) !== ''))
@@ -871,13 +939,13 @@ function parseXlsxSheetXml(xml = '', sharedStrings = []) {
     const dense = trimTrailingEmpty(cells.map((value) => normalizeCellValue(value)));
     if (!dense.length) continue;
     if (!headers.length) {
-      headers = dense;
+      headers = makeUniqueHeaders(dense);
       continue;
     }
     const row = {};
     headers.forEach((header, index) => {
       if (!header) return;
-      row[header] = dense[index] ?? '';
+      row[header] = normalizeSpreadsheetValueByColumn(header, dense[index] ?? '');
     });
     rows.push(row);
   }
@@ -979,10 +1047,58 @@ function withRelatorioImportLock(task) {
   return relatorioImportPromise;
 }
 
+function relatorioColumnDefinitions() {
+  return {
+    id: 'INT NOT NULL AUTO_INCREMENT PRIMARY KEY',
+    rowHash: 'VARCHAR(64) NULL',
+    agendamentoId: 'INT NULL',
+    ...Object.fromEntries(SHEET_COLUMNS.map((column) => [column, 'TEXT NULL'])),
+    origemArquivo: 'VARCHAR(255) NULL',
+    importedAt: 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP',
+    updatedAt: 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
+    dadosOriginaisJson: 'LONGTEXT NULL'
+  };
+}
+
+async function ensureRelatorioSchema() {
+  const definitions = relatorioColumnDefinitions();
+  const createColumnsSql = Object.entries(definitions)
+    .map(([column, definition]) => `${quoteIdentifier(column)} ${definition}`)
+    .join(',\n  ');
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS ${quoteIdentifier(TABLE_NAME)} (
+      ${createColumnsSql}
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  let existingColumns = null;
+  try {
+    const rows = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
+    existingColumns = new Set((rows || []).map((row) => String(row?.Field || row?.COLUMN_NAME || '').trim()).filter(Boolean));
+  } catch (error) {
+    throw error;
+  }
+
+  for (const [column, definition] of Object.entries(definitions)) {
+    if (existingColumns.has(column)) continue;
+    await runSqlIgnoringLegacyConstraint(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN ${quoteIdentifier(column)} ${definition}`);
+  }
+
+  await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD UNIQUE KEY uk_relatorio_rowhash (${quoteIdentifier('rowHash')})`);
+  await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD KEY idx_relatorio_agendamento (${quoteIdentifier('agendamentoId')})`);
+  await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD KEY idx_relatorio_fornecedor (${quoteIdentifier('Fornecedor')}(191))`);
+  await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD KEY idx_relatorio_nf (${quoteIdentifier('Nr. nota')}(191))`);
+  await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD KEY idx_relatorio_status (${quoteIdentifier('Status')}(191))`);
+
+  relatorioTableColumnsCache = null;
+}
+
 async function ensureRelatorioTable() {
   if (relatorioDbDisabled) return false;
 
   try {
+    await ensureRelatorioSchema();
     await prisma.$queryRawUnsafe(
       `SELECT rowHash, agendamentoId, dadosOriginaisJson
          FROM ${quoteIdentifier(TABLE_NAME)}
@@ -1206,6 +1322,64 @@ export async function listFornecedoresPendentesImportados() {
   } catch {
     return [];
   }
+}
+
+
+export async function removeNotasPendentesFromRelatorio({ fornecedor = '', notas = [] } = {}) {
+  const normalizedSelection = Array.isArray(notas) ? notas.map(normalizeSelectedNota).filter((nota) => nota.rowHash || nota.numeroNf) : [];
+  if (!normalizedSelection.length) return { removed: 0 };
+
+  let removed = 0;
+  try {
+    if (await ensureRelatorioTable()) {
+      for (const nota of normalizedSelection) {
+        if (nota.rowHash) {
+          removed += Number(await prisma.$executeRawUnsafe(
+            `DELETE FROM ${quoteIdentifier(TABLE_NAME)} WHERE agendamentoId IS NULL AND rowHash = ?`,
+            nota.rowHash
+          ) || 0);
+          continue;
+        }
+
+        removed += Number(await prisma.$executeRawUnsafe(
+          `DELETE FROM ${quoteIdentifier(TABLE_NAME)}
+            WHERE agendamentoId IS NULL
+              AND LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(?)
+              AND TRIM(${quoteIdentifier('Nr. nota')}) = ?
+              AND COALESCE(TRIM(${quoteIdentifier('Série')}), '') = ?`,
+          normalizeCellValue(fornecedor),
+          nota.numeroNf,
+          nota.serie
+        ) || 0);
+      }
+    }
+  } catch (error) {
+    console.error('[RELATORIO_IMPORT] Falha ao remover notas pendentes do banco:', error?.message || error);
+  }
+
+  try {
+    const groups = readFallbackGroups();
+    const blockedKeys = new Set(normalizedSelection.map((nota) => buildPendingNoteKey(nota)).filter(Boolean));
+    const nextGroups = groups.map((group) => {
+      const notasGrupo = Array.isArray(group?.notas) ? group.notas : Array.isArray(group?.notasFiscais) ? group.notasFiscais : [];
+      const notasFiltradas = notasGrupo.filter((nota) => {
+        const key = buildPendingNoteKey(nota);
+        return !key || !blockedKeys.has(key);
+      });
+      return {
+        ...group,
+        notas: notasFiltradas,
+        notasFiscais: notasFiltradas,
+        quantidadeNotas: notasFiltradas.length,
+        quantidadeVolumes: toFixedNumber(notasFiltradas.reduce((acc, item) => acc + Number(item?.volumes || 0), 0), 3),
+        pesoTotalKg: toFixedNumber(notasFiltradas.reduce((acc, item) => acc + Number(item?.peso || 0), 0), 3),
+        valorTotalNf: toFixedNumber(notasFiltradas.reduce((acc, item) => acc + Number(item?.valorNf || 0), 0), 2)
+      };
+    }).filter((group) => Array.isArray(group?.notas) && group.notas.length);
+    writeFallback(nextGroups);
+  } catch {}
+
+  return { removed };
 }
 
 export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, notas = []) {

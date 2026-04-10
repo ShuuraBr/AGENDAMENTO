@@ -29,6 +29,7 @@ function pickMetadata(nota = {}) {
   const metadata = {
     empresa: normalizeText(nota?.empresa || ''),
     destino: normalizeText(nota?.destino || ''),
+    quantidadeItens: nota?.quantidadeItens == null ? undefined : Number(nota.quantidadeItens),
     entrada: normalizeText(nota?.entrada || ''),
     dataEntrada: normalizeText(nota?.dataEntrada || ''),
     dataEntradaBr: normalizeText(nota?.dataEntradaBr || ''),
@@ -89,6 +90,7 @@ export function normalizeAgendamentoNota(nota = {}) {
     volumes: normalizeNumber(nota?.volumes || 0),
     peso: normalizeNumber(nota?.peso || 0, 3),
     valorNf: normalizeNumber(nota?.valorNf || 0, 2),
+    quantidadeItens: normalizeNumber(nota?.quantidadeItens || decoded.metadata?.quantidadeItens || 0),
     observacao: decoded.observacao
   };
 }
