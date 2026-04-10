@@ -31,7 +31,7 @@ const SUPPORTED_EXTENSIONS = new Set(['.ods', '.csv', '.json', '.xlsx']);
 const TABLE_NAME = 'RelatorioTerceirizado';
 const WATCH_INTERVAL_MS = 60 * 1000;
 
-const SHEET_COLUMNS = [
+const SHEET_COLUMNS_RAW = [
   'Entrada',
   'Fornecedor',
   'Nr. nota',
@@ -96,6 +96,7 @@ const SHEET_COLUMNS = [
   'Fornecedor substituto tributário',
   'destino'
 ];
+const SHEET_COLUMNS = [...new Set(SHEET_COLUMNS_RAW.map((column) => normalizeCellValue(column) || String(column || '').trim()).filter(Boolean))];
 
 let watcherHandle = null;
 let watcherBusy = false;
@@ -416,6 +417,7 @@ function normalizeSelectedNota(nota = {}) {
     dataEntrada: normalizeCellValue(nota?.dataEntrada || ''),
     entrada: normalizeCellValue(nota?.entrada || ''),
     chaveAcesso: normalizeCellValue(nota?.chaveAcesso || ''),
+    quantidadeItens: Number.isFinite(Number(nota?.quantidadeItens ?? nota?.qtdItens ?? nota?.itens ?? 0)) ? Number(nota?.quantidadeItens ?? nota?.qtdItens ?? nota?.itens ?? 0) : 0,
     volumes: toFixedNumber(parseNumber(nota?.volumes || 0), 3),
     peso: toFixedNumber(parseNumber(nota?.peso || 0), 3),
     valorNf: toFixedNumber(parseNumber(nota?.valorNf || 0), 2),
@@ -434,6 +436,7 @@ function normalizeNoteFromSpreadsheetRow(row = {}) {
     dataEntrada: normalizeCellValue(normalizedRow['Data de Entrada']),
     entrada: normalizeCellValue(normalizedRow['Entrada']),
     chaveAcesso: '',
+    quantidadeItens: Number.isFinite(Number(parseNumber(normalizedRow['Qtd. itens']))) ? Number(parseNumber(normalizedRow['Qtd. itens'])) : 0,
     volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
     peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
     valorNf: toFixedNumber(parseNumber(normalizedRow['Valor da nota']), 2),
