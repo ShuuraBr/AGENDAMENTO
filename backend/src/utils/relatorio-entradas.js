@@ -182,6 +182,9 @@ function normalizeCellValue(value) {
 }
 
 function normalizeSpreadsheetDate(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return toIsoDate(value);
+  }
   const raw = normalizeCellValue(value);
   if (!raw) return '';
   const iso = toIsoDate(raw);
@@ -778,7 +781,7 @@ function parseOdsContentXml(contentXml = '') {
 }
 
 function parseXmlNodes(xml = '', tagName = '') {
-  const regex = new RegExp(`<${tagName}\b([^>]*)>([\s\S]*?)<\/${tagName}>`, 'gi');
+  const regex = new RegExp(String.raw`<${tagName}\b([^>]*)>([\s\S]*?)<\/${tagName}>`, 'gi');
   const nodes = [];
   let match;
   while ((match = regex.exec(xml))) {
@@ -887,7 +890,7 @@ function parseXlsxFile(filePath) {
   const stylesXml = (() => { try { return readZipEntry(filePath, 'xl/styles.xml').toString('utf8'); } catch { return ''; } })();
 
   const firstSheet = (workbookXml.match(/<sheet\b[^>]*r:id="([^"]+)"[^>]*\/?>/i) || [])[1] || '';
-  const relationshipRegex = new RegExp(`<Relationship\b[^>]*Id="${firstSheet}"[^>]*Target="([^"]+)"[^>]*\/?>`, 'i');
+  const relationshipRegex = new RegExp(String.raw`<Relationship\b[^>]*Id="${firstSheet}"[^>]*Target="([^"]+)"[^>]*\/?>`, 'i');
   const worksheetTarget = (relsXml.match(relationshipRegex) || [])[1] || 'worksheets/sheet1.xml';
   const worksheetPath = `xl/${String(worksheetTarget).replace(/^\/+/,'').replace(/^xl\//,'')}`;
 
