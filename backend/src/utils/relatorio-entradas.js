@@ -112,6 +112,7 @@ let relatorioDbDisabled = false;
 let relatorioDbDisableReason = null;
 let relatorioImportPromise = null;
 let relatorioTableColumnsCache = null;
+let relatorioSchemaEnsured = false;
 
 const RELATORIO_BASE_COLUMNS = [
   ['id', 'INT NOT NULL AUTO_INCREMENT'],
@@ -134,7 +135,21 @@ function buildCreateTableSql() {
   `;
 }
 
-async function ensureRelatorioTableSchema() {
+async function indexExists(indexName) {
+  const rows = await prisma.$queryRawUnsafe(`
+    SELECT 1
+      FROM INFORMATION_SCHEMA.STATISTICS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ${sqlLiteral(TABLE_NAME)}
+       AND INDEX_NAME = ${sqlLiteral(indexName)}
+     LIMIT 1
+  `);
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+async function ensureRelatorioTableSchema({ force = false } = {}) {
+  if (relatorioSchemaEnsured && !force) return;
+
   const tableRows = await prisma.$queryRawUnsafe(`SHOW TABLES LIKE ${sqlLiteral(TABLE_NAME)}`);
   if (!Array.isArray(tableRows) || !tableRows.length) {
     await prisma.$executeRawUnsafe(buildCreateTableSql());
@@ -148,9 +163,16 @@ async function ensureRelatorioTableSchema() {
     await runSqlIgnoringLegacyConstraint(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN ${quoteIdentifier(name)} ${definition}`);
   }
 
-  await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD UNIQUE INDEX ${quoteIdentifier('uk_relatorio_rowhash')} (${quoteIdentifier('rowHash')})`);
-  await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD INDEX ${quoteIdentifier('idx_relatorio_agendamento')} (${quoteIdentifier('agendamentoId')})`);
+  if (!(await indexExists('uk_relatorio_rowhash'))) {
+    await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD UNIQUE INDEX ${quoteIdentifier('uk_relatorio_rowhash')} (${quoteIdentifier('rowHash')})`);
+  }
+
+  if (!(await indexExists('idx_relatorio_agendamento'))) {
+    await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD INDEX ${quoteIdentifier('idx_relatorio_agendamento')} (${quoteIdentifier('agendamentoId')})`);
+  }
+
   relatorioTableColumnsCache = null;
+  relatorioSchemaEnsured = true;
 }
 
 function isPrismaPanicLike(error) {
@@ -1183,6 +1205,7 @@ async function ensureRelatorioTable() {
     if (isPrismaPanicLike(error)) {
       try {
         relatorioTableColumnsCache = null;
+        relatorioSchemaEnsured = false;
         await resetPrismaClient();
         return await probe();
       } catch (retryError) {
@@ -1197,6 +1220,7 @@ async function ensureRelatorioTable() {
 
 async function getRelatorioTableColumns() {
   if (relatorioTableColumnsCache) return relatorioTableColumnsCache;
+  relatorioSchemaEnsured = true;
   const rows = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
   relatorioTableColumnsCache = new Set((rows || []).map((row) => String(row?.Field || row?.COLUMN_NAME || '').trim()).filter(Boolean));
   return relatorioTableColumnsCache;
