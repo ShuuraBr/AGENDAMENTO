@@ -18,6 +18,7 @@
     internalSelectedNotaKeys: new Set(),
     internalPendingSearchTerm: "",
     docaOptions: [],
+    janelaOptions: [],
     currentUser: null,
     auditoria: [],
     avaliacaoToken: "",
@@ -400,6 +401,7 @@
       dataEntradaBr: String(item.dataEntradaBr || '').trim(),
       entrada: String(item.entrada || '').trim(),
       chaveAcesso: String(item.chaveAcesso || '').trim(),
+      quantidadeItens: Number((item.quantidadeItens ?? item.qtdItens ?? item.itens) || 0),
       volumes: Number(item.volumes || 0),
       peso: Number(item.peso || 0),
       valorNf: Number(item.valorNf || 0),
@@ -427,6 +429,7 @@
       notas,
       notasFiscais: notas,
       quantidadeNotas: Number(item.quantidadeNotas ?? notas.length ?? 0),
+      quantidadeItens: Number(item.quantidadeItens ?? (notas.reduce((acc, nota) => acc + Number(nota?.quantidadeItens || 0), 0))),
       quantidadeVolumes: Number(item.quantidadeVolumes ?? notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0)),
       pesoTotalKg: Number(item.pesoTotalKg ?? notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0)),
       valorTotalNf: Number(item.valorTotalNf ?? notas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0)),
@@ -444,6 +447,115 @@
     const current = selectedValue || select.value || "";
     const unique = [...new Set((items || []).map((item) => String(item || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
     select.innerHTML = `<option value="">${escapeHtml(placeholder)}</option>` + unique.map((value) => `<option value="${escapeHtml(value)}" ${String(current) === String(value) ? "selected" : ""}>${escapeHtml(formatter(value))}</option>`).join("");
+  }
+
+  function closeDocaDetalheModal() {
+    byId('docaDetalheModal')?.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+  }
+
+  function openDocaDetalheModal(doca = {}) {
+    const modal = byId('docaDetalheModal');
+    const title = byId('docaDetalheTitulo');
+    const body = byId('docaDetalheBody');
+    if (!modal || !title || !body) return;
+
+    const fila = Array.isArray(doca?.fila) ? doca.fila : [];
+    const totalAgendamentos = fila.length;
+    const totalNotas = fila.reduce((acc, item) => acc + Number(item?.quantidadeNotas || (Array.isArray(item?.notasFiscais) ? item.notasFiscais.length : 0) || 0), 0);
+    const totalPeso = fila.reduce((acc, item) => acc + Number(item?.pesoTotalKg || 0), 0);
+
+    title.textContent = `Doca ${doca?.codigo || '-'}`;
+    body.innerHTML = `
+      <div class="doca-detalhe-summary">
+        <div class="summary-box"><span>Ocupação</span><strong>${escapeHtml(statusLabel(doca?.ocupacaoAtual || 'LIVRE'))}</strong></div>
+        <div class="summary-box"><span>Agendamentos</span><strong>${escapeHtml(formatIntegerBR(totalAgendamentos))}</strong></div>
+        <div class="summary-box"><span>NF(s)</span><strong>${escapeHtml(formatIntegerBR(totalNotas))}</strong></div>
+        <div class="summary-box"><span>Peso total (kg)</span><strong>${escapeHtml(formatDecimalBR(totalPeso, 3))}</strong></div>
+      </div>
+      ${fila.length ? `<div class="doca-detalhe-list">${fila.map((item) => {
+        const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : [];
+        const destinos = [...new Set((Array.isArray(item?.destinos) ? item.destinos : notas.map((nota) => nota?.destino || nota?.empresa || '')).map((value) => String(value || '').trim()).filter(Boolean))];
+        const quantidadeNotas = Number(item?.quantidadeNotas || notas.length || 0);
+        const quantidadeItens = Number(item?.quantidadeItens || notas.reduce((acc, nota) => acc + Number(nota?.quantidadeItens || 0), 0) || 0);
+        return `
+          <div class="doca-detalhe-item">
+            <div class="doca-detalhe-item-header">
+              <div>
+                <strong>${escapeHtml(item?.protocolo || '-')}</strong>
+                <div>${renderStatusBadge(item?.status || '-', item?.semaforo || '')}</div>
+              </div>
+              <div>
+                <div><strong>${escapeHtml(formatDateBR(item?.dataAgendada || '') || '-')}</strong> • ${escapeHtml(formatHour(item?.horaAgendada || '') || '-')}</div>
+                <div>${escapeHtml(item?.motorista || '-')} • ${escapeHtml(item?.placa || '-')}</div>
+              </div>
+            </div>
+            <div class="doca-detalhe-tags">
+              <span class="doca-tag">Fornecedor: ${escapeHtml(item?.fornecedor || '-')}</span>
+              ${destinos.length ? destinos.map((destino) => `<span class="doca-tag">Destino: ${escapeHtml(destino)}</span>`).join('') : '<span class="doca-tag">Destino: -</span>'}
+            </div>
+            <div class="doca-detalhe-metrics">
+              <div class="summary-box"><span>NF(s)</span><strong>${escapeHtml(formatIntegerBR(quantidadeNotas))}</strong></div>
+              <div class="summary-box"><span>Qtd. itens</span><strong>${escapeHtml(quantidadeItens ? formatIntegerBR(quantidadeItens) : '-')}</strong></div>
+              <div class="summary-box"><span>Volumes</span><strong>${escapeHtml(formatDecimalBR(item?.quantidadeVolumes || 0, 3))}</strong></div>
+              <div class="summary-box"><span>Peso (kg)</span><strong>${escapeHtml(formatDecimalBR(item?.pesoTotalKg || 0, 3))}</strong></div>
+            </div>
+            <div class="doca-detalhe-nf-list">
+              ${notas.length ? notas.map((nota) => `<span class="doca-tag">NF ${escapeHtml(nota?.numeroNf || '-')} • ${escapeHtml(nota?.serie || '-')}</span>`).join('') : '<span class="doca-tag">Sem NF detalhada</span>'}
+            </div>
+          </div>
+        `;
+      }).join('')}</div>` : '<div class="doca-detalhe-empty">Nenhum agendamento para a data filtrada nesta doca.</div>'}
+    `;
+
+    modal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+  }
+
+  async function refreshInternalJanelaOptions(selectedValue = '') {
+    const select = byId('internalJanelaSelect');
+    if (!select) return;
+
+    const dateField = byId('agendamentoForm')?.querySelector('[name="dataAgendada"]');
+    const targetDate = normalizeDateToIso(dateField?.value || '');
+    const currentValue = String(selectedValue || select.value || '').trim();
+    const activeStatuses = new Set(['PENDENTE_APROVACAO', 'APROVADO', 'CHEGOU', 'EM_DESCARGA']);
+    let usedJanelaIds = new Set();
+
+    if (targetDate) {
+      try {
+        const agendamentos = await api(`/api/agendamentos?dataAgendada=${encodeURIComponent(targetDate)}`);
+        usedJanelaIds = new Set((Array.isArray(agendamentos) ? agendamentos : [])
+          .filter((item) => activeStatuses.has(String(item?.status || '').trim().toUpperCase()))
+          .map((item) => String(item?.janela?.id || item?.janelaId || '').trim())
+          .filter(Boolean));
+      } catch {}
+    }
+
+    const available = (state.janelaOptions || []).filter((janela) => !targetDate || !usedJanelaIds.has(String(janela.id || '')) || String(janela.id || '') === currentValue);
+    if (!available.length) {
+      select.innerHTML = `<option value="">Sem janelas disponíveis para a data</option>`;
+      return;
+    }
+
+    select.innerHTML = available.map((janela) => `<option value="${escapeHtml(janela.id)}" ${String(janela.id) === currentValue ? 'selected' : ''}>${escapeHtml(janela.codigo || `Janela ${janela.id}`)}</option>`).join('');
+  }
+
+  function clearFornecedorPendenteSelection(mode = 'interno') {
+    if (mode === 'publico') {
+      const select = byId('fornecedorPendenteSelect');
+      if (!select) return;
+      select.value = '';
+      if (typeof select.onchange === 'function') select.onchange();
+      return;
+    }
+
+    const select = byId('internalFornecedorPendenteSelect');
+    if (select) [...select.options].forEach((option) => { option.selected = false; });
+    clearInternalPendingSelectionState();
+    const fornecedorField = byId('internalFornecedorNome');
+    if (fornecedorField) fornecedorField.value = '';
+    renderPendingNotasInterno();
   }
 
   function currentDocaLabel(item) {
@@ -1450,7 +1562,7 @@
             byId('operacaoMsg').textContent = 'Doca definida com sucesso.';
             const field = byId('agendamentoId');
             if (field) field.value = agendamentoId;
-            await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
+            await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions(), refreshInternalJanelaOptions()]);
           } catch (err) {
             byId('operacaoMsg').textContent = err.message;
           }
@@ -1497,9 +1609,8 @@
     if (!hasPermission('cadastros.view') && !hasPermission('agendamentos.create')) return;
     try {
       const janelas = await api("/api/cadastros/janelas");
-      const janelaOptions = janelas.map((j) => `<option value="${j.id}">${escapeHtml(j.codigo)}</option>`).join("");
-      const janelaSelect = byId("internalJanelaSelect");
-      if (janelaSelect) janelaSelect.innerHTML = janelaOptions;
+      state.janelaOptions = Array.isArray(janelas) ? janelas : [];
+      await refreshInternalJanelaOptions();
       await Promise.allSettled([loadDocaOptions(), loadFilterOptions()]);
     } catch {}
   }
@@ -1567,29 +1678,48 @@
     const wrap = byId("docaPainel");
     if (!wrap) return;
 
-    wrap.innerHTML = data.map((d) => `
-      <div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
+    wrap.innerHTML = data.map((d) => {
+      const totalNotas = (Array.isArray(d.fila) ? d.fila : []).reduce((acc, item) => acc + Number(item?.quantidadeNotas || (Array.isArray(item?.notasFiscais) ? item.notasFiscais.length : 0) || 0), 0);
+      const totalPeso = (Array.isArray(d.fila) ? d.fila : []).reduce((acc, item) => acc + Number(item?.pesoTotalKg || 0), 0);
+      const totalVolumes = (Array.isArray(d.fila) ? d.fila : []).reduce((acc, item) => acc + Number(item?.quantidadeVolumes || 0), 0);
+      return `
+      <div class="doca-card sem-${String(d.semaforo).toLowerCase()}" data-doca-open="${escapeHtml(d.docaId)}">
         <h3>${escapeHtml(d.codigo)}</h3>
         <p>${escapeHtml(d.descricao || "")}</p>
-        <p><strong>Ocupação:</strong> ${escapeHtml(d.ocupacaoAtual)}</p>
+        <p><strong>Ocupação:</strong> ${escapeHtml(statusLabel(d.ocupacaoAtual || 'LIVRE'))}</p>
         <span class="badge ${statusTone(d.ocupacaoAtual, d.semaforo)}">${escapeHtml(d.semaforo)}</span>
+        <div class="doca-card-summary">
+          <div class="summary-box"><span>Agendamentos</span><strong>${escapeHtml(formatIntegerBR(d.fila.length || 0))}</strong></div>
+          <div class="summary-box"><span>NF(s)</span><strong>${escapeHtml(formatIntegerBR(totalNotas))}</strong></div>
+          <div class="summary-box"><span>Volumes</span><strong>${escapeHtml(formatDecimalBR(totalVolumes, 3))}</strong></div>
+          <div class="summary-box"><span>Peso (kg)</span><strong>${escapeHtml(formatDecimalBR(totalPeso, 3))}</strong></div>
+        </div>
         <div class="mt12">
           <strong>Fila (${d.fila.length})</strong>
           ${d.fila.length ? d.fila.map((f) => {
             const needsDoca = hasPermission('agendamentos.definir_doca') && d.codigo === "A DEFINIR" && ["CHEGOU", "APROVADO", "PENDENTE_APROVACAO"].includes(f.status);
+            const destinos = [...new Set((Array.isArray(f.destinos) ? f.destinos : []).map((value) => String(value || '').trim()).filter(Boolean))];
             return `
               <div class="fila-item">
                 <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
-                <div>${escapeHtml(f.placa)} • ${escapeHtml(formatHour(f.horaAgendada))} • ${escapeHtml(f.status)}</div>
-                ${needsDoca ? `<div class="warning-box">Selecione a doca para este agendamento.</div><div class="row gap8 wrap mt12"><select data-doca-painel-select="${escapeHtml(f.id)}" class="dock-select">${docaSelectOptions(f.doca?.id || f.docaId || '')}</select><button type="button" data-doca-painel-save="${escapeHtml(f.id)}">Definir doca</button></div>` : ""}
+                <div>${escapeHtml(f.placa)} • ${escapeHtml(formatHour(f.horaAgendada))} • ${escapeHtml(statusLabel(f.status))}</div>
+                <div>NF(s): ${escapeHtml(formatIntegerBR(f.quantidadeNotas || 0))} • Volumes: ${escapeHtml(formatDecimalBR(f.quantidadeVolumes || 0, 3))} • Peso: ${escapeHtml(formatDecimalBR(f.pesoTotalKg || 0, 3))}</div>
+                <div>${destinos.length ? `Destino: ${escapeHtml(destinos.join(' / '))}` : 'Destino: -'}</div>
+                ${needsDoca ? `<div class="warning-box doca-card-actions">Selecione a doca para este agendamento.</div><div class="row gap8 wrap mt12 doca-card-actions"><select data-doca-painel-select="${escapeHtml(f.id)}" class="dock-select">${docaSelectOptions(f.doca?.id || f.docaId || '')}</select><button type="button" data-doca-painel-save="${escapeHtml(f.id)}">Definir doca</button></div>` : ""}
               </div>
             `;
           }).join("") : "<div class='fila-item'>Sem fila</div>"}
         </div>
       </div>
-    `).join("");
+    `;}).join("");
 
-    wrap.querySelectorAll('[data-doca-painel-save]').forEach((btn) => btn.addEventListener('click', async () => {
+    wrap.querySelectorAll('[data-doca-open]').forEach((card) => card.addEventListener('click', () => {
+      const doca = (Array.isArray(data) ? data : []).find((item) => String(item?.docaId || '') === String(card.dataset.docaOpen || ''));
+      if (doca) openDocaDetalheModal(doca);
+    }));
+
+    wrap.querySelectorAll('[data-doca-painel-save]').forEach((btn) => btn.addEventListener('click', async (event) => {
+      event.stopPropagation();
       const agendamentoId = btn.dataset.docaPainelSave;
       const select = wrap.querySelector(`[data-doca-painel-select="${agendamentoId}"]`);
       const docaId = select?.value || '';
@@ -1600,11 +1730,13 @@
       try {
         await api(`/api/agendamentos/${agendamentoId}/definir-doca`, { method: 'POST', body: JSON.stringify({ docaId }) });
         byId('operacaoMsg').textContent = 'Doca definida com sucesso.';
-        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
+        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions(), refreshInternalJanelaOptions()]);
       } catch (err) {
         byId('operacaoMsg').textContent = err.message;
       }
     }));
+
+    wrap.querySelectorAll('[data-doca-painel-select]').forEach((select) => select.addEventListener('click', (event) => event.stopPropagation()));
   }
 
   function normalizeValueByField(field, value) {
@@ -1879,7 +2011,7 @@
       const result = await fn();
       if (result === undefined || result === false) return;
       byId("operacaoMsg").textContent = success;
-      await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
+      await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions(), refreshInternalJanelaOptions()]);
     } catch (err) {
       byId("operacaoMsg").textContent = err.message;
     }
@@ -1911,7 +2043,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
       byId("checkinMsg").textContent = data.message;
       byId("checkinResult").textContent = JSON.stringify(data.agendamento, null, 2);
       stopCameraScan();
-      await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas(), loadFilterOptions()]);
+      await Promise.allSettled([loadDashboard(), loadAgendamentos(), loadDocas(), loadFilterOptions(), refreshInternalJanelaOptions()]);
     } catch (err) {
       byId("checkinMsg").textContent = err.message;
     }
@@ -1986,6 +2118,13 @@ Deseja liberar manualmente a descarga deste veículo?`);
     byId("clearFilters")?.addEventListener("click", async () => {
       ["fStatus", "fFornecedor", "fTransportadora", "fMotorista", "fPlaca", "fData"].forEach((id) => { if (byId(id)) byId(id).value = ""; });
       try { await loadDashboard(); await loadAgendamentos(); } catch (err) { alert(err.message); }
+    });
+
+    byId('clearFornecedorPendentePublic')?.addEventListener('click', () => clearFornecedorPendenteSelection('publico'));
+    byId('clearFornecedorPendenteInterno')?.addEventListener('click', () => clearFornecedorPendenteSelection('interno'));
+    document.querySelectorAll('[data-doca-detalhe-close]').forEach((el) => el.addEventListener('click', closeDocaDetalheModal));
+    byId('agendamentoForm')?.querySelector('[name="dataAgendada"]')?.addEventListener('change', async () => {
+      try { await refreshInternalJanelaOptions(); } catch {}
     });
 
     byId("loginForm")?.addEventListener("submit", async (e) => {
@@ -2075,7 +2214,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
         const dataInput = byId('agendamentoForm')?.querySelector('[name="dataAgendada"]');
         if (dataInput) dataInput.value = new Date().toISOString().slice(0, 10);
         applyInputMasks(byId('agendamentoForm'));
-        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno(), loadFilterOptions()]);
+        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno(), loadFilterOptions(), refreshInternalJanelaOptions()]);
       } catch (err) {
         byId("agendamentoMsg").textContent = err.message;
       }

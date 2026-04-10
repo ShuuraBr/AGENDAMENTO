@@ -80,7 +80,7 @@
             </div>
             <div>
               <div class="info-box"><strong>Doca:</strong> definida pelo operador do recebimento conforme disponibilidade operacional.</div>
-              <label>Fornecedor pendente<select name="fornecedorPendenteSelect"><option value="">Selecionar manualmente</option></select></label>
+              <label>Fornecedor pendente<div class="select-clear-group"><select name="fornecedorPendenteSelect" id="fornecedorPendenteSelect"><option value="">Selecionar manualmente</option></select><button type="button" class="btn-clear-select" id="clearFornecedorPendentePublic" aria-label="Limpar fornecedor pendente">×</button></div></label>
               <label>Data<select name="dataAgendada" id="publicDataSelect"></select></label>
               <label>Horário disponível<select name="janelaId" id="publicJanelaSelect"></select></label>
               <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" readonly /></label>
@@ -242,8 +242,11 @@
               <h3>Dados da operação</h3>
               <div class="form-grid operator-grid mt12">
                 <label>Fornecedores pendentes
-                  <select name="fornecedorPendenteInterno" id="internalFornecedorPendenteSelect" multiple size="8">
-                  </select>
+                  <div class="select-clear-group select-clear-group-multi">
+                    <select name="fornecedorPendenteInterno" id="internalFornecedorPendenteSelect" multiple size="8">
+                    </select>
+                    <button type="button" class="btn-clear-select btn-clear-select-multi" id="clearFornecedorPendenteInterno" aria-label="Limpar fornecedores pendentes">×</button>
+                  </div>
                   <small class="multi-select-hint">Você pode selecionar mais de um fornecedor. Use Ctrl + clique para múltipla seleção.</small>
                 </label>
                 <label>Transportadora<input name="transportadora" value="" required /></label>
@@ -382,6 +385,19 @@
           <button type="submit">Confirmar inserção</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="docaDetalheModal" class="app-modal hidden">
+    <div class="app-modal-backdrop" data-doca-detalhe-close></div>
+    <div class="app-modal-card manual-nota-modal-card">
+      <div class="app-modal-header">
+        <h3 id="docaDetalheTitulo">Detalhes da doca</h3>
+      </div>
+      <div id="docaDetalheBody" class="mt16"></div>
+      <div class="app-modal-actions">
+        <button type="button" class="btn-secondary" data-doca-detalhe-close>Fechar</button>
+      </div>
     </div>
   </div>
 
