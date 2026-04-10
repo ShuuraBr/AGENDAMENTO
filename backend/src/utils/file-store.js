@@ -85,7 +85,7 @@ export function readFornecedoresPendentes() {
 }
 
 export function enrichAgendamentoRecord(item = {}) {
-  const notas = (Array.isArray(item.notasFiscais) ? item.notasFiscais : []).map(normalizeAgendamentoNota);
+  const notas = Array.isArray(item.notasFiscais) ? item.notasFiscais : [];
   const docas = readJsonFile('docas.json', []);
   const janelas = readJsonFile('janelas.json', []);
   const docaRelacionada = docas.find((doca) => String(doca.id) === String(item.docaId || item.doca?.id || '')) || null;
@@ -167,28 +167,14 @@ export function buildDocaPainelFromFiles(dataAgendada = null) {
         if (pa !== pb) return pa - pb;
         return String(a.horaAgendada || '').localeCompare(String(b.horaAgendada || ''));
       });
-    const filaEnriquecida = fila.map((item) => {
-      const notas = (Array.isArray(item?.notasFiscais) ? item.notasFiscais : []).map(normalizeAgendamentoNota);
-      const destinos = [...new Set(notas.map((nota) => String(nota?.destino || nota?.empresa || '').trim()).filter(Boolean))];
-      const quantidadeItens = notas.reduce((acc, nota) => acc + Number(nota?.quantidadeItens || 0), 0);
-      return {
-        ...item,
-        notasFiscais: notas,
-        destinos,
-        quantidadeItens,
-        quantidadeNotas: Number(item?.quantidadeNotas || notas.length || 0),
-        quantidadeVolumes: Number(item?.quantidadeVolumes || notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0) || 0),
-        pesoTotalKg: Number(item?.pesoTotalKg || notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0) || 0)
-      };
-    });
-    const ativo = filaEnriquecida.find((a) => ['CHEGOU', 'EM_DESCARGA'].includes(a.status)) || filaEnriquecida[0] || null;
+    const ativo = fila.find((a) => ['CHEGOU', 'EM_DESCARGA'].includes(a.status)) || fila[0] || null;
     return {
       docaId: doca.id,
       codigo: doca.codigo,
       descricao: doca.descricao || '',
       ocupacaoAtual: ativo ? ativo.status : 'LIVRE',
       semaforo: ativo ? color(ativo.status) : 'VERDE',
-      fila: filaEnriquecida,
+      fila,
     };
   });
 }

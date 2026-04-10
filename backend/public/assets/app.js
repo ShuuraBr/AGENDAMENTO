@@ -13,13 +13,10 @@
     scanning: false,
     internalPendingFornecedor: null,
     internalPendingFornecedores: [],
-    internalSelectedFornecedorIds: [],
     internalSelectedNotas: [],
     internalSelectedNotaKeys: new Set(),
     internalPendingSearchTerm: "",
-    docaPainelExpanded: new Set(),
     docaOptions: [],
-    janelaOptions: [],
     currentUser: null,
     auditoria: [],
     avaliacaoToken: "",
@@ -171,53 +168,6 @@
     const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (match) return `${match[3]}-${match[2]}-${match[1]}`;
     return raw;
-  }
-
-  function escapeAttribute(value) {
-    return escapeHtml(String(value ?? '')).replaceAll('`', '&#96;');
-  }
-
-  function getDisponibilidadeByDate(dateValue = '') {
-    const dateIso = normalizeDateToIso(dateValue);
-    return (state.disponibilidadePublica || []).find((item) => String(item?.data || '') === dateIso) || null;
-  }
-
-  function getInternalAvailableSlotsByDate(dateValue = '') {
-    const disponibilidade = getDisponibilidadeByDate(dateValue);
-    if (!disponibilidade) return [];
-    return (Array.isArray(disponibilidade.horarios) ? disponibilidade.horarios : []).filter((slot) => Number(slot?.disponivel || 0) > 0);
-  }
-
-  function renderInternalJanelaOptions(dateValue = '', preserveValue = '') {
-    const select = byId('internalJanelaSelect');
-    if (!select) return;
-    const slots = getInternalAvailableSlotsByDate(dateValue);
-    if (slots.length) {
-      const preserved = String(preserveValue || select.value || '').trim();
-      select.innerHTML = slots.map((slot) => {
-        const selected = preserved && String(slot.janelaId) === preserved ? ' selected' : '';
-        const suffix = Number(slot.disponivel || 0) === 1 ? '1 vaga' : `${formatIntegerBR(slot.disponivel || 0)} vagas`;
-        return `<option value="${escapeAttribute(slot.janelaId)}"${selected}>${escapeHtml(slot.hora || '-')} • ${escapeHtml(suffix)}</option>`;
-      }).join('');
-      if (!select.value && slots[0]?.janelaId != null) select.value = String(slots[0].janelaId);
-      return;
-    }
-
-    const fallbackOptions = Array.isArray(state.janelaOptions) ? state.janelaOptions : [];
-    select.innerHTML = fallbackOptions.map((janela) => {
-      const selected = String(janela?.id || '') === String(preserveValue || '') ? ' selected' : '';
-      return `<option value="${escapeAttribute(janela?.id || '')}"${selected}>${escapeHtml(janela?.codigo || '-')}</option>`;
-    }).join('');
-  }
-
-  async function refreshInternalJanelaAvailability() {
-    const dateInput = byId('agendamentoForm')?.querySelector('[name="dataAgendada"]');
-    if (!dateInput) return;
-    const preserveValue = byId('internalJanelaSelect')?.value || '';
-    if (!state.disponibilidadePublica.length) {
-      try { await loadPublicDisponibilidade(); } catch {}
-    }
-    renderInternalJanelaOptions(dateInput.value, preserveValue);
   }
 
   function formatIntegerBR(value) {
@@ -440,7 +390,8 @@
   function normalizePendingNota(item = {}) {
     return {
       rowHash: String(item.rowHash || '').trim(),
-      fornecedor: String(item.fornecedor || item.fornecedorNome || item.nomeFornecedor || '').trim(),
+      fornecedor: String(item.fornecedor || item.fornecedorGrupo || '').trim(),
+      fornecedorGrupo: String(item.fornecedorGrupo || item.fornecedor || '').trim(),
       numeroNf: String(item.numeroNf || item.numero_nf || '').trim(),
       serie: String(item.serie || '').trim(),
       empresa: String(item.empresa || '').trim(),
@@ -466,13 +417,9 @@
   }
 
   function normalizePendingFornecedor(item = {}) {
-    const fornecedorNome = String(item.fornecedor || item.nome || '').trim();
-    const notas = (Array.isArray(item.notasFiscais) ? item.notasFiscais : Array.isArray(item.notas) ? item.notas : [])
-      .map((nota) => normalizePendingNota({ ...nota, fornecedor: nota?.fornecedor || fornecedorNome }));
+    const notas = (Array.isArray(item.notasFiscais) ? item.notasFiscais : Array.isArray(item.notas) ? item.notas : []).map(normalizePendingNota);
     return {
       ...item,
-      fornecedor: fornecedorNome,
-      nome: fornecedorNome,
       notas,
       notasFiscais: notas,
       quantidadeNotas: Number(item.quantidadeNotas ?? notas.length ?? 0),
@@ -911,25 +858,14 @@
       const select = byId('fornecedorPendenteSelect');
       if (!select) return;
       select.innerHTML = `<option value="">Selecionar manualmente</option>` + state.pendingFornecedores.map((item) => `<option value="${escapeHtml(item.id || '')}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('');
-      const clearSelection = () => {
-        select.value = '';
-        const form = byId('fornecedorForm');
-        if (form) {
-          ['fornecedor', 'transportadora', 'placa'].forEach((field) => {
-            const input = form.querySelector(`[name="${field}"]`);
-            if (input) input.value = '';
-          });
-        }
-        state.nfRows = 1;
-        state.nfDrafts = [{ numeroNf: '', serie: '', chaveAcesso: '', volumes: '0', peso: '0', valorNf: '0', observacao: '' }];
-        renderNfRows();
-        updateTotalsFromNotas();
-      };
       select.onchange = () => {
         const data = getPendingFornecedorById(select.value);
         const form = byId('fornecedorForm');
         if (!data || !form) {
-          clearSelection();
+          state.nfRows = 1;
+          state.nfDrafts = [{ numeroNf: '', serie: '', chaveAcesso: '', volumes: '0', peso: '0', valorNf: '0', observacao: '' }];
+          renderNfRows();
+          updateTotalsFromNotas();
           return;
         }
         ['fornecedor', 'transportadora', 'placa'].forEach((field) => {
@@ -943,8 +879,6 @@
         renderNfRows();
         updateTotalsFromNotas();
       };
-      const clearBtn = byId('btnClearFornecedorPendentePublico');
-      if (clearBtn) clearBtn.onclick = clearSelection;
     } catch {}
   }
 
@@ -1028,7 +962,7 @@
     return String(
       normalized.rowHash
       || [
-        normalized.fornecedor,
+        normalized.fornecedor || normalized.fornecedorGrupo,
         normalized.numeroNf,
         normalized.serie,
         normalized.valorNf,
@@ -1041,58 +975,122 @@
     ).trim();
   }
 
-  function getSelectedInternalFornecedorIds() {
-    const select = byId('internalFornecedorPendenteSelect');
-    const idsFromDom = select
-      ? [...select.selectedOptions].map((option) => String(option.value || '').trim()).filter(Boolean)
-      : [];
-    if (idsFromDom.length) {
-      state.internalSelectedFornecedorIds = [...new Set(idsFromDom)];
-      return state.internalSelectedFornecedorIds;
-    }
-    return Array.isArray(state.internalSelectedFornecedorIds) ? [...new Set(state.internalSelectedFornecedorIds.filter(Boolean))] : [];
-  }
-
   function getSelectedInternalFornecedores() {
-    const ids = getSelectedInternalFornecedorIds();
-    if (!ids.length) return [];
-    const idSet = new Set(ids.map((id) => String(id)));
-    return (state.pendingFornecedores || []).filter((item) => idSet.has(String(item.id)));
-  }
-
-  function getPrimaryInternalFornecedor() {
-    const fornecedores = Array.isArray(state.internalPendingFornecedores) ? state.internalPendingFornecedores : [];
-    if (fornecedores.length === 1) return fornecedores[0];
-    if (fornecedores.length > 1) return null;
-    return state.internalPendingFornecedor || null;
-  }
-
-  function getCurrentInternalNotasGroups() {
-    return getSelectedInternalFornecedores().map((fornecedor) => {
-      const notas = (Array.isArray(fornecedor?.notas) ? fornecedor.notas : Array.isArray(fornecedor?.notasFiscais) ? fornecedor.notasFiscais : [])
-        .map((nota) => normalizePendingNota({ ...nota, fornecedor: nota?.fornecedor || fornecedor?.fornecedor || fornecedor?.nome || '' }));
-      return {
-        fornecedor,
-        notas
-      };
-    }).filter((group) => group.notas.length);
+    if (Array.isArray(state.internalPendingFornecedores) && state.internalPendingFornecedores.length) {
+      return state.internalPendingFornecedores;
+    }
+    return state.internalPendingFornecedor ? [state.internalPendingFornecedor] : [];
   }
 
   function getCurrentInternalNotas() {
-    return getCurrentInternalNotasGroups().flatMap((group) => group.notas);
+    return getSelectedInternalFornecedores().flatMap((fornecedor) => {
+      const nomeFornecedor = String(fornecedor?.fornecedor || fornecedor?.nome || '').trim();
+      const notas = Array.isArray(fornecedor?.notas)
+        ? fornecedor.notas
+        : Array.isArray(fornecedor?.notasFiscais)
+          ? fornecedor.notasFiscais
+          : [];
+      return notas.map((nota) => ({ ...nota, fornecedor: String(nota?.fornecedor || nomeFornecedor).trim(), fornecedorGrupo: nomeFornecedor }));
+    });
+  }
+
+  function updateInternalFornecedorDropdownTrigger() {
+    const trigger = byId('internalFornecedorDropdownTrigger');
+    const hiddenInput = byId('internalFornecedorPendenteSelect');
+    const fornecedorField = byId('internalFornecedorNome');
+    const selected = getSelectedInternalFornecedores();
+    const ids = selected.map((item) => String(item?.id || '')).filter(Boolean);
+    const names = selected.map((item) => String(item?.fornecedor || item?.nome || '').trim()).filter(Boolean);
+    if (hiddenInput) hiddenInput.value = ids.join(',');
+    if (fornecedorField) fornecedorField.value = names.join(', ');
+    if (!trigger) return;
+    if (!selected.length) {
+      trigger.textContent = 'Selecione o fornecedor pendente';
+      trigger.classList.remove('is-selected');
+      trigger.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    trigger.classList.add('is-selected');
+    trigger.textContent = selected.length === 1
+      ? `${names[0]} (${formatIntegerBR(selected[0]?.quantidadeNotas ?? 0)} NF)`
+      : `${formatIntegerBR(selected.length)} fornecedores selecionados`;
+  }
+
+  function closeInternalFornecedorDropdown() {
+    const menu = byId('internalFornecedorDropdownMenu');
+    const trigger = byId('internalFornecedorDropdownTrigger');
+    menu?.classList.add('hidden');
+    trigger?.setAttribute('aria-expanded', 'false');
+  }
+
+  function applyPendingFornecedoresInterno(items = []) {
+    state.internalPendingFornecedores = Array.isArray(items) ? items : [];
+    state.internalPendingFornecedor = state.internalPendingFornecedores.length === 1 ? state.internalPendingFornecedores[0] : (state.internalPendingFornecedores[0] || null);
+    updateInternalFornecedorDropdownTrigger();
+    renderPendingNotasInterno();
   }
 
   function clearInternalPendingSelectionState({ keepFornecedor = false } = {}) {
     if (!keepFornecedor) {
       state.internalPendingFornecedor = null;
       state.internalPendingFornecedores = [];
-      state.internalSelectedFornecedorIds = [];
+      const dropdownMenu = byId('internalFornecedorDropdownMenu');
+      dropdownMenu?.querySelectorAll('input[type="checkbox"][data-fornecedor-id]').forEach((el) => { el.checked = false; });
+      updateInternalFornecedorDropdownTrigger();
     }
     state.internalSelectedNotas = [];
     state.internalSelectedNotaKeys = new Set();
     state.internalPendingSearchTerm = '';
     const searchInput = byId('internalPendingSearch');
     if (searchInput) searchInput.value = '';
+  }
+
+  function renderInternalFornecedorDropdown() {
+    const menu = byId('internalFornecedorDropdownMenu');
+    const trigger = byId('internalFornecedorDropdownTrigger');
+    const wrapper = byId('internalFornecedorDropdown');
+    if (!menu || !trigger || !wrapper) return;
+
+    const selectedIds = new Set(getSelectedInternalFornecedores().map((item) => String(item?.id || '')));
+    if (!(state.pendingFornecedores || []).length) {
+      menu.innerHTML = '<div class="multi-select-empty">Nenhum fornecedor pendente encontrado.</div>';
+      updateInternalFornecedorDropdownTrigger();
+      return;
+    }
+
+    menu.innerHTML = state.pendingFornecedores.map((item) => {
+      const id = String(item?.id || '').trim();
+      const checked = selectedIds.has(id) ? 'checked' : '';
+      const label = `${String(item.fornecedor || item.nome || '-').trim()} (${formatIntegerBR(item.quantidadeNotas ?? 0)} NF)`;
+      return `<label class="multi-select-option" data-fornecedor-id="${escapeHtml(id)}"><input type="checkbox" data-fornecedor-id="${escapeHtml(id)}" ${checked} /><span class="multi-select-option-text">${escapeHtml(label)}</span></label>`;
+    }).join('');
+
+    menu.querySelectorAll('input[type="checkbox"][data-fornecedor-id]').forEach((input) => {
+      input.addEventListener('change', () => {
+        const checkedIds = [...menu.querySelectorAll('input[type="checkbox"][data-fornecedor-id]:checked')].map((el) => String(el.dataset.fornecedorId || '').trim()).filter(Boolean);
+        clearInternalPendingSelectionState({ keepFornecedor: true });
+        applyPendingFornecedoresInterno(checkedIds.map((id) => getPendingFornecedorById(id)).filter(Boolean));
+      });
+    });
+
+    if (!wrapper.dataset.bound) {
+      trigger.addEventListener('click', (event) => {
+        event.preventDefault();
+        const isHidden = menu.classList.contains('hidden');
+        closeInternalFornecedorDropdown();
+        if (isHidden) {
+          menu.classList.remove('hidden');
+          trigger.setAttribute('aria-expanded', 'true');
+        }
+      });
+
+      document.addEventListener('click', (event) => {
+        if (!wrapper.contains(event.target)) closeInternalFornecedorDropdown();
+      });
+      wrapper.dataset.bound = 'true';
+    }
+
+    updateInternalFornecedorDropdownTrigger();
   }
 
   function syncInternalSelectionFromDom(wrap = byId('internalPendingNotas')) {
@@ -1118,6 +1116,7 @@
       unique.push({
         ...normalized,
         rowHash: key,
+        fornecedor: normalized.fornecedor || normalized.fornecedorGrupo,
         disponivelNoRelatorio: normalized.disponivelNoRelatorio,
         origemManual: normalized.origemManual,
         inseridaManual: normalized.inseridaManual,
@@ -1153,108 +1152,94 @@
   function refreshPendingFornecedorOptionText(item) {
     if (!item?.id) return;
     const label = `${String(item.fornecedor || item.nome || '-').trim()} (${formatIntegerBR(item.quantidadeNotas ?? 0)} NF)`;
-    ['internalFornecedorPendenteSelect', 'fornecedorPendenteSelect'].forEach((id) => {
-      const select = byId(id);
-      if (!select) return;
-      const option = [...select.options].find((entry) => String(entry.value || '') === String(item.id));
+    const publicSelect = byId('fornecedorPendenteSelect');
+    if (publicSelect?.options?.length) {
+      const option = [...publicSelect.options].find((entry) => String(entry.value || '') === String(item.id));
       if (option) option.textContent = label;
-    });
+    }
+    const optionLabel = [...document.querySelectorAll('#internalFornecedorDropdownMenu .multi-select-option')].find((entry) => String(entry.dataset.fornecedorId || '') === String(item.id))?.querySelector('.multi-select-option-text');
+    if (optionLabel) optionLabel.textContent = label;
+    updateInternalFornecedorDropdownTrigger();
   }
 
   function renderPendingNotasInterno() {
     syncInternalSelectionFromDom();
     const wrap = byId('internalPendingNotas');
     if (!wrap) return;
-
-    const selectedGroups = getCurrentInternalNotasGroups();
-    if (!selectedGroups.length) {
-      wrap.innerHTML = '<div class="warning-box">Selecione um ou mais fornecedores pendentes para carregar as NF disponíveis.</div>';
+    const fornecedoresSelecionados = getSelectedInternalFornecedores();
+    if (!fornecedoresSelecionados.length) {
+      wrap.innerHTML = '<div class="warning-box">Selecione ao menos um fornecedor pendente para carregar as NF disponíveis.</div>';
       updateInternalTotals();
       return;
     }
 
     const searchTerm = String(state.internalPendingSearchTerm || '').trim().toLowerCase();
-    const visibleGroups = selectedGroups.map(({ fornecedor, notas }) => {
-      const notasOrdenadas = [...notas].sort((a, b) => {
+    const fornecedoresRender = fornecedoresSelecionados.map((fornecedor) => {
+      const nomeFornecedor = String(fornecedor?.fornecedor || fornecedor?.nome || '-').trim() || '-';
+      const sourceNotas = (Array.isArray(fornecedor?.notas) ? fornecedor.notas : Array.isArray(fornecedor?.notasFiscais) ? fornecedor.notasFiscais : [])
+        .map((nota) => normalizePendingNota({ ...nota, fornecedor: String(nota?.fornecedor || nomeFornecedor).trim(), fornecedorGrupo: nomeFornecedor }));
+      const notasOrdenadas = [...sourceNotas].sort((a, b) => {
         if (!!a.alertaVencimentoProximo !== !!b.alertaVencimentoProximo) return a.alertaVencimentoProximo ? -1 : 1;
         const dueA = a.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(a.diasParaPrimeiroVencimento);
         const dueB = b.diasParaPrimeiroVencimento == null ? Number.POSITIVE_INFINITY : Number(b.diasParaPrimeiroVencimento);
         if (dueA !== dueB) return dueA - dueB;
         return String(a.numeroNf || '').localeCompare(String(b.numeroNf || ''), 'pt-BR');
       });
-
-      const notasFiltradas = searchTerm
+      const notas = searchTerm
         ? notasOrdenadas.filter((nota) => {
             const numero = String(nota.numeroNf || '').toLowerCase();
             const serie = String(nota.serie || '').toLowerCase();
             return numero.includes(searchTerm) || serie.includes(searchTerm);
           })
         : notasOrdenadas;
+      return { fornecedor, nomeFornecedor, notas };
+    }).filter((item) => item.notas.length);
 
-      const categoryGroups = [
-        { title: 'Notas com 1º vencimento próximo', items: notasFiltradas.filter((nota) => nota.alertaVencimentoProximo), highlight: true },
-        { title: 'Demais notas pendentes', items: notasFiltradas.filter((nota) => !nota.alertaVencimentoProximo), highlight: false }
-      ].filter((group) => group.items.length);
-
-      return {
-        fornecedor,
-        totalVisivel: notasFiltradas.length,
-        categoryGroups
-      };
-    }).filter((group) => group.totalVisivel > 0);
-
-    if (!visibleGroups.length) {
-      const allowManualInsert = selectedGroups.length === 1 && !!getPrimaryInternalFornecedor();
+    if (!fornecedoresRender.length) {
       wrap.innerHTML = `
         <div class="warning-box">
-          Nenhuma NF localizada para a busca informada nos fornecedores selecionados.
-          ${allowManualInsert ? `<div class="pending-notas-empty-actions"><button type="button" id="btnInsertManualPendingNota">Inserir NF manualmente</button></div>` : ''}
+          Nenhuma NF localizada para a busca informada.
+          <div class="pending-notas-empty-actions">
+            ${fornecedoresSelecionados.length === 1 ? '<button type="button" id="btnInsertManualPendingNota">Inserir NF manualmente</button>' : '<span class="hint">Para inserir NF manualmente, mantenha apenas um fornecedor selecionado.</span>'}
+          </div>
         </div>
       `;
-      if (allowManualInsert) {
-        wrap.querySelector('#btnInsertManualPendingNota')?.addEventListener('click', () => openManualNotaModal(state.internalPendingSearchTerm));
-      }
+      wrap.querySelector('#btnInsertManualPendingNota')?.addEventListener('click', () => openManualNotaModal(state.internalPendingSearchTerm));
       updateInternalTotals();
       return;
     }
 
-    wrap.innerHTML = `
-      <div class="pending-notas-toolbar">
-        <button type="button" class="btn-secondary" id="btnSelectAllPendingNotas">Selecionar todos</button>
-      </div>
-      ${visibleGroups.map((group) => {
-        const fornecedorNome = String(group.fornecedor?.fornecedor || group.fornecedor?.nome || '-').trim() || '-';
-        return `
-          <div class="pending-fornecedor-group">
-            <div class="pending-fornecedor-header">
-              <h4>${escapeHtml(fornecedorNome)}</h4>
-              <span>${escapeHtml(formatIntegerBR(group.totalVisivel))} NF</span>
-            </div>
-            ${group.categoryGroups.map((categoryGroup) => `
-              <div class="pending-notas-group${categoryGroup.highlight ? ' pending-notas-group-highlight' : ''}">
-                <h4>${escapeHtml(categoryGroup.title)} <span>${escapeHtml(formatIntegerBR(categoryGroup.items.length))} NF</span></h4>
-                <div class="pending-notas-grid">
-                  ${categoryGroup.items.map((nota) => {
-                    const key = buildInternalNotaKey(nota);
-                    const dueClass = nota.alertaVencimentoProximo ? ' pending-nota-item-warning' : '';
-                    const manualClass = nota.origemManual || nota.inseridaManual || nota.preLancamentoPendente ? ' pending-nota-item-manual' : '';
-                    const tooltip = nota.tooltipVencimento || '';
-                    const label = `NF ${nota.numeroNf || '-'} • Série ${nota.serie || '-'}`;
-                    const dueBadge = nota.alertaVencimentoProximo ? `<span class="pending-note-due-badge" title="${escapeHtml(tooltip)}">Venc. próximo${nota.dataPrimeiroVencimentoBr ? ` • ${escapeHtml(nota.dataPrimeiroVencimentoBr)}` : ''}</span>` : '';
-                    const manualBadge = nota.origemManual || nota.inseridaManual || nota.preLancamentoPendente ? `<span class="pending-note-manual-badge" title="NF inserida manualmente e sem pré-lançamento no relatório terceirizado.">Inserida manualmente</span>` : '';
-                    const empresa = nota.empresa ? `<span class="pending-note-company">${escapeHtml(nota.empresa)}</span>` : '';
-                    const destinoLogo = renderStoreLogo(nota.destino || nota.empresa, { showEmpty: false });
-                    const dataEntrada = nota.dataEntradaBr || nota.dataEntrada || '-';
-                    const checked = state.internalSelectedNotaKeys.has(key) ? 'checked' : '';
-                    return `<div class="pending-nota-item${dueClass}${manualClass}" title="${escapeHtml(tooltip)}"><label class="pending-nota-card"><div class="pending-nota-check"><input type="checkbox" data-internal-key="${escapeHtml(key)}" ${checked} /><span>${escapeHtml(label)}</span><div class="pending-note-tags">${empresa}${destinoLogo}${manualBadge}${dueBadge}</div></div><div class="pending-nota-meta"><span><strong>Entrada:</strong> ${escapeHtml(dataEntrada)}</span><span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(nota.peso || 0, 3))} kg</span><span><strong>Volumes:</strong> ${escapeHtml(formatDecimalBR(nota.volumes || 0, 3))}</span></div></label></div>`;
-                  }).join('')}
-                </div>
-              </div>
-            `).join('')}
+    const htmlForFornecedor = fornecedoresRender.map(({ nomeFornecedor, notas }) => {
+      const groups = [
+        { title: 'Notas com 1º vencimento próximo', items: notas.filter((nota) => nota.alertaVencimentoProximo), highlight: true },
+        { title: 'Demais notas pendentes', items: notas.filter((nota) => !nota.alertaVencimentoProximo), highlight: false }
+      ].filter((group) => group.items.length);
+
+      return `
+        <div class="pending-fornecedor-group">
+          <div class="pending-fornecedor-header">
+            <h4>${escapeHtml(nomeFornecedor)}</h4>
+            <span>${escapeHtml(formatIntegerBR(notas.length))} NF</span>
           </div>
-        `;
-      }).join('')}
-    `;
+          ${groups.map((group) => `<div class="pending-notas-group${group.highlight ? ' pending-notas-group-highlight' : ''}"><h4>${escapeHtml(group.title)} <span>${escapeHtml(formatIntegerBR(group.items.length))} NF</span></h4><div class="pending-notas-grid">${group.items.map((nota) => {
+            const key = buildInternalNotaKey(nota);
+            const dueClass = nota.alertaVencimentoProximo ? ' pending-nota-item-warning' : '';
+            const manualClass = nota.origemManual || nota.inseridaManual || nota.preLancamentoPendente ? ' pending-nota-item-manual' : '';
+            const tooltip = nota.tooltipVencimento || '';
+            const label = `NF ${nota.numeroNf || '-'} • Série ${nota.serie || '-'}`;
+            const dueBadge = nota.alertaVencimentoProximo ? `<span class="pending-note-due-badge" title="${escapeHtml(tooltip)}">Venc. próximo${nota.dataPrimeiroVencimentoBr ? ` • ${escapeHtml(nota.dataPrimeiroVencimentoBr)}` : ''}</span>` : '';
+            const manualBadge = nota.origemManual || nota.inseridaManual || nota.preLancamentoPendente ? `<span class="pending-note-manual-badge" title="NF inserida manualmente e sem pré-lançamento no relatório terceirizado.">Inserida manualmente</span>` : '';
+            const empresa = nota.empresa ? `<span class="pending-note-company">${escapeHtml(nota.empresa)}</span>` : '';
+            const destinoLogo = renderStoreLogo(nota.destino || nota.empresa, { showEmpty: false });
+            const dataEntrada = nota.dataEntradaBr || nota.dataEntrada || '-';
+            const checked = state.internalSelectedNotaKeys.has(key) ? 'checked' : '';
+            return `<div class="pending-nota-item${dueClass}${manualClass}" title="${escapeHtml(tooltip)}"><label class="pending-nota-card"><div class="pending-nota-check"><input type="checkbox" data-internal-key="${escapeHtml(key)}" ${checked} /><span>${escapeHtml(label)}</span><div class="pending-note-tags">${empresa}${destinoLogo}${manualBadge}${dueBadge}</div></div><div class="pending-nota-meta"><span><strong>Entrada:</strong> ${escapeHtml(dataEntrada)}</span><span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(nota.peso || 0, 3))} kg</span><span><strong>Volumes:</strong> ${escapeHtml(formatDecimalBR(nota.volumes || 0, 3))}</span></div></label></div>`;
+          }).join('')}</div></div>`).join('')}
+        </div>
+      `;
+    }).join('');
+
+    wrap.innerHTML = `<div class="pending-notas-toolbar"><button type="button" class="btn-secondary" id="btnSelectAllPendingNotas">Selecionar todos</button></div>${htmlForFornecedor}`;
 
     const sync = () => {
       syncInternalSelectionFromDom(wrap);
@@ -1282,8 +1267,12 @@
   }
 
   function openManualNotaModal(seed = '') {
-    if (!getPrimaryInternalFornecedor()) {
-      byId('agendamentoMsg').textContent = 'Selecione apenas um fornecedor pendente para inserir NF manualmente.';
+    if (!state.internalPendingFornecedor) {
+      byId('agendamentoMsg').textContent = 'Selecione primeiro o fornecedor pendente.';
+      return;
+    }
+    if (getSelectedInternalFornecedores().length !== 1) {
+      byId('agendamentoMsg').textContent = 'Para inserir NF manualmente, selecione apenas um fornecedor.';
       return;
     }
     const modal = byId('manualNotaModal');
@@ -1310,17 +1299,16 @@
   }
 
   function appendManualNotaToPendingFornecedor(nota = {}) {
-    const fornecedor = getPrimaryInternalFornecedor();
-    if (!fornecedor) throw new Error('Selecione apenas um fornecedor pendente antes de inserir a NF.');
+    const fornecedor = state.internalPendingFornecedor;
+    if (!fornecedor) throw new Error('Selecione o fornecedor pendente antes de inserir a NF.');
     const numeroNf = String(nota.numeroNf || '').trim();
     const serie = String(nota.serie || '').trim();
-    const notasAtuais = Array.isArray(fornecedor?.notas) ? fornecedor.notas : Array.isArray(fornecedor?.notasFiscais) ? fornecedor.notasFiscais : [];
+    const notasAtuais = getCurrentInternalNotas();
     const duplicate = notasAtuais.some((item) => String(item.numeroNf || '').trim() === numeroNf && String(item.serie || '').trim() === serie);
     if (duplicate) throw new Error('Esta NF já está listada para o fornecedor selecionado.');
 
     const normalized = normalizePendingNota({
       ...nota,
-      fornecedor: fornecedor.fornecedor || fornecedor.nome || '',
       observacao: String(nota.observacao || 'NF inserida manualmente - sem pré-lançamento').trim(),
       origemManual: true,
       inseridaManual: true,
@@ -1336,7 +1324,6 @@
     fornecedor.quantidadeVolumes = updatedNotas.reduce((acc, item) => acc + Number(item.volumes || 0), 0);
     fornecedor.pesoTotalKg = updatedNotas.reduce((acc, item) => acc + Number(item.peso || 0), 0);
     state.internalPendingFornecedor = fornecedor;
-    state.internalPendingFornecedores = getSelectedInternalFornecedores().map((item) => String(item.id) === String(fornecedor.id) ? fornecedor : item);
     state.internalSelectedNotaKeys.add(buildInternalNotaKey(normalized));
     state.internalPendingSearchTerm = '';
     const searchInput = byId('internalPendingSearch');
@@ -1347,7 +1334,7 @@
   }
 
   async function notifyFiscalForManualNota(nota = {}) {
-    const fornecedor = String(getPrimaryInternalFornecedor()?.fornecedor || getPrimaryInternalFornecedor()?.nome || byId('internalFornecedorNome')?.value || '').trim();
+    const fornecedor = String(state.internalPendingFornecedor?.fornecedor || state.internalPendingFornecedor?.nome || byId('internalFornecedorNome')?.value || '').trim();
     return api('/api/agendamentos/notas/manual-alerta', {
       method: 'POST',
       body: JSON.stringify({
@@ -1362,58 +1349,21 @@
     });
   }
 
-  function applyFornecedorPendenteInterno(items) {
-    const fornecedoresSelecionados = Array.isArray(items) ? items.filter(Boolean) : items ? [items] : [];
+  function applyFornecedorPendenteInterno(item) {
     clearInternalPendingSelectionState({ keepFornecedor: true });
-    state.internalSelectedFornecedorIds = fornecedoresSelecionados.map((item) => String(item.id || '').trim()).filter(Boolean);
-    state.internalPendingFornecedores = fornecedoresSelecionados;
-    state.internalPendingFornecedor = fornecedoresSelecionados.length === 1 ? fornecedoresSelecionados[0] : null;
-    const fornecedorField = byId('internalFornecedorNome');
-    if (fornecedorField) {
-      fornecedorField.value = fornecedoresSelecionados.map((item) => String(item?.fornecedor || item?.nome || '').trim()).filter(Boolean).join(' / ');
-    }
-    renderPendingNotasInterno();
+    applyPendingFornecedoresInterno(item ? [item] : []);
   }
 
   async function loadFornecedoresPendentesInterno() {
     try {
       const items = await api('/api/public/fornecedores-pendentes');
       state.pendingFornecedores = sortPendingFornecedores(Array.isArray(items) ? items.map(normalizePendingFornecedor) : []);
-      const select = byId('internalFornecedorPendenteSelect');
-      if (!select) return;
-      const selectedIds = new Set(getSelectedInternalFornecedorIds());
-      select.innerHTML = state.pendingFornecedores.map((item) => {
-        const value = String(item.id || '').trim();
-        const selected = selectedIds.has(value) ? ' selected' : '';
-        return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`;
-      }).join('');
-
-      const clearInternalFornecedorSelection = () => {
-        [...select.options].forEach((option) => { option.selected = false; });
-        clearInternalPendingSelectionState();
-        const fornecedorField = byId('internalFornecedorNome');
-        if (fornecedorField) fornecedorField.value = '';
-        renderPendingNotasInterno();
-      };
-
-      select.onchange = () => {
-        const selectedItems = [...select.selectedOptions]
-          .map((option) => getPendingFornecedorById(option.value))
-          .filter(Boolean);
-        if (!selectedItems.length) {
-          clearInternalFornecedorSelection();
-          return;
-        }
-        applyFornecedorPendenteInterno(selectedItems);
-      };
-
-      const clearBtn = byId('btnClearFornecedorPendenteInterno');
-      if (clearBtn) clearBtn.onclick = clearInternalFornecedorSelection;
-
-      if (selectedIds.size) {
-        const selectedItems = [...selectedIds].map((id) => getPendingFornecedorById(id)).filter(Boolean);
-        if (selectedItems.length) applyFornecedorPendenteInterno(selectedItems);
-      }
+      const stillSelected = getSelectedInternalFornecedores().map((item) => String(item?.id || '')).filter(Boolean);
+      const preserved = stillSelected.map((id) => getPendingFornecedorById(id)).filter(Boolean);
+      state.internalPendingFornecedores = preserved;
+      state.internalPendingFornecedor = preserved.length === 1 ? preserved[0] : (preserved[0] || null);
+      renderInternalFornecedorDropdown();
+      renderPendingNotasInterno();
     } catch {}
   }
 
@@ -1550,7 +1500,6 @@
     const payload = await api("/api/public/disponibilidade?dias=21");
     state.disponibilidadePublica = Array.isArray(payload.agenda) ? payload.agenda : [];
     renderPublicDates();
-    renderInternalJanelaOptions(byId('agendamentoForm')?.querySelector('[name="dataAgendada"]')?.value || '', byId('internalJanelaSelect')?.value || '');
   }
 
   function currentFilters() {
@@ -1569,9 +1518,10 @@
     if (!hasPermission('cadastros.view') && !hasPermission('agendamentos.create')) return;
     try {
       const janelas = await api("/api/cadastros/janelas");
-      state.janelaOptions = Array.isArray(janelas) ? janelas : [];
-      renderInternalJanelaOptions(byId('agendamentoForm')?.querySelector('[name="dataAgendada"]')?.value || '', '');
-      await Promise.allSettled([loadDocaOptions(), loadFilterOptions(), refreshInternalJanelaAvailability()]);
+      const janelaOptions = janelas.map((j) => `<option value="${j.id}">${escapeHtml(j.codigo)}</option>`).join("");
+      const janelaSelect = byId("internalJanelaSelect");
+      if (janelaSelect) janelaSelect.innerHTML = janelaOptions;
+      await Promise.allSettled([loadDocaOptions(), loadFilterOptions()]);
     } catch {}
   }
 
@@ -1638,70 +1588,31 @@
     const wrap = byId("docaPainel");
     if (!wrap) return;
 
-    wrap.innerHTML = data.map((d) => {
-      const cardKey = String(d.docaId || d.codigo || '');
-      const isExpanded = state.docaPainelExpanded.has(cardKey);
-      const filaHtml = d.fila.length ? d.fila.map((f) => {
-        const needsDoca = hasPermission('agendamentos.definir_doca') && d.codigo === "A DEFINIR" && ["CHEGOU", "APROVADO", "PENDENTE_APROVACAO"].includes(f.status);
-        const destinos = Array.isArray(f.destinos) && f.destinos.length ? f.destinos.join(' / ') : '-';
-        const quantidadeItens = formatIntegerBR(f.quantidadeItens || 0);
-        const quantidadeNotas = formatIntegerBR(f.quantidadeNotas || 0);
-        const volumes = formatDecimalBR(f.quantidadeVolumes || 0, 3);
-        const peso = formatDecimalBR(f.pesoTotalKg || 0, 3);
-        return `
-          <div class="fila-item fila-item-detalhado">
-            <div class="fila-item-head">
-              <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista || '-')}</div>
-              <div>${renderStatusBadge(f.status, trafficColor(f.status))}</div>
-            </div>
-            <div class="fila-item-meta">
-              <span><strong>Placa:</strong> ${escapeHtml(f.placa || '-')}</span>
-              <span><strong>Horário:</strong> ${escapeHtml(formatHour(f.horaAgendada || ''))}</span>
-              <span><strong>NF:</strong> ${escapeHtml(quantidadeNotas)}</span>
-              <span><strong>Itens:</strong> ${escapeHtml(quantidadeItens)}</span>
-              <span><strong>Volumes:</strong> ${escapeHtml(volumes)}</span>
-              <span><strong>Peso:</strong> ${escapeHtml(peso)} kg</span>
-              <span><strong>Destino:</strong> ${escapeHtml(destinos)}</span>
-            </div>
-            ${needsDoca ? `<div class="warning-box">Selecione a doca para este agendamento.</div><div class="row gap8 wrap mt12"><select data-doca-painel-select="${escapeAttribute(f.id)}" class="dock-select">${docaSelectOptions(f.doca?.id || f.docaId || '')}</select><button type="button" data-doca-painel-save="${escapeAttribute(f.id)}">Definir doca</button></div>` : ""}
-          </div>
-        `;
-      }).join("") : "<div class='fila-item'>Sem agendamentos para a data filtrada.</div>";
-
-      return `
-        <div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
-          <div class="doca-card-header">
-            <div>
-              <h3>${escapeHtml(d.codigo)}</h3>
-              <p>${escapeHtml(d.descricao || "")}</p>
-            </div>
-            <div class="doca-card-summary">
-              <span class="badge ${statusTone(d.ocupacaoAtual, d.semaforo)}">${escapeHtml(d.semaforo)}</span>
-              <span><strong>Ocupação:</strong> ${escapeHtml(d.ocupacaoAtual)}</span>
-              <span><strong>Agendamentos:</strong> ${escapeHtml(formatIntegerBR(d.fila.length))}</span>
-            </div>
-          </div>
-          <button type="button" class="btn-secondary doca-toggle-details mt12" data-doca-toggle="${escapeAttribute(cardKey)}">${isExpanded ? 'Ocultar detalhes' : 'Ver detalhes da doca'}</button>
-          <div class="doca-card-details${isExpanded ? '' : ' hidden'}" data-doca-details="${escapeAttribute(cardKey)}">
-            <div class="mt12">${filaHtml}</div>
-          </div>
+    wrap.innerHTML = data.map((d) => `
+      <div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
+        <h3>${escapeHtml(d.codigo)}</h3>
+        <p>${escapeHtml(d.descricao || "")}</p>
+        <p><strong>Ocupação:</strong> ${escapeHtml(d.ocupacaoAtual)}</p>
+        <span class="badge ${statusTone(d.ocupacaoAtual, d.semaforo)}">${escapeHtml(d.semaforo)}</span>
+        <div class="mt12">
+          <strong>Fila (${d.fila.length})</strong>
+          ${d.fila.length ? d.fila.map((f) => {
+            const needsDoca = hasPermission('agendamentos.definir_doca') && d.codigo === "A DEFINIR" && ["CHEGOU", "APROVADO", "PENDENTE_APROVACAO"].includes(f.status);
+            return `
+              <div class="fila-item">
+                <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
+                <div>${escapeHtml(f.placa)} • ${escapeHtml(formatHour(f.horaAgendada))} • ${escapeHtml(f.status)}</div>
+                ${needsDoca ? `<div class="warning-box">Selecione a doca para este agendamento.</div><div class="row gap8 wrap mt12"><select data-doca-painel-select="${escapeHtml(f.id)}" class="dock-select">${docaSelectOptions(f.doca?.id || f.docaId || '')}</select><button type="button" data-doca-painel-save="${escapeHtml(f.id)}">Definir doca</button></div>` : ""}
+              </div>
+            `;
+          }).join("") : "<div class='fila-item'>Sem fila</div>"}
         </div>
-      `;
-    }).join("");
-
-    wrap.querySelectorAll('[data-doca-toggle]').forEach((btn) => btn.addEventListener('click', () => {
-      const key = String(btn.dataset.docaToggle || '').trim();
-      if (!key) return;
-      if (state.docaPainelExpanded.has(key)) state.docaPainelExpanded.delete(key);
-      else state.docaPainelExpanded.add(key);
-      const details = wrap.querySelector(`[data-doca-details="${CSS.escape(key)}"]`);
-      if (details) details.classList.toggle('hidden');
-      btn.textContent = state.docaPainelExpanded.has(key) ? 'Ocultar detalhes' : 'Ver detalhes da doca';
-    }));
+      </div>
+    `).join("");
 
     wrap.querySelectorAll('[data-doca-painel-save]').forEach((btn) => btn.addEventListener('click', async () => {
       const agendamentoId = btn.dataset.docaPainelSave;
-      const select = wrap.querySelector(`[data-doca-painel-select="${CSS.escape(String(agendamentoId))}"]`);
+      const select = wrap.querySelector(`[data-doca-painel-select="${agendamentoId}"]`);
       const docaId = select?.value || '';
       if (!docaId) {
         byId('operacaoMsg').textContent = 'Selecione a doca antes de confirmar.';
@@ -1710,7 +1621,7 @@
       try {
         await api(`/api/agendamentos/${agendamentoId}/definir-doca`, { method: 'POST', body: JSON.stringify({ docaId }) });
         byId('operacaoMsg').textContent = 'Doca definida com sucesso.';
-        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions(), refreshInternalJanelaAvailability()]);
+        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
       } catch (err) {
         byId('operacaoMsg').textContent = err.message;
       }
@@ -2126,9 +2037,6 @@ Deseja liberar manualmente a descarga deste veículo?`);
 
     byId("loadDashboard")?.addEventListener("click", async () => { try { await loadDashboard(); } catch (err) { alert(err.message); } });
     byId("loadDocas")?.addEventListener("click", async () => { try { await loadDocas(); } catch (err) { alert(err.message); } });
-    byId('agendamentoForm')?.querySelector('[name="dataAgendada"]')?.addEventListener('change', async () => {
-      try { await refreshInternalJanelaAvailability(); } catch {}
-    });
 
     document.querySelectorAll(".cad-tab").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
@@ -2166,9 +2074,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
         payload.quantidadeVolumes = parseNumberBR(byId('internalQuantidadeVolumes')?.value || 0);
         payload.pesoTotalKg = parseNumberBR(byId('internalPesoTotalKg')?.value || 0);
         payload.valorTotalNf = parseNumberBR(byId('internalValorTotalNf')?.value || 0);
-        const fornecedoresSelecionados = getSelectedInternalFornecedores();
-        if (!fornecedoresSelecionados.length) throw new Error('Selecione ao menos um fornecedor pendente.');
-        payload.fornecedor = fornecedoresSelecionados.map((item) => String(item.fornecedor || item.nome || '').trim()).filter(Boolean).join(' / ');
+        if (!payload.fornecedorPendenteInterno) throw new Error('Selecione o fornecedor pendente.');
         if (!payload.fornecedor) throw new Error('Fornecedor pendente inválido.');
         if (!payload.notasFiscais.length) throw new Error('Selecione ao menos uma NF pendente para o agendamento.');
         delete payload.fornecedorPendenteInterno;
@@ -2182,13 +2088,12 @@ Deseja liberar manualmente a descarga deste veículo?`);
         clearInternalPendingSelectionState();
         const fornecedorField = byId('internalFornecedorNome');
         if (fornecedorField) fornecedorField.value = '';
-        const fornecedorSelect = byId('internalFornecedorPendenteSelect');
-        if (fornecedorSelect) [...fornecedorSelect.options].forEach((option) => { option.selected = false; });
+        renderInternalFornecedorDropdown();
         renderPendingNotasInterno();
         const dataInput = byId('agendamentoForm')?.querySelector('[name="dataAgendada"]');
         if (dataInput) dataInput.value = new Date().toISOString().slice(0, 10);
         applyInputMasks(byId('agendamentoForm'));
-        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno(), loadFilterOptions(), loadPublicDisponibilidade(), refreshInternalJanelaAvailability()]);
+        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno(), loadFilterOptions()]);
       } catch (err) {
         byId("agendamentoMsg").textContent = err.message;
       }

@@ -26,30 +26,6 @@ if (!process.env.DATABASE_URL && hasDbParts) {
 let prismaClient = null;
 let prismaLoadError = null;
 let prismaLoadingPromise = null;
-let prismaRuntimeDisabled = false;
-let prismaRuntimeDisableReason = null;
-
-function stringifyError(error) {
-  return String(error?.message || error || '');
-}
-
-function isPrismaRuntimePanic(error) {
-  const message = stringifyError(error);
-  return message.includes('PrismaClientRustPanicError')
-    || message.includes('PANIC: timer has gone away')
-    || message.includes('This is a non-recoverable error')
-    || message.includes('Query Engine has a panic');
-}
-
-async function disablePrismaRuntime(error) {
-  prismaRuntimeDisabled = true;
-  prismaRuntimeDisableReason = stringifyError(error) || 'Prisma indisponível em runtime.';
-  const client = prismaClient;
-  prismaClient = null;
-  if (client?.$disconnect) {
-    try { await client.$disconnect(); } catch {}
-  }
-}
 
 async function createPrismaClient() {
   const prismaPkg = await import('@prisma/client');
@@ -57,15 +33,10 @@ async function createPrismaClient() {
   if (!PrismaClient) {
     throw new Error('PrismaClient não disponível. Execute npm install e npm run prisma:generate.');
   }
-  const client = new PrismaClient({ log: ['error', 'warn'] });
-  await client.$connect();
-  return client;
+  return new PrismaClient({ log: ['error', 'warn'] });
 }
 
 export async function getPrismaClient() {
-  if (prismaRuntimeDisabled) {
-    throw new Error(prismaRuntimeDisableReason || 'Prisma indisponível em runtime.');
-  }
   if (prismaClient) return prismaClient;
   if (prismaLoadError) throw prismaLoadError;
   if (!prismaLoadingPromise) {
@@ -89,14 +60,6 @@ export function getPrismaLoadError() {
   return prismaLoadError;
 }
 
-export function isPrismaRuntimeDisabled() {
-  return prismaRuntimeDisabled;
-}
-
-export function getPrismaRuntimeDisableReason() {
-  return prismaRuntimeDisableReason;
-}
-
 function createModelProxy(pathParts = []) {
   return new Proxy(function () {}, {
     get(_target, prop) {
@@ -113,14 +76,7 @@ function createModelProxy(pathParts = []) {
         if (typeof current !== 'function') {
           throw new Error(`Operação Prisma inválida: ${pathParts.join('.')}`);
         }
-        try {
-          return await current.apply(client, args);
-        } catch (error) {
-          if (isPrismaRuntimePanic(error)) {
-            await disablePrismaRuntime(error);
-          }
-          throw error;
-        }
+        return current.apply(client, args);
       })();
     }
   });

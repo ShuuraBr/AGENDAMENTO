@@ -5,8 +5,7 @@ function occupiesDoca(status) {
 }
 
 import { prisma } from "./prisma.js";
-import { readAgendamentos, readDocas } from "./file-store.js";
-import { normalizeAgendamentoNotas } from "./nota-metadata.js";
+import { readAgendamentos } from "./file-store.js";
 
 export function queuePriority(status) {
   const map = {
@@ -52,77 +51,32 @@ export function trafficColor(status) {
   return "VERMELHO";
 }
 
-function enrichFilaItem(item = {}) {
-  const notas = normalizeAgendamentoNotas(Array.isArray(item?.notasFiscais) ? item.notasFiscais : []);
-  const destinos = [...new Set(notas.map((nota) => String(nota?.destino || nota?.empresa || '').trim()).filter(Boolean))];
-  const quantidadeItens = notas.reduce((acc, nota) => acc + Number(nota?.quantidadeItens || 0), 0);
-  return {
-    ...item,
-    notasFiscais: notas,
-    destinos,
-    quantidadeItens,
-    quantidadeNotas: Number(item?.quantidadeNotas || notas.length || 0),
-    quantidadeVolumes: Number(item?.quantidadeVolumes || notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0) || 0),
-    pesoTotalKg: Number(item?.pesoTotalKg || notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0) || 0)
-  };
-}
-
 export async function docaPainel(dataAgendada = null) {
   const where = dataAgendada ? { dataAgendada: String(dataAgendada) } : {};
-  try {
-    const [docas, agendamentos] = await Promise.all([
-      prisma.doca.findMany({ orderBy: { codigo: "asc" } }),
-      prisma.agendamento.findMany({ where, include: { notasFiscais: true }, orderBy: [{ horaAgendada: "asc" }, { id: "asc" }] })
-    ]);
+  const [docas, agendamentos] = await Promise.all([
+    prisma.doca.findMany({ orderBy: { codigo: "asc" } }),
+    prisma.agendamento.findMany({ where, orderBy: { horaAgendada: "asc" } })
+  ]);
 
-    return docas.map((doca) => {
-      const fila = agendamentos
-        .filter((a) => a.docaId === doca.id && occupiesDoca(a.status))
-        .sort((a, b) => {
-          const pa = queuePriority(a.status);
-          const pb = queuePriority(b.status);
-          if (pa !== pb) return pa - pb;
-          return String(a.horaAgendada).localeCompare(String(b.horaAgendada));
-        })
-        .map(enrichFilaItem);
+  return docas.map(doca => {
+    const fila = agendamentos
+      .filter(a => a.docaId === doca.id && occupiesDoca(a.status))
+      .sort((a, b) => {
+        const pa = queuePriority(a.status);
+        const pb = queuePriority(b.status);
+        if (pa !== pb) return pa - pb;
+        return String(a.horaAgendada).localeCompare(String(b.horaAgendada));
+      });
 
-      const ativo = fila.find((a) => ["CHEGOU", "EM_DESCARGA"].includes(a.status)) || fila[0] || null;
+    const ativo = fila.find(a => ["CHEGOU", "EM_DESCARGA"].includes(a.status)) || fila[0] || null;
 
-      return {
-        docaId: doca.id,
-        codigo: doca.codigo,
-        descricao: doca.descricao,
-        ocupacaoAtual: ativo ? ativo.status : "LIVRE",
-        semaforo: ativo ? trafficColor(ativo.status) : "VERDE",
-        fila
-      };
-    });
-  } catch {
-    const docas = readDocas();
-    const agendamentos = readAgendamentos()
-      .filter((item) => !dataAgendada || String(item?.dataAgendada || '') === String(dataAgendada))
-      .map((item) => enrichFilaItem(item));
-
-    return docas.map((doca) => {
-      const fila = agendamentos
-        .filter((a) => Number(a?.docaId || a?.doca?.id || 0) === Number(doca.id) && occupiesDoca(a.status))
-        .sort((a, b) => {
-          const pa = queuePriority(a.status);
-          const pb = queuePriority(b.status);
-          if (pa !== pb) return pa - pb;
-          return String(a.horaAgendada).localeCompare(String(b.horaAgendada));
-        });
-
-      const ativo = fila.find((a) => ["CHEGOU", "EM_DESCARGA"].includes(a.status)) || fila[0] || null;
-
-      return {
-        docaId: doca.id,
-        codigo: doca.codigo,
-        descricao: doca.descricao,
-        ocupacaoAtual: ativo ? ativo.status : "LIVRE",
-        semaforo: ativo ? trafficColor(ativo.status) : "VERDE",
-        fila
-      };
-    });
-  }
+    return {
+      docaId: doca.id,
+      codigo: doca.codigo,
+      descricao: doca.descricao,
+      ocupacaoAtual: ativo ? ativo.status : "LIVRE",
+      semaforo: ativo ? trafficColor(ativo.status) : "VERDE",
+      fila
+    };
+  });
 }

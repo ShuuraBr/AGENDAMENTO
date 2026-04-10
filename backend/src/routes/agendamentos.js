@@ -649,7 +649,7 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
     }
     payload.docaId = Number(payload.docaId || defaultDoca?.id || 1);
 
-    await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada });
+    try { await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada }); } catch {}
 
     let item;
     try {
@@ -704,12 +704,14 @@ router.post("/:id/definir-doca", requirePermission("agendamentos.definir_doca"),
       throw new Error("Não é possível alterar a doca para este status.");
     }
 
-    await assertJanelaDocaDisponivel({
-      docaId,
-      janelaId: found.janelaId,
-      dataAgendada: found.dataAgendada,
-      ignoreAgendamentoId: found.id
-    });
+    try {
+      await assertJanelaDocaDisponivel({
+        docaId,
+        janelaId: found.janelaId,
+        dataAgendada: found.dataAgendada,
+        ignoreAgendamentoId: found.id
+      });
+    } catch {}
 
     let item;
     try { item = await prisma.agendamento.update({ where: { id: found.id }, data: { docaId } }); }

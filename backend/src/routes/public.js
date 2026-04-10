@@ -226,7 +226,7 @@ router.get("/disponibilidade", async (req, res) => {
 
 router.get("/relatorio-status", async (_req, res) => {
   try {
-    await ensureLatestRelatorioImport({ forceIfEmpty: false });
+    await ensureLatestRelatorioImport({ forceIfEmpty: true });
     res.json({
       ultimoProcessamento: getRelatorioImportStatus(),
       totalLinhasNoBanco: await getRelatorioRowsCount()
@@ -239,7 +239,7 @@ router.get("/relatorio-status", async (_req, res) => {
 
 router.get("/fornecedores-pendentes", async (_req, res) => {
   try {
-    await ensureLatestRelatorioImport({ forceIfEmpty: false });
+    await ensureLatestRelatorioImport({ forceIfEmpty: true });
     return res.json(await listFornecedoresPendentesImportados());
   } catch (error) {
     console.error("[RELATORIO_IMPORT] Falha ao montar fornecedores pendentes:", error?.message || error);
@@ -351,9 +351,8 @@ router.post("/solicitacao", async (req, res) => {
     };
     validateAgendamentoPayload(agendamentoPayload, true);
 
-    await assertJanelaDocaDisponivel({ docaId: doca.id, janelaId, dataAgendada: agendamentoPayload.dataAgendada });
-
     try {
+      await assertJanelaDocaDisponivel({ docaId: doca.id, janelaId, dataAgendada: agendamentoPayload.dataAgendada });
       const full = await createPublicAgendamentoInDatabase({ agendamentoPayload, notas, cpfMotorista });
       const links = buildLinks(req, full);
       return res.status(201).json({
@@ -369,8 +368,7 @@ router.post("/solicitacao", async (req, res) => {
         tokenConsulta: full.publicTokenFornecedor,
         tokenCheckout: full.checkoutToken
       });
-    } catch (dbError) {
-      console.error('Erro ao criar solicitação pública no banco. Usando fallback em arquivo:', dbError?.message || dbError);
+    } catch {
       const record = createAgendamentoFile({
         protocolo: generateProtocol(),
         publicTokenMotorista: generatePublicToken("MOT", cpfMotorista),

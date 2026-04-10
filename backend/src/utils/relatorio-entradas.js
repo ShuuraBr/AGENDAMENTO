@@ -31,7 +31,7 @@ const SUPPORTED_EXTENSIONS = new Set(['.ods', '.csv', '.json', '.xlsx']);
 const TABLE_NAME = 'RelatorioTerceirizado';
 const WATCH_INTERVAL_MS = 60 * 1000;
 
-const RAW_SHEET_COLUMNS = [
+const SHEET_COLUMNS = [
   'Entrada',
   'Fornecedor',
   'Nr. nota',
@@ -94,24 +94,15 @@ const RAW_SHEET_COLUMNS = [
   'Identificação CT-e/NF-e principal',
   'Identificação CT-e/NF-e auxiliar',
   'Fornecedor substituto tributário',
-  'destino'
+  'Destino'
 ];
-
-const SHEET_COLUMNS = Array.from(new Set(RAW_SHEET_COLUMNS));
-const DATE_COLUMNS = new Set([
-  'Data emissão',
-  'Data de Entrada',
-  'Data 1º vencimento',
-  'Data do cadastro',
-  'Data de emissão do CT-e',
-  'Data de entrada do CT-e'
-]);
 
 let watcherHandle = null;
 let watcherBusy = false;
 let relatorioDbDisabled = false;
 let relatorioDbDisableReason = null;
 let relatorioImportPromise = null;
+let relatorioTableColumnsCache = null;
 
 function disableRelatorioDb(error, context = 'operacao_desconhecida') {
   relatorioDbDisabled = true;
@@ -164,6 +155,8 @@ function sqlLiteral(value) {
 
 function xmlUnescape(value = '') {
   return String(value || '')
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_match, dec) => String.fromCodePoint(parseInt(dec, 10)))
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
@@ -181,20 +174,21 @@ function normalizeCellValue(value) {
   return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function normalizeSpreadsheetDate(value) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return toIsoDate(value);
+function getCaseInsensitiveValue(row = {}, expectedColumn = '') {
+  const direct = row?.[expectedColumn];
+  if (direct !== undefined && direct !== null) return direct;
+  const target = normalizeCellValue(expectedColumn).toLowerCase();
+  for (const [key, value] of Object.entries(row || {})) {
+    if (normalizeCellValue(key).toLowerCase() === target) return value;
   }
-  const raw = normalizeCellValue(value);
-  if (!raw) return '';
-  const iso = toIsoDate(raw);
-  return iso || raw;
+  return '';
 }
 
-function formatSpreadsheetDateBr(value) {
-  const raw = normalizeCellValue(value);
-  if (!raw) return '';
-  return formatDateBR(raw) || raw;
+function pickSpreadsheetValue(row = {}, expectedColumn = '') {
+  const value = getCaseInsensitiveValue(row, expectedColumn);
+  if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  if (expectedColumn === 'Destino') return getCaseInsensitiveValue(row, 'destino');
+  return '';
 }
 
 function parseNumber(value) {
@@ -242,26 +236,11 @@ function buildDueFields(dateValue = '') {
   };
 }
 
-function findSpreadsheetValue(row = {}, column = '') {
-  if (row && Object.prototype.hasOwnProperty.call(row, column) && row[column] != null && row[column] !== '') {
-    return row[column];
-  }
-  const target = normalizeCellValue(column).toLowerCase();
-  for (const [key, value] of Object.entries(row || {})) {
-    if (normalizeCellValue(key).toLowerCase() === target && value != null && value !== '') return value;
-  }
-  return '';
-}
-
 function normalizeSpreadsheetRow(row = {}) {
   const normalized = {};
   for (const column of SHEET_COLUMNS) {
-    const rawValue = findSpreadsheetValue(row, column);
-    normalized[column] = DATE_COLUMNS.has(column)
-      ? normalizeSpreadsheetDate(rawValue)
-      : normalizeCellValue(rawValue);
+    normalized[column] = normalizeCellValue(pickSpreadsheetValue(row, column));
   }
-  normalized['Destino'] = normalized['destino'] || normalizeCellValue(findSpreadsheetValue(row, 'Destino'));
   return normalized;
 }
 
@@ -310,7 +289,6 @@ function normalizeImportedItems(rows = []) {
       empresa: normalizeCellValue(normalizedRow['Empresa']),
       destino: normalizeCellValue(normalizedRow['Destino']),
       dataEntrada: normalizeCellValue(normalizedRow['Data de Entrada']),
-      dataEntradaBr: formatSpreadsheetDateBr(normalizedRow['Data de Entrada']),
       entrada: normalizeCellValue(normalizedRow['Entrada']),
       volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
       peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
@@ -462,7 +440,6 @@ function normalizeNoteFromSpreadsheetRow(row = {}) {
     empresa: normalizeCellValue(normalizedRow['Empresa']),
     destino: normalizeCellValue(normalizedRow['Destino']),
     dataEntrada: normalizeCellValue(normalizedRow['Data de Entrada']),
-    dataEntradaBr: formatSpreadsheetDateBr(normalizedRow['Data de Entrada']),
     entrada: normalizeCellValue(normalizedRow['Entrada']),
     chaveAcesso: '',
     volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
@@ -537,7 +514,6 @@ function buildManualSpreadsheetRow(fornecedor = '', nota = {}, actor = null) {
   row['Volume total'] = String(toFixedNumber(parseNumber(nota?.volumes || 0), 3));
   row['Peso total'] = String(toFixedNumber(parseNumber(nota?.peso || 0), 3));
   row['Destino'] = normalizeCellValue(nota?.destino || '');
-  row['destino'] = row['Destino'];
   row['Status'] = 'NF INSERIDA MANUALMENTE';
   row['Empresa'] = normalizeCellValue(nota?.empresa || nota?.destino || '');
   row['Data do cadastro'] = new Date().toISOString();
@@ -641,10 +617,11 @@ export async function persistManualPendingNota({ fornecedor = '', nota = {}, act
         'manual-ui',
         JSON.stringify(row)
       ];
-      const placeholders = columns.map(() => '?').join(', ');
+      const filtered = await filterColumnsForRelatorioInsert(columns, values);
+      const placeholders = filtered.columns.map(() => '?').join(', ');
       await prisma.$executeRawUnsafe(
-        `INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${columns.map((column) => quoteIdentifier(column)).join(', ')}) VALUES (${placeholders})`,
-        ...values
+        `INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${filtered.columns.map((column) => quoteIdentifier(column)).join(', ')}) VALUES (${placeholders})`,
+        ...filtered.values
       );
     }
   } catch (error) {
@@ -780,142 +757,6 @@ function parseOdsContentXml(contentXml = '') {
     });
 }
 
-function parseXmlNodes(xml = '', tagName = '') {
-  const regex = new RegExp(String.raw`<${tagName}\b([^>]*)>([\s\S]*?)<\/${tagName}>`, 'gi');
-  const nodes = [];
-  let match;
-  while ((match = regex.exec(xml))) {
-    nodes.push({ attrs: match[1] || '', inner: match[2] || '' });
-  }
-  return nodes;
-}
-
-function columnLettersToIndex(letters = '') {
-  return String(letters || '').toUpperCase().split('').reduce((acc, char) => acc * 26 + (char.charCodeAt(0) - 64), 0) - 1;
-}
-
-function excelSerialDateToIso(value) {
-  const numeric = Number(value || 0);
-  if (!Number.isFinite(numeric) || numeric <= 0) return normalizeCellValue(value);
-  const wholeDays = Math.floor(numeric);
-  const excelEpoch = new Date(Date.UTC(1899, 11, 30));
-  const date = new Date(excelEpoch.getTime() + wholeDays * 86400000);
-  if (Number.isNaN(date.getTime())) return normalizeCellValue(value);
-  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
-}
-
-function parseXlsxSharedStrings(xml = '') {
-  return parseXmlNodes(xml, 'si').map((node) => {
-    const richTexts = [...String(node.inner || '').matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/gi)].map((match) => xmlUnescape(match[1] || ''));
-    if (richTexts.length) return normalizeCellValue(richTexts.join(''));
-    return normalizeCellValue(cellTextFromXml(node.inner || ''));
-  });
-}
-
-function parseXlsxStyles(xml = '') {
-  const builtInDateFormats = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47]);
-  const customFormats = new Map();
-  for (const match of String(xml || '').matchAll(/<numFmt\b[^>]*numFmtId="(\d+)"[^>]*formatCode="([^"]*)"[^>]*\/?>/gi)) {
-    customFormats.set(Number(match[1]), xmlUnescape(match[2] || '').toLowerCase());
-  }
-
-  const cellXfsMatch = String(xml || '').match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/i);
-  const styles = [];
-  if (!cellXfsMatch) return styles;
-
-  for (const match of String(cellXfsMatch[1] || '').matchAll(/<xf\b([^>]*)\/?>/gi)) {
-    const attrs = match[1] || '';
-    const numFmtId = Number(getAttr(attrs, 'numFmtId') || 0);
-    const formatCode = customFormats.get(numFmtId) || '';
-    const sanitized = formatCode.replace(/"[^"]*"/g, '').replace(/\[[^\]]*\]/g, '');
-    const isDate = builtInDateFormats.has(numFmtId) || /(^|[^a-z])(yy|yyyy|mm|dd|m|d|hh|h|ss|s)([^a-z]|$)/i.test(sanitized);
-    styles.push({ isDate });
-  }
-  return styles;
-}
-
-function parseXlsxWorksheet(xml = '', sharedStrings = [], styles = []) {
-  const rows = [];
-  for (const rowMatch of String(xml || '').matchAll(/<row\b[^>]*>([\s\S]*?)<\/row>/gi)) {
-    const rowInner = rowMatch[1] || '';
-    const cells = [];
-    let sequentialIndex = 0;
-
-    for (const cellMatch of rowInner.matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>|<c\b([^>]*)\/?>/gi)) {
-      const attrs = cellMatch[1] || cellMatch[3] || '';
-      const inner = cellMatch[2] || '';
-      const ref = getAttr(attrs, 'r');
-      const columnLetters = (ref.match(/[A-Z]+/i) || [''])[0];
-      const columnIndex = columnLetters ? columnLettersToIndex(columnLetters) : sequentialIndex;
-      sequentialIndex = columnIndex + 1;
-      while (cells.length < columnIndex) cells.push('');
-
-      const type = getAttr(attrs, 't');
-      const styleIndex = Number(getAttr(attrs, 's') || 0);
-      const rawValue = xmlUnescape((inner.match(/<v[^>]*>([\s\S]*?)<\/v>/i) || [])[1] || '');
-      const inlineValue = (inner.match(/<is\b[^>]*>([\s\S]*?)<\/is>/i) || [])[1] || '';
-      let value = '';
-
-      if (type === 'inlineStr') value = cellTextFromXml(inlineValue);
-      else if (type === 's') value = sharedStrings[Number(rawValue || 0)] || '';
-      else if (type === 'b') value = rawValue === '1' ? 'TRUE' : 'FALSE';
-      else if (styles[styleIndex]?.isDate && rawValue !== '') value = excelSerialDateToIso(rawValue);
-      else value = rawValue || cellTextFromXml(inner);
-
-      cells[columnIndex] = normalizeCellValue(value);
-    }
-
-    rows.push(trimTrailingEmpty(cells));
-  }
-
-  const headerIndex = rows.findIndex((row) => row.some((cell) => cell === 'Fornecedor') && row.some((cell) => cell.includes('Nr. nota')));
-  if (headerIndex < 0) return [];
-
-  const headers = rows[headerIndex].map(normalizeCellValue);
-  return rows.slice(headerIndex + 1)
-    .filter((row) => row.some((cell) => normalizeCellValue(cell) !== ''))
-    .map((row) => {
-      const item = {};
-      headers.forEach((header, index) => {
-        if (header) item[header] = row[index] ?? '';
-      });
-      return item;
-    });
-}
-
-function parseXlsxFile(filePath) {
-  const workbookXml = readZipEntry(filePath, 'xl/workbook.xml').toString('utf8');
-  const relsXml = readZipEntry(filePath, 'xl/_rels/workbook.xml.rels').toString('utf8');
-  const sharedStringsXml = (() => { try { return readZipEntry(filePath, 'xl/sharedStrings.xml').toString('utf8'); } catch { return ''; } })();
-  const stylesXml = (() => { try { return readZipEntry(filePath, 'xl/styles.xml').toString('utf8'); } catch { return ''; } })();
-
-  const sharedStrings = sharedStringsXml ? parseXlsxSharedStrings(sharedStringsXml) : [];
-  const styles = stylesXml ? parseXlsxStyles(stylesXml) : [];
-
-  const relationshipTargets = new Map();
-  for (const match of String(relsXml || '').matchAll(/<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"[^>]*\/?>/gi)) {
-    relationshipTargets.set(String(match[1] || '').trim(), String(match[2] || '').trim());
-  }
-
-  const sheetIds = [...String(workbookXml || '').matchAll(/<sheet[^>]*r:id="([^"]+)"[^>]*\/?>/gi)].map((match) => String(match[1] || '').trim()).filter(Boolean);
-  const worksheetTargets = sheetIds
-    .map((id) => relationshipTargets.get(id))
-    .filter(Boolean)
-    .map((target) => `xl/${String(target).replace(/^\/+/, '').replace(/^xl\//, '')}`);
-
-  if (!worksheetTargets.length) worksheetTargets.push('xl/worksheets/sheet1.xml');
-
-  for (const worksheetPath of worksheetTargets) {
-    try {
-      const worksheetXml = readZipEntry(filePath, worksheetPath).toString('utf8');
-      const rows = parseXlsxWorksheet(worksheetXml, sharedStrings, styles);
-      if (rows.length) return rows;
-    } catch {}
-  }
-
-  return [];
-}
-
 function readZipEntry(filePath, entryName) {
   const buffer = fs.readFileSync(filePath);
   let eocd = -1;
@@ -961,10 +802,101 @@ function readZipEntry(filePath, entryName) {
   throw new Error(`Arquivo ${entryName} não encontrado no ZIP.`);
 }
 
+function xlsxColumnToIndex(ref = '') {
+  const letters = String(ref || '').match(/[A-Z]+/i)?.[0] || '';
+  let value = 0;
+  for (const char of letters.toUpperCase()) value = (value * 26) + (char.charCodeAt(0) - 64);
+  return Math.max(0, value - 1);
+}
+
+function parseXlsxSharedStrings(xml = '') {
+  const items = [];
+  const matches = String(xml || '').match(/<si\b[\s\S]*?<\/si>/g) || [];
+  for (const entry of matches) {
+    const parts = [...entry.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((match) => xmlUnescape(match[1] || ''));
+    items.push(parts.join(''));
+  }
+  return items;
+}
+
+function readOptionalZipEntry(filePath, entryName) {
+  try {
+    return readZipEntry(filePath, entryName);
+  } catch {
+    return null;
+  }
+}
+
+function escapeRegex(value = '') {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function resolveFirstXlsxSheetPath(filePath) {
+  const workbookXml = readOptionalZipEntry(filePath, 'xl/workbook.xml')?.toString('utf8') || '';
+  const relsXml = readOptionalZipEntry(filePath, 'xl/_rels/workbook.xml.rels')?.toString('utf8') || '';
+  const firstSheetId = workbookXml.match(/<sheet[^>]*r:id="([^"]+)"/i)?.[1] || '';
+  const relationPattern = new RegExp(`<Relationship[^>]*Id="${escapeRegex(firstSheetId)}"[^>]*Target="([^"]+)"`, 'i');
+  const target = relsXml.match(relationPattern)?.[1] || 'worksheets/sheet1.xml';
+  return target.startsWith('xl/') ? target : `xl/${target.replace(/^\/+/, '')}`;
+}
+
+function extractXlsxCellValue(cellXml = '', sharedStrings = []) {
+  const type = cellXml.match(/\bt="([^"]+)"/i)?.[1] || '';
+  if (type === 'inlineStr') {
+    const parts = [...cellXml.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((match) => xmlUnescape(match[1] || ''));
+    return parts.join('');
+  }
+  const raw = xmlUnescape(cellXml.match(/<v[^>]*>([\s\S]*?)<\/v>/i)?.[1] || '');
+  if (type === 's') {
+    const index = Number(raw || 0);
+    return Number.isFinite(index) ? String(sharedStrings[index] ?? '') : '';
+  }
+  if (type === 'b') return raw === '1' ? 'TRUE' : 'FALSE';
+  return raw;
+}
+
+function parseXlsxSheetXml(xml = '', sharedStrings = []) {
+  const rows = [];
+  const rowMatches = String(xml || '').match(/<row\b[\s\S]*?<\/row>/g) || [];
+  let headers = [];
+
+  for (const rowXml of rowMatches) {
+    const cells = [];
+    const cellMatches = rowXml.match(/<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g) || [];
+    for (const cellXml of cellMatches) {
+      const ref = cellXml.match(/\br="([A-Z]+\d+)"/i)?.[1] || '';
+      const index = xlsxColumnToIndex(ref);
+      cells[index] = extractXlsxCellValue(cellXml, sharedStrings);
+    }
+    const dense = trimTrailingEmpty(cells.map((value) => normalizeCellValue(value)));
+    if (!dense.length) continue;
+    if (!headers.length) {
+      headers = dense;
+      continue;
+    }
+    const row = {};
+    headers.forEach((header, index) => {
+      if (!header) return;
+      row[header] = dense[index] ?? '';
+    });
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function parseXlsxFile(filePath) {
+  const sharedStringsXml = readOptionalZipEntry(filePath, 'xl/sharedStrings.xml');
+  const sharedStrings = sharedStringsXml ? parseXlsxSharedStrings(sharedStringsXml.toString('utf8')) : [];
+  const sheetPath = resolveFirstXlsxSheetPath(filePath);
+  const sheetXml = readZipEntry(filePath, sheetPath).toString('utf8');
+  return parseXlsxSheetXml(sheetXml, sharedStrings);
+}
+
 function parseSpreadsheetFile(filePath) {
   const ext = extnameSafe(filePath).toLowerCase();
   if (!SUPPORTED_EXTENSIONS.has(ext)) {
-    throw new Error('Formato de planilha não suportado. Use .ods, .csv, .json ou .xlsx.');
+    throw new Error('Formato de planilha não suportado. Use .ods, .xlsx, .csv ou .json.');
   }
 
   if (ext === '.csv') return parseCsv(fs.readFileSync(filePath, 'utf8'));
@@ -1056,11 +988,32 @@ async function ensureRelatorioTable() {
          FROM ${quoteIdentifier(TABLE_NAME)}
         LIMIT 1`
     );
+    await getRelatorioTableColumns();
     return true;
   } catch (error) {
     disableRelatorioDb(error, 'ensureRelatorioTable:readOnlyProbe');
     return false;
   }
+}
+
+async function getRelatorioTableColumns() {
+  if (relatorioTableColumnsCache) return relatorioTableColumnsCache;
+  const rows = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
+  relatorioTableColumnsCache = new Set((rows || []).map((row) => String(row?.Field || row?.COLUMN_NAME || '').trim()).filter(Boolean));
+  return relatorioTableColumnsCache;
+}
+
+async function filterColumnsForRelatorioInsert(columns = [], values = []) {
+  const availableColumns = await getRelatorioTableColumns();
+  const filteredColumns = [];
+  const filteredValues = [];
+  columns.forEach((column, index) => {
+    if (availableColumns.has(column)) {
+      filteredColumns.push(column);
+      filteredValues.push(values[index]);
+    }
+  });
+  return { columns: filteredColumns, values: filteredValues };
 }
 
 async function countRelatorioRowsInDatabase() {
@@ -1080,18 +1033,16 @@ function buildImportKey(file = null) {
   return `${file.name}:${file.mtimeMs}:${file.size}`;
 }
 
-export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = false, source = 'sync', actor = null, ip = null } = {}) {
+export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = true, source = 'sync', actor = null, ip = null } = {}) {
   for (const dir of importDirCandidates) ensureDir(dir);
   const latest = listSupportedImportFiles()[0] || null;
   const state = readState();
 
   let totalLinhasNoBanco = 0;
-  if (forceWhenDatabaseEmpty && !relatorioDbDisabled) {
-    try {
-      totalLinhasNoBanco = await countRelatorioRowsInDatabase();
-    } catch (error) {
-      console.error('Falha ao contar linhas do relatório no banco:', error?.message || error);
-    }
+  try {
+    totalLinhasNoBanco = await countRelatorioRowsInDatabase();
+  } catch (error) {
+    console.error('Falha ao contar linhas do relatório no banco:', error?.message || error);
   }
 
   if (!latest) {
@@ -1128,12 +1079,10 @@ export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = f
   });
 
   let totalDepois = totalLinhasNoBanco;
-  if (forceWhenDatabaseEmpty && !relatorioDbDisabled) {
-    try {
-      totalDepois = await countRelatorioRowsInDatabase();
-    } catch (error) {
-      console.error('Falha ao contar linhas do relatório no banco após importação:', error?.message || error);
-    }
+  try {
+    totalDepois = await countRelatorioRowsInDatabase();
+  } catch (error) {
+    console.error('Falha ao contar linhas do relatório no banco após importação:', error?.message || error);
   }
 
   return {
@@ -1165,8 +1114,7 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   const seenRowHashes = new Set();
 
   for (const row of rows) {
-    const normalizedRow = {};
-    for (const column of SHEET_COLUMNS) normalizedRow[column] = normalizeCellValue(row[column] ?? '');
+    const normalizedRow = normalizeSpreadsheetRow(row);
     const rowHash = buildRowHash(normalizedRow);
     if (seenRowHashes.has(rowHash)) continue;
     seenRowHashes.add(rowHash);
@@ -1174,8 +1122,6 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   }
 
   const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
-  const columnSql = columns.map((column) => quoteIdentifier(column)).join(', ');
-  const placeholders = columns.map(() => '?').join(', ');
 
   for (const row of deduplicatedRows) {
     const values = [
@@ -1185,7 +1131,10 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
       sourceFileName || null,
       JSON.stringify(row.normalizedRow)
     ];
-    await prisma.$executeRawUnsafe(`INSERT IGNORE INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${placeholders})`, ...values);
+    const filtered = await filterColumnsForRelatorioInsert(columns, values);
+    const columnSql = filtered.columns.map((column) => quoteIdentifier(column)).join(', ');
+    const placeholders = filtered.columns.map(() => '?').join(', ');
+    await prisma.$executeRawUnsafe(`INSERT IGNORE INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${placeholders})`, ...filtered.values);
   }
 }
 
@@ -1309,12 +1258,6 @@ export async function unlinkRelatorioRowsFromAgendamento(agendamentoId) {
 
 export async function importRelatorioSpreadsheet({ filePath, originalName = '', actor = null, source = 'manual', ip = null } = {}) {
   return withRelatorioImportLock(async () => {
-    const stats = fs.statSync(filePath);
-    const ageMs = Math.max(0, Date.now() - Number(stats.mtimeMs || 0));
-    if (ageMs < 5000) {
-      throw new Error('A planilha ainda está sendo copiada para a pasta monitorada. Aguarde alguns segundos e tente novamente.');
-    }
-
     const rows = parseSpreadsheetFile(filePath);
     if (!rows.length) throw new Error('Nenhuma linha válida foi encontrada na planilha.');
 
@@ -1348,6 +1291,7 @@ export async function importRelatorioSpreadsheet({ filePath, originalName = '', 
       importedAt: new Date().toISOString()
     };
 
+    const stats = fs.statSync(filePath);
     writeState({
       ...readState(),
       lastImport: summary,
@@ -1399,7 +1343,7 @@ export async function getRelatorioRowsCount() {
   }
 }
 
-export async function ensureLatestRelatorioImport({ forceIfEmpty = false } = {}) {
+export async function ensureLatestRelatorioImport({ forceIfEmpty = true } = {}) {
   const latest = listSupportedImportFiles()[0];
   if (!latest) {
     console.log(`[RELATORIO_IMPORT] Nenhuma planilha encontrada nas pastas monitoradas: ${importDirCandidates.join(' | ')}`);
@@ -1408,7 +1352,7 @@ export async function ensureLatestRelatorioImport({ forceIfEmpty = false } = {})
 
   const key = buildFileKey(latest.rawName || latest.name, latest);
   const state = readState();
-  const totalLinhasNoBanco = forceIfEmpty && !relatorioDbDisabled ? await getRelatorioRowsCount() : 0;
+  const totalLinhasNoBanco = await getRelatorioRowsCount();
   const shouldForceBecauseDatabaseEmpty = !relatorioDbDisabled && forceIfEmpty && totalLinhasNoBanco === 0;
   const shouldReimport = state.lastProcessedKey !== key || shouldForceBecauseDatabaseEmpty;
 
@@ -1461,7 +1405,7 @@ export async function scanImportFolderAndProcess() {
   watcherBusy = true;
   try {
     return await syncLatestRelatorioFromFolder({
-      forceWhenDatabaseEmpty: false,
+      forceWhenDatabaseEmpty: true,
       source: 'watcher'
     });
   } finally {
@@ -1503,7 +1447,7 @@ export const relatorioSpreadsheetUpload = multer({
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname || '').toLowerCase();
     if (!SUPPORTED_EXTENSIONS.has(ext)) {
-      return cb(new Error('Formato inválido. Envie .ods, .csv, .json ou .xlsx.'));
+      return cb(new Error('Formato inválido. Envie .ods, .xlsx, .csv ou .json.'));
     }
     cb(null, true);
   }
