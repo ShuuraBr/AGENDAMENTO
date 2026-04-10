@@ -48,7 +48,7 @@ const COLUMN_ALIASES = {
   'ISSQN retido2': 'ISSQN retido2'
 };
 
-const SHEET_COLUMNS = [
+const SHEET_COLUMNS = [...new Set([
   'Entrada',
   'Fornecedor',
   'Nr. nota',
@@ -112,7 +112,7 @@ const SHEET_COLUMNS = [
   'Identificação CT-e/NF-e auxiliar',
   'Fornecedor substituto tributário',
   'Destino'
-];
+])];
 
 let watcherHandle = null;
 let watcherBusy = false;
@@ -327,11 +327,12 @@ function normalizeImportedItems(rows = []) {
       groups.set(fornecedor, {
         id: groups.size + 1,
         fornecedor,
-        transportadora: null,
+        transportadora: normalizeCellValue(normalizedRow['Transportadora']) || null,
         notas: [],
         notasFiscais: [],
         quantidadeNotas: 0,
         quantidadeVolumes: 0,
+        quantidadeItens: 0,
         pesoTotalKg: 0,
         valorTotalNf: 0,
         totalNotasVencimentoProximo: 0,
@@ -355,6 +356,7 @@ function normalizeImportedItems(rows = []) {
       dataEntrada: normalizeCellValue(normalizedRow['Data de Entrada']),
       entrada: normalizeCellValue(normalizedRow['Entrada']),
       volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
+      quantidadeItens: Math.max(0, Math.trunc(parseNumber(normalizedRow['Qtd. itens']))),
       peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
       valorNf: toFixedNumber(parseNumber(normalizedRow['Valor da nota']), 2),
       quantidadeItens: toFixedNumber(parseNumber(normalizedRow['Qtd. itens']), 0),
@@ -377,6 +379,7 @@ function normalizeImportedItems(rows = []) {
     current.notasFiscais = current.notas;
     current.quantidadeNotas += 1;
     current.quantidadeVolumes = toFixedNumber(current.quantidadeVolumes + Number(note.volumes || 0), 3);
+    current.quantidadeItens = Math.max(0, Number(current.quantidadeItens || 0) + Number(note.quantidadeItens || 0));
     current.pesoTotalKg = toFixedNumber(current.pesoTotalKg + Number(note.peso || 0), 3);
     current.valorTotalNf = toFixedNumber(current.valorTotalNf + Number(note.valorNf || 0), 2);
     if (dueFields.alertaVencimentoProximo) {
@@ -877,6 +880,49 @@ function xlsxColumnToIndex(ref = '') {
   return Math.max(0, value - 1);
 }
 
+function isLikelyXlsxDateFormat(formatCode = '', numFmtId = null) {
+  const builtInDateFormats = new Set([14, 15, 16, 17, 18, 19, 20, 21, 22, 45, 46, 47]);
+  if (builtInDateFormats.has(Number(numFmtId))) return true;
+  const normalized = String(formatCode || '')
+    .replace(/\./g, '')
+    .replace(/\[[^\]]+\]/g, '')
+    .replace(/"[^"]*"/g, '')
+    .toLowerCase();
+  return /(^|[^a-z])(d|dd|ddd|dddd|m|mm|mmm|mmmm|yy|yyyy|h|hh|s|ss)([^a-z]|$)/.test(normalized);
+}
+
+function parseXlsxStyles(xml = '') {
+  const customFormats = new Map();
+  for (const match of String(xml || '').matchAll(/<numFmt[^>]*numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/gi)) {
+    customFormats.set(Number(match[1]), xmlUnescape(match[2] || ''));
+  }
+
+  const cellXfsMatch = String(xml || '').match(/<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/i);
+  const xfMatches = cellXfsMatch?.[1]?.match(/<xf[^>]*\/>/gi) || [];
+  return xfMatches.map((xfXml) => {
+    const numFmtId = Number(xfXml.match(/numFmtId="(\d+)"/i)?.[1] || 0);
+    const formatCode = customFormats.get(numFmtId) || '';
+    return {
+      numFmtId,
+      formatCode,
+      isDate: isLikelyXlsxDateFormat(formatCode, numFmtId)
+    };
+  });
+}
+
+function excelSerialToIsoDate(value) {
+  const serial = Number(value);
+  if (!Number.isFinite(serial)) return String(value || '');
+  const wholeDays = Math.floor(serial);
+  const utc = Date.UTC(1899, 11, 30) + (wholeDays * 86400000);
+  const date = new Date(utc);
+  if (Number.isNaN(date.getTime())) return String(value || '');
+  const yyyy = String(date.getUTCFullYear()).padStart(4, '0');
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function parseXlsxSharedStrings(xml = '') {
   const items = [];
   const matches = String(xml || '').match(/<si\b[\s\S]*?<\/si>/g) || [];
@@ -908,7 +954,7 @@ function resolveFirstXlsxSheetPath(filePath) {
   return target.startsWith('xl/') ? target : `xl/${target.replace(/^\/+/, '')}`;
 }
 
-function extractXlsxCellValue(cellXml = '', sharedStrings = []) {
+function extractXlsxCellValue(cellXml = '', sharedStrings = [], styles = []) {
   const type = cellXml.match(/\bt="([^"]+)"/i)?.[1] || '';
   if (type === 'inlineStr') {
     const parts = [...cellXml.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((match) => xmlUnescape(match[1] || ''));
@@ -920,10 +966,13 @@ function extractXlsxCellValue(cellXml = '', sharedStrings = []) {
     return Number.isFinite(index) ? String(sharedStrings[index] ?? '') : '';
   }
   if (type === 'b') return raw === '1' ? 'TRUE' : 'FALSE';
+  const styleIndex = Number(cellXml.match(/\bs="(\d+)"/i)?.[1] || 0);
+  const style = Array.isArray(styles) ? styles[styleIndex] : null;
+  if (style?.isDate && raw !== '' && Number.isFinite(Number(raw))) return excelSerialToIsoDate(raw);
   return raw;
 }
 
-function parseXlsxSheetXml(xml = '', sharedStrings = []) {
+function parseXlsxSheetXml(xml = '', sharedStrings = [], styles = []) {
   const rows = [];
   const rowMatches = String(xml || '').match(/<row\b[\s\S]*?<\/row>/g) || [];
   let headers = [];
@@ -934,7 +983,7 @@ function parseXlsxSheetXml(xml = '', sharedStrings = []) {
     for (const cellXml of cellMatches) {
       const ref = cellXml.match(/\br="([A-Z]+\d+)"/i)?.[1] || '';
       const index = xlsxColumnToIndex(ref);
-      cells[index] = extractXlsxCellValue(cellXml, sharedStrings);
+      cells[index] = extractXlsxCellValue(cellXml, sharedStrings, styles);
     }
     const dense = trimTrailingEmpty(cells.map((value) => normalizeCellValue(value)));
     if (!dense.length) continue;
@@ -956,9 +1005,11 @@ function parseXlsxSheetXml(xml = '', sharedStrings = []) {
 function parseXlsxFile(filePath) {
   const sharedStringsXml = readOptionalZipEntry(filePath, 'xl/sharedStrings.xml');
   const sharedStrings = sharedStringsXml ? parseXlsxSharedStrings(sharedStringsXml.toString('utf8')) : [];
+  const stylesXml = readOptionalZipEntry(filePath, 'xl/styles.xml');
+  const styles = stylesXml ? parseXlsxStyles(stylesXml.toString('utf8')) : [];
   const sheetPath = resolveFirstXlsxSheetPath(filePath);
   const sheetXml = readZipEntry(filePath, sheetPath).toString('utf8');
-  return parseXlsxSheetXml(sheetXml, sharedStrings);
+  return parseXlsxSheetXml(sheetXml, sharedStrings, styles);
 }
 
 function parseSpreadsheetFile(filePath) {
@@ -1428,6 +1479,63 @@ export async function unlinkRelatorioRowsFromAgendamento(agendamentoId) {
       Number(agendamentoId)
     );
   } catch {}
+}
+
+
+function noteMatchesSelection(row = {}, fornecedor = '', nota = {}) {
+  const fornecedorMatch = !fornecedor || normalizeCellValue(row['Fornecedor']).toLowerCase() === normalizeCellValue(fornecedor).toLowerCase();
+  if (!fornecedorMatch) return false;
+  const rowHash = normalizeCellValue(row.rowHash || buildRowHash(normalizeSpreadsheetRow(row)));
+  const notaHash = normalizeCellValue(nota?.rowHash || '');
+  if (notaHash && rowHash) return notaHash === rowHash;
+  const numeroNf = normalizeCellValue(row['Nr. nota']);
+  const serie = normalizeCellValue(row['Série']);
+  return numeroNf === normalizeCellValue(nota?.numeroNf || '')
+    && (!normalizeCellValue(nota?.serie || '') || serie === normalizeCellValue(nota?.serie || ''));
+}
+
+export async function removePendingNotasFromRelatorio({ fornecedor = '', notas = [] } = {}) {
+  const selected = Array.isArray(notas) ? notas : [];
+  if (!fornecedor || !selected.length) return { removed: 0, source: 'noop' };
+
+  let removed = 0;
+  try {
+    if (await ensureRelatorioTable()) {
+      for (const nota of selected) {
+        const rowHash = normalizeCellValue(nota?.rowHash || '');
+        if (rowHash) {
+          removed += Number(await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash = ? AND agendamentoId IS NULL`, rowHash) || 0);
+          continue;
+        }
+        const numeroNf = normalizeCellValue(nota?.numeroNf || '');
+        const serie = normalizeCellValue(nota?.serie || '');
+        if (!numeroNf) continue;
+        const conditions = [`LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(?)`, `TRIM(${quoteIdentifier('Nr. nota')}) = ?`, `agendamentoId IS NULL`];
+        const args = [fornecedor, numeroNf];
+        if (serie) {
+          conditions.push(`TRIM(${quoteIdentifier('Série')}) = ?`);
+          args.push(serie);
+        }
+        removed += Number(await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)} WHERE ${conditions.join(' AND ')}`, ...args) || 0);
+      }
+    }
+  } catch (error) {
+    console.error('[RELATORIO_IMPORT] Falha ao remover notas pendentes do relatório no banco:', error?.message || error);
+  }
+
+  try {
+    if (fs.existsSync(rawFallbackFile)) {
+      const rows = JSON.parse(fs.readFileSync(rawFallbackFile, 'utf8')) || [];
+      const filteredRows = rows.filter((row) => !selected.some((nota) => noteMatchesSelection({ ...row, rowHash: normalizeCellValue(row?.rowHash || '') }, fornecedor, nota)));
+      removed = Math.max(removed, rows.length - filteredRows.length);
+      writeRawFallback(filteredRows);
+      writeFallback(normalizeImportedItems(filteredRows));
+    }
+  } catch (error) {
+    console.error('[RELATORIO_IMPORT] Falha ao remover notas pendentes do fallback em arquivo:', error?.message || error);
+  }
+
+  return { removed, source: removed > 0 ? 'mixed' : 'noop' };
 }
 
 export async function importRelatorioSpreadsheet({ filePath, originalName = '', actor = null, source = 'manual', ip = null } = {}) {

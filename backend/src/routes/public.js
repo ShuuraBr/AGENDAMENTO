@@ -21,6 +21,7 @@ import { auditLog } from "../utils/audit.js";
 import { getFeedbackRequestByToken, submitFeedbackByToken, maskCpf } from "../utils/driver-feedback.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
 import { encodeNotaObservacao } from "../utils/nota-metadata.js";
+import { sendMail } from "../utils/email.js";
 
 const router = express.Router();
 const ACTIVE_STATUSES = ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"];
@@ -44,6 +45,17 @@ function formatDateTime(value) {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return date;
+}
+
+function isCurrentDaySlotFuture(data = '', hora = '') {
+  const normalizedDate = String(data || '').trim();
+  const normalizedHour = String(hora || '').trim();
+  if (!normalizedDate || !normalizedHour) return false;
+  const now = new Date();
+  const today = formatDate(now);
+  if (normalizedDate !== today) return true;
+  const slot = formatDateTime(`${normalizedDate}T${normalizedHour}:00`);
+  return !!slot && slot.getTime() > now.getTime();
 }
 
 function getBaseUrl(req) {
@@ -181,15 +193,16 @@ router.get("/disponibilidade", async (req, res) => {
       const horarios = janelas.map((janela) => {
         const parsed = parseJanelaCodigo(janela.codigo);
         const ocupadosJanela = ocupados.filter((ag) => String(ag.janelaId || ag.janela?.id || ag.janela || "") === String(janela.id) || String(ag.horaAgendada || "") === parsed.horaInicio).length;
-        const capacidade = Math.max(docas.length, 1);
+        const slotFuturo = isCurrentDaySlotFuture(data, parsed.horaInicio);
+        const disponivel = slotFuturo && ocupadosJanela === 0 ? 1 : 0;
         return {
           janelaId: janela.id,
           hora: parsed.horaInicio,
           horaFim: parsed.horaFim,
           descricao: janela.descricao || janela.codigo || "",
           ocupados: ocupadosJanela,
-          disponivel: Math.max(capacidade - ocupadosJanela, 0),
-          ativo: Math.max(capacidade - ocupadosJanela, 0) > 0
+          disponivel,
+          ativo: disponivel > 0
         };
       });
       return { data, disponivel: horarios.some((item) => item.disponivel > 0), horarios };
@@ -207,15 +220,16 @@ router.get("/disponibilidade", async (req, res) => {
       const horarios = janelas.map((janela) => {
         const parsed = parseJanelaCodigo(janela.codigo);
         const ocupados = all.filter((ag) => String(ag.dataAgendada) === data && ACTIVE_STATUSES.includes(ag.status) && (String(ag.janelaId || "") === String(janela.id) || String(ag.horaAgendada || "") === parsed.horaInicio)).length;
-        const capacidade = Math.max(docas.length, 1);
+        const slotFuturo = isCurrentDaySlotFuture(data, parsed.horaInicio);
+        const disponivel = slotFuturo && ocupados === 0 ? 1 : 0;
         return {
           janelaId: janela.id,
           hora: parsed.horaInicio,
           horaFim: parsed.horaFim,
           descricao: janela.descricao || janela.codigo || "",
           ocupados,
-          disponivel: Math.max(capacidade - ocupados, 0),
-          ativo: Math.max(capacidade - ocupados, 0) > 0
+          disponivel,
+          ativo: disponivel > 0
         };
       });
       return { data, disponivel: horarios.some((item) => item.disponivel > 0), horarios };
@@ -310,7 +324,7 @@ router.post("/solicitacao", async (req, res) => {
     const payload = { ...(req.body || {}) };
     const janelaId = Number(payload.janelaId);
     if (!janelaId) return res.status(400).json({ message: "Janela é obrigatória." });
-    const cpfMotorista = normalizeCpf(payload.cpfMotorista || payload.cpf || "");
+    const cpfMotorista = normalizeCpf(payload.cpfMotorista || payload.cpf || '');
     const notas = Array.isArray(payload.notas)
       ? payload.notas.map((nota) => ({
           numeroNf: String(nota?.numeroNf || "").trim(),
@@ -335,12 +349,12 @@ router.post("/solicitacao", async (req, res) => {
     const agendamentoPayload = {
       fornecedor: String(payload.fornecedor || "").trim(),
       transportadora: String(payload.transportadora || "").trim(),
-      motorista: String(payload.motorista || "").trim(),
+      motorista: String(payload.motorista || '').trim() || 'NÃO INFORMADO',
       cpfMotorista,
       telefoneMotorista: String(payload.telefoneMotorista || "").trim(),
       emailMotorista: String(payload.emailMotorista || "").trim(),
       emailTransportadora: String(payload.emailTransportadora || "").trim(),
-      placa: String(payload.placa || "").trim().toUpperCase(),
+      placa: String(payload.placa || '').trim().toUpperCase() || 'NÃO INFORMADA',
       dataAgendada: String(payload.dataAgendada || "").trim(),
       horaAgendada,
       janelaId,
@@ -540,17 +554,41 @@ router.post("/checkin/:token", async (req, res) => {
   });
 });
 
-router.post("/checkout/:token", async (req, res) => {
+router.post('/checkout/:token', async (req, res) => {
   const actor = getOptionalActor(req);
   const item = await resolveByToken(req.params.token);
-  if (!item) return res.status(404).json({ message: "Token de check-out inválido." });
-  if (!["CHEGOU", "EM_DESCARGA"].includes(item.status)) return res.status(400).json({ message: "Check-out só permitido após a chegada." });
+  if (!item) return res.status(404).json({ message: 'Token de check-out inválido.' });
+  if (!['CHEGOU', 'EM_DESCARGA'].includes(item.status)) return res.status(400).json({ message: 'Check-out só permitido após a chegada.' });
+
+  const avaliacaoRecebimento = {
+    descargaConcluida: String(req.body?.descargaConcluida || '').trim() || 'SIM',
+    motoristaTranquilo: String(req.body?.motoristaTranquilo || '').trim() || '',
+    cargaBatida: String(req.body?.cargaBatida || '').trim() || '',
+    teveOcorrencia: Boolean(req.body?.teveOcorrencia),
+    descricaoOcorrencia: String(req.body?.descricaoOcorrencia || '').trim(),
+    observacaoAssistente: String(req.body?.observacaoAssistente || '').trim()
+  };
+
+  if (avaliacaoRecebimento.teveOcorrencia && !avaliacaoRecebimento.descricaoOcorrencia) {
+    return res.status(400).json({ message: 'Descreva a ocorrência do recebimento antes de concluir o check-out.' });
+  }
 
   let updated;
   try {
-    updated = await prisma.agendamento.update({ where: { id: item.id }, data: { status: "FINALIZADO", fimDescargaEm: new Date() } });
+    updated = await prisma.agendamento.update({
+      where: { id: item.id },
+      data: {
+        status: 'FINALIZADO',
+        fimDescargaEm: new Date(),
+        observacoes: [item.observacoes, avaliacaoRecebimento.observacaoAssistente].filter(Boolean).join(' | ')
+      }
+    });
   } catch {
-    updated = updateAgendamentoFile(item.id, { status: "FINALIZADO", fimDescargaEm: new Date().toISOString() });
+    updated = updateAgendamentoFile(item.id, {
+      status: 'FINALIZADO',
+      fimDescargaEm: new Date().toISOString(),
+      observacoes: [item.observacoes, avaliacaoRecebimento.observacaoAssistente].filter(Boolean).join(' | ')
+    });
   }
 
   const survey = await sendDriverFeedbackRequestEmail({
@@ -558,21 +596,38 @@ router.post("/checkout/:token", async (req, res) => {
     baseUrl: getBaseUrl(req)
   });
 
+  const recebimentoEmail = String(process.env.RECEBIMENTO_OCORRENCIAS_EMAIL || process.env.OCORRENCIAS_RECEBIMENTO_EMAIL || process.env.OCORRENCIAS_EMAIL || '').trim();
+  let ocorrenciaRecebimento = { sent: false, to: null };
+  if (avaliacaoRecebimento.teveOcorrencia && recebimentoEmail) {
+    const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : [];
+    const linhas = notas.map((nota) => `<tr><td style="padding:8px;border:1px solid #e2e8f0">${String(nota?.numeroNf || '-')}</td><td style="padding:8px;border:1px solid #e2e8f0">${String(item?.fornecedor || '-')}</td><td style="padding:8px;border:1px solid #e2e8f0">${Number(nota?.volumes || 0)}</td><td style="padding:8px;border:1px solid #e2e8f0">${Number(nota?.quantidadeItens || 0)}</td><td style="padding:8px;border:1px solid #e2e8f0">${String(avaliacaoRecebimento.descricaoOcorrencia || '-')}</td><td style="padding:8px;border:1px solid #e2e8f0">${String(avaliacaoRecebimento.observacaoAssistente || '-')}</td></tr>`).join('');
+    ocorrenciaRecebimento = await sendMail({
+      to: recebimentoEmail,
+      subject: `Ocorrência no recebimento - ${item.protocolo}`,
+      text: `Houve ocorrência no recebimento do agendamento ${item.protocolo}. Fornecedor: ${item.fornecedor}. Observação: ${avaliacaoRecebimento.descricaoOcorrencia}`,
+      html: `<div style="font-family:Arial,sans-serif"><h2>Ocorrência no recebimento</h2><p><strong>Protocolo:</strong> ${item.protocolo}</p><p><strong>Fornecedor:</strong> ${item.fornecedor || '-'}</p><p><strong>Motorista tranquilo:</strong> ${avaliacaoRecebimento.motoristaTranquilo || '-'}</p><p><strong>Carga batida:</strong> ${avaliacaoRecebimento.cargaBatida || '-'}</p><p><strong>Descrição da ocorrência:</strong> ${avaliacaoRecebimento.descricaoOcorrencia}</p><p><strong>Observação do assistente:</strong> ${avaliacaoRecebimento.observacaoAssistente || '-'}</p><table style="border-collapse:collapse;width:100%;margin-top:12px"><thead><tr><th style="padding:8px;border:1px solid #e2e8f0">NF</th><th style="padding:8px;border:1px solid #e2e8f0">Fornecedor</th><th style="padding:8px;border:1px solid #e2e8f0">Volumes</th><th style="padding:8px;border:1px solid #e2e8f0">Itens</th><th style="padding:8px;border:1px solid #e2e8f0">Ocorrência</th><th style="padding:8px;border:1px solid #e2e8f0">Observação</th></tr></thead><tbody>${linhas}</tbody></table></div>`
+    })
+      .then((result) => ({ ...result, to: recebimentoEmail }))
+      .catch(() => ({ sent: false, to: recebimentoEmail }));
+  }
+
   await logPublicAction({
     actor,
-    action: "CHECKOUT_QR",
+    action: 'CHECKOUT_QR',
     item: updated,
     req,
     details: {
-      origem: "qr-code",
+      origem: 'qr-code',
       surveySent: !!survey?.sent,
       surveyTo: survey?.to || null,
       feedbackLink: survey?.feedbackLink || null,
-      surveyReason: survey?.reason || null
+      surveyReason: survey?.reason || null,
+      avaliacaoRecebimento,
+      ocorrenciaRecebimento
     }
   });
 
-  return res.json({ ok: true, message: "Check-out realizado com sucesso.", agendamento: updated, avaliacao: survey });
+  return res.json({ ok: true, message: 'Check-out realizado com sucesso.', agendamento: updated, avaliacao: survey, avaliacaoRecebimento, ocorrenciaRecebimento });
 });
 
 export default router;
