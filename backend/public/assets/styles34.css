@@ -147,6 +147,13 @@ body.modal-open{overflow:hidden}
 .app-modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.55)}
 .app-modal-card{position:relative;z-index:1;width:min(720px,100%);background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(15,23,42,.28);padding:20px}
 .app-modal-header h3{margin:0;font-size:22px;color:#0f172a}.app-modal-body{display:grid;grid-template-columns:10px 1fr;gap:14px;margin-top:16px;color:#334155}.app-modal-body p{margin:0 0 8px}.app-modal-tone{border-radius:999px}.app-modal-tone-info{background:#2563eb}.app-modal-tone-warning{background:#f59e0b}.app-modal-tone-danger{background:#ef4444}.app-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px}
+.app-modal-card.app-modal-card-wide{width:min(1200px,96vw)}
+.app-modal-body.app-modal-body-html{display:block;max-height:70vh;overflow:auto}
+.doca-modal-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:6px 0 14px}
+.doca-modal-summary>div{background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:10px;font-size:13px}
+.doca-modal-table td:last-child{min-width:320px;line-height:1.45}
+@media (max-width:900px){.doca-modal-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.doca-modal-table td:last-child{min-width:220px}}
+
 @media (max-width:1280px){#docaPainel.grid{grid-template-columns:repeat(4,minmax(180px,1fr))}}
 @media (max-width:980px){#docaPainel.grid,.consulta-nf-result-grid{grid-template-columns:1fr 1fr}.consulta-nf-toolbar{grid-template-columns:1fr}}
 @media (max-width:680px){#docaPainel.grid,.consulta-nf-result-grid{grid-template-columns:1fr}.app-modal-card{padding:16px}.app-modal-header h3{font-size:19px}}
@@ -314,3 +321,19 @@ body.modal-open{overflow:hidden}
 .pending-fornecedor-header h4{margin:0;font-size:16px;color:#0f172a}
 .pending-fornecedor-header span{font-size:12px;font-weight:700;color:#475569}
 .pending-notas-empty-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+
+.multi-select-control{display:grid;grid-template-columns:minmax(0,1fr) 44px;gap:8px;align-items:start}
+.icon-clear-btn{height:44px;min-width:44px;padding:0;border-radius:10px;background:#e2e8f0;color:#0f172a;font-weight:800}
+.icon-clear-btn:disabled{opacity:.45;cursor:not-allowed}
+.form-actions{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.btn-danger-soft{background:#991b1b}
+.btn-danger-soft:hover{opacity:.96}
+.doca-card-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:transparent;border:0;padding:0;color:inherit;text-align:left}
+.doca-card-toggle small{color:#475569;font-weight:600}
+.doca-detail-panel{margin-top:12px;padding-top:12px;border-top:1px dashed rgba(15,23,42,.16)}
+.doca-detail-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:8px}
+.doca-detail-summary span{display:block;padding:8px 10px;border-radius:10px;background:#f8fafc;color:#0f172a;font-size:12px}
+.doca-detail-notes{margin-top:10px;display:grid;gap:8px}
+.doca-note-row{display:grid;gap:4px;padding:10px;border:1px solid #dbe2ea;border-radius:12px;background:#fff}
+.doca-note-row strong{font-size:13px}
+.doca-note-row small{color:#475569}

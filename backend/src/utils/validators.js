@@ -29,8 +29,6 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
   const required = [
     ["fornecedor", "Fornecedor"],
     ["transportadora", "Transportadora"],
-    ["motorista", "Motorista"],
-    ["placa", "Placa"],
     ["dataAgendada", "Data agendada"],
     ["horaAgendada", "Hora agendada"],
     ["janelaId", "Janela"]
@@ -52,9 +50,6 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
 
   if (!isPublic) {
     const internalRequired = [
-      ["cpfMotorista", "CPF do motorista"],
-      ["telefoneMotorista", "Telefone do motorista"],
-      ["emailMotorista", "E-mail do motorista"],
       ["emailTransportadora", "E-mail da transportadora"],
       ["observacoes", "Observações"]
     ];

@@ -15,7 +15,7 @@ import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js
 import { auditLog } from "../utils/audit.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
-import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento, persistManualPendingNota } from "../utils/relatorio-entradas.js";
+import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento, persistManualPendingNota, removePendingNotasFromRelatorio } from "../utils/relatorio-entradas.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
 import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, sendMonthlyNearDueDigestIfNeeded, searchByNumeroNf } from "../utils/nf-monitoring.js";
 import { encodeNotaObservacao } from "../utils/nota-metadata.js";
@@ -171,6 +171,69 @@ function fiscalCcRecipients() {
     .filter(Boolean);
 
   return emails.length ? [...new Set(emails)].join(', ') : '';
+}
+
+function parseEmailList(...values) {
+  const emails = values
+    .flatMap((value) => String(value || '').split(/[;,]/))
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+  return [...new Set(emails)];
+}
+
+function occurrenceRecipients() {
+  return parseEmailList(
+    process.env.COMPRADORES_EMAILS,
+    process.env.EMAILS_COMPRADORES,
+    process.env.COORDENADORES_EMAILS,
+    process.env.EMAILS_COORDENADORES,
+    process.env.OCORRENCIA_EMAILS,
+    process.env.URGENCIA_AGENDAMENTO_EMAILS
+  );
+}
+
+function renderNotasTableHtml(notas = []) {
+  const rows = (Array.isArray(notas) ? notas : []).map((nota) => `
+    <tr>
+      <td style="border:1px solid #d8dee9;padding:8px;">${String(nota?.numeroNf || '-')}</td>
+      <td style="border:1px solid #d8dee9;padding:8px;">${String(nota?.serie || '-')}</td>
+      <td style="border:1px solid #d8dee9;padding:8px;">${String(nota?.destino || nota?.empresa || '-')}</td>
+      <td style="border:1px solid #d8dee9;padding:8px;text-align:right;">${Number(nota?.volumes || 0).toFixed(3)}</td>
+      <td style="border:1px solid #d8dee9;padding:8px;text-align:right;">${Number(nota?.peso || 0).toFixed(3)}</td>
+      <td style="border:1px solid #d8dee9;padding:8px;text-align:right;">${Number(nota?.quantidadeItens || nota?.qtdItens || nota?.itens || 0)}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;">
+      <thead>
+        <tr style="background:#f3f6fa;">
+          <th style="border:1px solid #d8dee9;padding:8px;text-align:left;">NF</th>
+          <th style="border:1px solid #d8dee9;padding:8px;text-align:left;">Série</th>
+          <th style="border:1px solid #d8dee9;padding:8px;text-align:left;">Destino</th>
+          <th style="border:1px solid #d8dee9;padding:8px;text-align:right;">Volumes</th>
+          <th style="border:1px solid #d8dee9;padding:8px;text-align:right;">Peso</th>
+          <th style="border:1px solid #d8dee9;padding:8px;text-align:right;">Itens</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function buildOccurrenceMail({ transportadora = '', fornecedor = '', notas = [] } = {}) {
+  const subject = `Urgente: transportadora negou agendamento - ${transportadora || fornecedor || 'sem identificação'}`;
+  const text = [
+    `Urgente: após contato com a transportadora "${transportadora || fornecedor || '-'}" para o agendamento das notas abaixo, a mesma negou agendamento.`,
+    '',
+    ...(Array.isArray(notas) ? notas : []).map((nota) => `NF ${nota?.numeroNf || '-'} | Série ${nota?.serie || '-'} | Destino ${nota?.destino || nota?.empresa || '-'} | Vol ${Number(nota?.volumes || 0).toFixed(3)} | Peso ${Number(nota?.peso || 0).toFixed(3)} | Itens ${Number(nota?.quantidadeItens || nota?.qtdItens || nota?.itens || 0)}`)
+  ].join('\n');
+  const html = `
+    <p><strong>Urgente:</strong> após contato com a transportadora "${transportadora || fornecedor || '-'}" para o agendamento das notas abaixo, a mesma negou agendamento.</p>
+    <p><strong>Fornecedor:</strong> ${fornecedor || '-'}<br><strong>Transportadora:</strong> ${transportadora || '-'}</p>
+    ${renderNotasTableHtml(notas)}
+  `;
+  return { subject, text, html };
 }
 
 function buildManualNotaFiscalMail({ fornecedor = '', nota = {}, actor = null } = {}) {
@@ -649,7 +712,7 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
     }
     payload.docaId = Number(payload.docaId || defaultDoca?.id || 1);
 
-    try { await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada }); } catch {}
+    await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada });
 
     let item;
     try {
@@ -675,6 +738,44 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
     }
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+});
+
+router.post('/ocorrencia', requirePermission('agendamentos.create'), async (req, res) => {
+  try {
+    const fornecedor = String(req.body?.fornecedor || '').trim();
+    const transportadora = String(req.body?.transportadora || '').trim();
+    const notas = await canonicalizeNotasSelecionadasComRelatorio(fornecedor, Array.isArray(req.body?.notas) ? req.body.notas : []);
+    if (!fornecedor) throw new Error('Fornecedor é obrigatório para registrar a ocorrência.');
+    if (!notas.length) throw new Error('Selecione ao menos uma NF para registrar a ocorrência.');
+
+    const removal = await removePendingNotasFromRelatorio({ fornecedor, notas });
+    const recipients = occurrenceRecipients();
+    const mail = buildOccurrenceMail({ transportadora, fornecedor, notas });
+    const mailResult = recipients.length
+      ? await sendMail({ to: recipients.join(', '), subject: mail.subject, text: mail.text, html: mail.html })
+      : { sent: false, reason: 'Destinatários de ocorrência não configurados.' };
+
+    await auditLog({
+      usuarioId: req.user.sub,
+      perfil: req.user.perfil,
+      acao: 'OCORRENCIA_AGENDAMENTO',
+      entidade: 'RELATORIO_TERCEIRIZADO',
+      entidadeId: null,
+      detalhes: { fornecedor, transportadora, totalNotas: notas.length, recipients, removal, mailResult },
+      ip: req.ip
+    });
+
+    return res.json({
+      ok: true,
+      message: mailResult.sent
+        ? `Ocorrência registrada. ${notas.length} NF removida(s) da fila pendente e e-mail enviado.`
+        : `Ocorrência registrada. ${notas.length} NF removida(s) da fila pendente. ${mailResult.reason || 'E-mail não enviado.'}`,
+      removed: removal,
+      email: mailResult
+    });
+  } catch (err) {
+    return res.status(400).json({ message: err.message || 'Falha ao registrar ocorrência.' });
   }
 });
 

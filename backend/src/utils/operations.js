@@ -51,11 +51,33 @@ export function trafficColor(status) {
   return "VERMELHO";
 }
 
+function buildDocaFilaItem(item = {}) {
+  const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : [];
+  const destinos = [...new Set(notas.map((nota) => String(nota?.destino || nota?.empresa || '').trim()).filter(Boolean))];
+  const itensTotal = notas.reduce((acc, nota) => acc + Number(nota?.quantidadeItens || nota?.qtdItens || nota?.itens || 0), 0);
+  return {
+    ...item,
+    totalNotas: Number(item?.quantidadeNotas || notas.length || 0),
+    totalVolumes: Number(item?.quantidadeVolumes || notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0) || 0),
+    pesoTotalKg: Number(item?.pesoTotalKg || notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0) || 0),
+    totalItens: Number(item?.totalItens || itensTotal || 0),
+    destinos,
+    notasDetalhes: notas.map((nota) => ({
+      numeroNf: String(nota?.numeroNf || '').trim(),
+      serie: String(nota?.serie || '').trim(),
+      destino: String(nota?.destino || nota?.empresa || '').trim(),
+      peso: Number(nota?.peso || 0),
+      volumes: Number(nota?.volumes || 0),
+      itens: Number(nota?.quantidadeItens || nota?.qtdItens || nota?.itens || 0)
+    }))
+  };
+}
+
 export async function docaPainel(dataAgendada = null) {
   const where = dataAgendada ? { dataAgendada: String(dataAgendada) } : {};
   const [docas, agendamentos] = await Promise.all([
     prisma.doca.findMany({ orderBy: { codigo: "asc" } }),
-    prisma.agendamento.findMany({ where, orderBy: { horaAgendada: "asc" } })
+    prisma.agendamento.findMany({ where, include: { notasFiscais: true }, orderBy: { horaAgendada: "asc" } })
   ]);
 
   return docas.map(doca => {
@@ -66,7 +88,8 @@ export async function docaPainel(dataAgendada = null) {
         const pb = queuePriority(b.status);
         if (pa !== pb) return pa - pb;
         return String(a.horaAgendada).localeCompare(String(b.horaAgendada));
-      });
+      })
+      .map(buildDocaFilaItem);
 
     const ativo = fila.find(a => ["CHEGOU", "EM_DESCARGA"].includes(a.status)) || fila[0] || null;
 

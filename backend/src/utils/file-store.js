@@ -167,14 +167,35 @@ export function buildDocaPainelFromFiles(dataAgendada = null) {
         if (pa !== pb) return pa - pb;
         return String(a.horaAgendada || '').localeCompare(String(b.horaAgendada || ''));
       });
-    const ativo = fila.find((a) => ['CHEGOU', 'EM_DESCARGA'].includes(a.status)) || fila[0] || null;
+    const filaDetalhada = fila.map((item) => {
+      const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : [];
+      const destinos = [...new Set(notas.map((nota) => String(nota?.destino || nota?.empresa || '').trim()).filter(Boolean))];
+      const totalItens = notas.reduce((acc, nota) => acc + Number(nota?.quantidadeItens || nota?.qtdItens || nota?.itens || 0), 0);
+      return {
+        ...item,
+        totalNotas: Number(item?.quantidadeNotas || notas.length || 0),
+        totalVolumes: Number(item?.quantidadeVolumes || notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0) || 0),
+        pesoTotalKg: Number(item?.pesoTotalKg || notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0) || 0),
+        totalItens,
+        destinos,
+        notasDetalhes: notas.map((nota) => ({
+          numeroNf: String(nota?.numeroNf || '').trim(),
+          serie: String(nota?.serie || '').trim(),
+          destino: String(nota?.destino || nota?.empresa || '').trim(),
+          peso: Number(nota?.peso || 0),
+          volumes: Number(nota?.volumes || 0),
+          itens: Number(nota?.quantidadeItens || nota?.qtdItens || nota?.itens || 0)
+        }))
+      };
+    });
+    const ativo = filaDetalhada.find((a) => ['CHEGOU', 'EM_DESCARGA'].includes(a.status)) || filaDetalhada[0] || null;
     return {
       docaId: doca.id,
       codigo: doca.codigo,
       descricao: doca.descricao || '',
       ocupacaoAtual: ativo ? ativo.status : 'LIVRE',
       semaforo: ativo ? color(ativo.status) : 'VERDE',
-      fila,
+      fila: filaDetalhada,
     };
   });
 }

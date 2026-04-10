@@ -69,6 +69,11 @@ function qid(name) {
   return `\`${String(name).replace(/`/g, '``')}\``;
 }
 
+function sqlLiteral(value) {
+  if (value === null || value === undefined) return 'NULL';
+  return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
+}
+
 function ensureImportDir() {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -316,10 +321,7 @@ async function ensureRelatorioTable(client) {
       ${qid('importedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       ${qid('updatedAt')} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (${qid('id')}),
-      UNIQUE KEY ${qid('uk_relatorio_rowhash')} (${qid('rowHash')}),
-      KEY ${qid('idx_relatorio_agendamento')} (${qid('agendamentoId')}),
-      KEY ${qid('idx_relatorio_fornecedor')} (${qid('Fornecedor')}(191)),
-      KEY ${qid('idx_relatorio_nota')} (${qid('Nr. nota')}(191))
+      UNIQUE KEY ${qid('uk_relatorio_rowhash')} (${qid('rowHash')})
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `;
   await client.$executeRawUnsafe(sql);
@@ -374,17 +376,16 @@ export async function syncLatestRelatorioToDatabase({ force = false } = {}) {
 
   for (let offset = 0; offset < parsedRows.length; offset += chunkSize) {
     const chunk = parsedRows.slice(offset, offset + chunkSize);
-    const placeholders = chunk.map(() => `(${columnsForInsert.map(() => '?').join(', ')})`).join(', ');
+    const valueRows = chunk.map((row) => {
+      const values = [rowHash(row), null, latest.name, ...PLANILHA_COLUMNS.map((column) => row[column] || null)];
+      return `(${values.map((value) => sqlLiteral(value)).join(', ')})`;
+    }).join(', ');
     const sql = `
       INSERT INTO ${qid(TABLE_NAME)} (${columnsForInsert.map(qid).join(', ')})
-      VALUES ${placeholders}
+      VALUES ${valueRows}
       ON DUPLICATE KEY UPDATE ${updateAssignments}, ${qid('updatedAt')} = CURRENT_TIMESTAMP
     `;
-    const args = [];
-    for (const row of chunk) {
-      args.push(rowHash(row), null, latest.name, ...PLANILHA_COLUMNS.map((column) => row[column] || null));
-    }
-    await client.$executeRawUnsafe(sql, ...args);
+    await client.$executeRawUnsafe(sql);
   }
 
   const totalRows = await countRelatorioRows();
@@ -467,20 +468,18 @@ export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, 
     const serie = normalizeText(nota?.serie || '');
     const conditions = [
       `${qid('agendamentoId')} IS NULL`,
-      `LOWER(TRIM(${qid('Fornecedor')})) = LOWER(?)`,
-      `TRIM(${qid('Nr. nota')}) = ?`
+      `LOWER(TRIM(${qid('Fornecedor')})) = LOWER(${sqlLiteral(fornecedor)})`,
+      `TRIM(${qid('Nr. nota')}) = ${sqlLiteral(numeroNf)}`
     ];
-    const args = [Number(agendamentoId), fornecedor, numeroNf];
     if (serie) {
-      conditions.push(`TRIM(${qid('Série')}) = ?`);
-      args.push(serie);
+      conditions.push(`TRIM(${qid('Série')}) = ${sqlLiteral(serie)}`);
     }
     const sql = `
       UPDATE ${qid(TABLE_NAME)}
-      SET ${qid('agendamentoId')} = ?
+      SET ${qid('agendamentoId')} = ${sqlLiteral(Number(agendamentoId))}
       WHERE ${conditions.join(' AND ')}
     `;
-    await client.$executeRawUnsafe(sql, ...args);
+    await client.$executeRawUnsafe(sql);
   }
 }
 

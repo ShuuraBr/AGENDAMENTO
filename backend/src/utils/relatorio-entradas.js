@@ -4,7 +4,7 @@ import path from 'path';
 import zlib from 'zlib';
 import multer from 'multer';
 import { fileURLToPath } from 'url';
-import { prisma } from './prisma.js';
+import { prisma, resetPrismaClient } from './prisma.js';
 import { auditLog } from './audit.js';
 import { readAgendamentos } from './file-store.js';
 import { computeDueInfo, toIsoDate, formatDateBR } from './nf-monitoring.js';
@@ -30,6 +30,15 @@ const stateFile = path.join(dataDir, 'importacao-relatorio-state.json');
 const SUPPORTED_EXTENSIONS = new Set(['.ods', '.csv', '.json', '.xlsx']);
 const TABLE_NAME = 'RelatorioTerceirizado';
 const WATCH_INTERVAL_MS = 60 * 1000;
+
+const DATE_COLUMNS = new Set([
+  'Data emissão',
+  'Data de Entrada',
+  'Data 1º vencimento',
+  'Data do cadastro',
+  'Data de emissão do CT-e',
+  'Data de entrada do CT-e'
+]);
 
 const SHEET_COLUMNS = [
   'Entrada',
@@ -84,7 +93,7 @@ const SHEET_COLUMNS = [
   'INSS retido',
   'IRRF retido',
   'CSLL retido',
-  'ISSQN retido',
+  'ISSQN retido2',
   'Número do CT-e',
   'Transportadora',
   'Data de emissão do CT-e',
@@ -103,6 +112,53 @@ let relatorioDbDisabled = false;
 let relatorioDbDisableReason = null;
 let relatorioImportPromise = null;
 let relatorioTableColumnsCache = null;
+
+const RELATORIO_BASE_COLUMNS = [
+  ['id', 'INT NOT NULL AUTO_INCREMENT'],
+  ['rowHash', 'VARCHAR(64) NULL'],
+  ['agendamentoId', 'INT NULL'],
+  ...SHEET_COLUMNS.map((column) => [column, 'TEXT NULL']),
+  ['origemArquivo', 'VARCHAR(255) NULL'],
+  ['importedAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP'],
+  ['updatedAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'],
+  ['dadosOriginaisJson', 'LONGTEXT NULL']
+];
+
+function buildCreateTableSql() {
+  const lines = RELATORIO_BASE_COLUMNS.map(([name, definition]) => `${quoteIdentifier(name)} ${definition}`);
+  lines.push(`PRIMARY KEY (${quoteIdentifier('id')})`);
+  return `
+    CREATE TABLE IF NOT EXISTS ${quoteIdentifier(TABLE_NAME)} (
+      ${lines.join(',\n      ')}
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `;
+}
+
+async function ensureRelatorioTableSchema() {
+  const tableRows = await prisma.$queryRawUnsafe(`SHOW TABLES LIKE ${sqlLiteral(TABLE_NAME)}`);
+  if (!Array.isArray(tableRows) || !tableRows.length) {
+    await prisma.$executeRawUnsafe(buildCreateTableSql());
+  }
+
+  const currentColumnsRows = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
+  const currentColumns = new Set((currentColumnsRows || []).map((row) => String(row?.Field || row?.COLUMN_NAME || '').trim()).filter(Boolean));
+
+  for (const [name, definition] of RELATORIO_BASE_COLUMNS) {
+    if (currentColumns.has(name)) continue;
+    await runSqlIgnoringLegacyConstraint(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN ${quoteIdentifier(name)} ${definition}`);
+  }
+
+  await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD UNIQUE INDEX ${quoteIdentifier('uk_relatorio_rowhash')} (${quoteIdentifier('rowHash')})`);
+  await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD INDEX ${quoteIdentifier('idx_relatorio_agendamento')} (${quoteIdentifier('agendamentoId')})`);
+  relatorioTableColumnsCache = null;
+}
+
+function isPrismaPanicLike(error) {
+  const message = String(error?.message || error || '');
+  return message.includes('PANIC: timer has gone away')
+    || message.includes('PrismaClientRustPanicError')
+    || message.includes('This is a non-recoverable error');
+}
 
 function disableRelatorioDb(error, context = 'operacao_desconhecida') {
   relatorioDbDisabled = true;
@@ -174,6 +230,17 @@ function normalizeCellValue(value) {
   return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function dedupeHeaderNames(headers = []) {
+  const counts = new Map();
+  return (Array.isArray(headers) ? headers : []).map((header) => {
+    const normalized = normalizeCellValue(header);
+    if (!normalized) return '';
+    const current = (counts.get(normalized) || 0) + 1;
+    counts.set(normalized, current);
+    return current === 1 ? normalized : `${normalized}${current}`;
+  });
+}
+
 function getCaseInsensitiveValue(row = {}, expectedColumn = '') {
   const direct = row?.[expectedColumn];
   if (direct !== undefined && direct !== null) return direct;
@@ -225,6 +292,58 @@ function buildNoteObservation(row = {}) {
   return parts.join(' | ');
 }
 
+
+function excelSerialToIsoDate(value) {
+  const serial = Number(value);
+  if (!Number.isFinite(serial)) return '';
+  const wholeDays = Math.floor(serial);
+  if (wholeDays <= 0) return '';
+  const excelEpoch = Date.UTC(1899, 11, 30);
+  const utcTime = excelEpoch + wholeDays * 86400000;
+  const date = new Date(utcTime);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
+function normalizeSpreadsheetDateValue(value) {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  const raw = normalizeCellValue(value);
+  if (!raw) return '';
+
+  if (/^\d{4}-\d{2}-\d{2}(?:[ T].*)?$/.test(raw)) {
+    return raw.slice(0, 10);
+  }
+
+  const brMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (brMatch) {
+    const day = Number(brMatch[1]);
+    const month = Number(brMatch[2]);
+    const year = Number(brMatch[3]);
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year >= 1900 && year <= 9999) {
+      return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+
+  const rawNumber = Number(raw.replace(',', '.'));
+  if (Number.isFinite(rawNumber) && rawNumber > 59 && rawNumber < 100000) {
+    const iso = excelSerialToIsoDate(rawNumber);
+    if (iso) return iso;
+  }
+
+  return raw;
+}
+
+function normalizeSpreadsheetColumnValue(column, value) {
+  if (DATE_COLUMNS.has(column)) {
+    return normalizeSpreadsheetDateValue(value);
+  }
+  return normalizeCellValue(value);
+}
+
 function buildDueFields(dateValue = '') {
   const dueInfo = computeDueInfo({ dueDateValue: dateValue });
   return {
@@ -239,7 +358,7 @@ function buildDueFields(dateValue = '') {
 function normalizeSpreadsheetRow(row = {}) {
   const normalized = {};
   for (const column of SHEET_COLUMNS) {
-    normalized[column] = normalizeCellValue(pickSpreadsheetValue(row, column));
+    normalized[column] = normalizeSpreadsheetColumnValue(column, pickSpreadsheetValue(row, column));
   }
   return normalized;
 }
@@ -461,11 +580,7 @@ export async function canonicalizeNotasSelecionadasComRelatorio(fornecedor, nota
     const byHash = new Map();
 
     if (rowHashes.length) {
-      const placeholders = rowHashes.map(() => '?').join(', ');
-      const rows = await prisma.$queryRawUnsafe(
-        `SELECT rowHash, dadosOriginaisJson FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash IN (${placeholders})`,
-        ...rowHashes
-      );
+      const rows = await prisma.$queryRawUnsafe(`SELECT rowHash, dadosOriginaisJson FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash IN (${sqlList(rowHashes)})`);
 
       for (const row of rows || []) {
         try {
@@ -591,18 +706,15 @@ export async function persistManualPendingNota({ fornecedor = '', nota = {}, act
 
   try {
     if (await ensureRelatorioTable()) {
-      const duplicateRows = await prisma.$queryRawUnsafe(
-        `SELECT rowHash
-           FROM ${quoteIdentifier(TABLE_NAME)}
-          WHERE agendamentoId IS NULL
-            AND LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(?)
-            AND TRIM(${quoteIdentifier('Nr. nota')}) = ?
-            AND COALESCE(TRIM(${quoteIdentifier('Série')}), '') = ?
-          LIMIT 1`,
-        fornecedorNormalized,
-        normalizedNota.numeroNf,
-        normalizedNota.serie
-      );
+      const duplicateRows = await prisma.$queryRawUnsafe(`
+        SELECT rowHash
+          FROM ${quoteIdentifier(TABLE_NAME)}
+         WHERE agendamentoId IS NULL
+           AND LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(${sqlLiteral(fornecedorNormalized)})
+           AND TRIM(${quoteIdentifier('Nr. nota')}) = ${sqlLiteral(normalizedNota.numeroNf)}
+           AND COALESCE(TRIM(${quoteIdentifier('Série')}), '') = ${sqlLiteral(normalizedNota.serie)}
+         LIMIT 1
+      `);
 
       if (Array.isArray(duplicateRows) && duplicateRows.length) {
         throw new Error('Esta NF manual já está cadastrada para este fornecedor.');
@@ -618,10 +730,9 @@ export async function persistManualPendingNota({ fornecedor = '', nota = {}, act
         JSON.stringify(row)
       ];
       const filtered = await filterColumnsForRelatorioInsert(columns, values);
-      const placeholders = filtered.columns.map(() => '?').join(', ');
+      const valueSql = filtered.values.map((value) => sqlLiteral(value)).join(', ');
       await prisma.$executeRawUnsafe(
-        `INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${filtered.columns.map((column) => quoteIdentifier(column)).join(', ')}) VALUES (${placeholders})`,
-        ...filtered.values
+        `INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${filtered.columns.map((column) => quoteIdentifier(column)).join(', ')}) VALUES (${valueSql})`
       );
     }
   } catch (error) {
@@ -670,7 +781,7 @@ function parseCsv(content = '') {
   const lines = String(content || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim() !== '');
   if (!lines.length) return [];
   const delimiter = lines[0].includes(';') ? ';' : ',';
-  const headers = parseCsvLine(lines[0], delimiter).map(normalizeCellValue);
+  const headers = dedupeHeaderNames(parseCsvLine(lines[0], delimiter).map(normalizeCellValue));
 
   return lines.slice(1).map((line) => {
     const cols = parseCsvLine(line, delimiter);
@@ -744,7 +855,7 @@ function parseOdsContentXml(contentXml = '') {
   const headerIndex = rows.findIndex((row) => row.some((cell) => cell === 'Fornecedor') && row.some((cell) => cell.includes('Nr. nota')));
   if (headerIndex < 0) return [];
 
-  const headers = rows[headerIndex].map(normalizeCellValue);
+  const headers = dedupeHeaderNames(rows[headerIndex].map(normalizeCellValue));
   return rows
     .slice(headerIndex + 1)
     .filter((row) => row.some((cell) => normalizeCellValue(cell) !== ''))
@@ -871,7 +982,7 @@ function parseXlsxSheetXml(xml = '', sharedStrings = []) {
     const dense = trimTrailingEmpty(cells.map((value) => normalizeCellValue(value)));
     if (!dense.length) continue;
     if (!headers.length) {
-      headers = dense;
+      headers = dedupeHeaderNames(dense);
       continue;
     }
     const row = {};
@@ -960,6 +1071,79 @@ function writeFallback(groups = []) {
   fs.writeFileSync(fallbackFile, JSON.stringify(groups, null, 2), 'utf8');
 }
 
+function removePendingNotasFromFallback({ fornecedor = '', notas = [] } = {}) {
+  const fornecedorNormalized = normalizeCellValue(fornecedor);
+  const selected = new Set((Array.isArray(notas) ? notas : []).map((nota) => buildPendingNoteKey(nota)).filter(Boolean));
+  if (!selected.size) return { removed: 0, source: 'arquivo' };
+
+  const groups = readFallbackGroups();
+  let removed = 0;
+  const updatedGroups = groups.map((group) => {
+    const sameFornecedor = normalizeCellValue(group?.fornecedor || group?.nome || '') === fornecedorNormalized;
+    if (!sameFornecedor) return group;
+    const sourceNotas = Array.isArray(group?.notas) ? group.notas : Array.isArray(group?.notasFiscais) ? group.notasFiscais : [];
+    const keptNotas = sourceNotas.filter((nota) => {
+      const keep = !selected.has(buildPendingNoteKey(nota));
+      if (!keep) removed += 1;
+      return keep;
+    });
+    const quantidadeVolumes = toFixedNumber(keptNotas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0), 3);
+    const pesoTotalKg = toFixedNumber(keptNotas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0), 3);
+    const valorTotalNf = toFixedNumber(keptNotas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0), 2);
+    return {
+      ...group,
+      notas: keptNotas,
+      notasFiscais: keptNotas,
+      quantidadeNotas: keptNotas.length,
+      quantidadeVolumes,
+      pesoTotalKg,
+      valorTotalNf
+    };
+  }).filter((group) => Number(group?.quantidadeNotas || 0) > 0 || (Array.isArray(group?.notas) && group.notas.length > 0) || (Array.isArray(group?.notasFiscais) && group.notasFiscais.length > 0));
+
+  writeFallback(updatedGroups);
+  return { removed, source: 'arquivo' };
+}
+
+export async function removePendingNotasFromRelatorio({ fornecedor = '', notas = [] } = {}) {
+  const fornecedorNormalized = normalizeCellValue(fornecedor);
+  const selectedNotas = Array.isArray(notas) ? notas.map(normalizeSelectedNota).filter((nota) => nota.numeroNf || nota.rowHash) : [];
+  if (!fornecedorNormalized || !selectedNotas.length) return { removed: 0, source: 'none' };
+
+  const fallbackResult = removePendingNotasFromFallback({ fornecedor: fornecedorNormalized, notas: selectedNotas });
+
+  try {
+    if (!(await ensureRelatorioTable())) return fallbackResult;
+
+    let removed = 0;
+    for (const nota of selectedNotas) {
+      if (nota.rowHash) {
+        const count = await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash = ${sqlLiteral(nota.rowHash)} AND agendamentoId IS NULL`);
+        removed += Number(count || 0);
+        continue;
+      }
+      const numeroNf = normalizeCellValue(nota.numeroNf || '');
+      const serie = normalizeCellValue(nota.serie || '');
+      if (!numeroNf) continue;
+      const conditions = [
+        `LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(${sqlLiteral(fornecedorNormalized)})`,
+        `TRIM(${quoteIdentifier('Nr. nota')}) = ${sqlLiteral(numeroNf)}`,
+        `${quoteIdentifier('agendamentoId')} IS NULL`
+      ];
+      if (serie) {
+        conditions.push(`COALESCE(TRIM(${quoteIdentifier('Série')}), '') = ${sqlLiteral(serie)}`);
+      }
+      const count = await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)} WHERE ${conditions.join(' AND ')}`);
+      removed += Number(count || 0);
+    }
+
+    return { removed, source: 'database' };
+  } catch (error) {
+    console.error('[RELATORIO_IMPORT] Falha ao remover notas pendentes do relatório:', error?.message || error);
+    return { ...fallbackResult, source: fallbackResult.source || 'arquivo', reason: error?.message || String(error || 'erro') };
+  }
+}
+
 function writeRawFallback(rows = []) {
   ensureDir(dataDir);
   fs.writeFileSync(rawFallbackFile, JSON.stringify(rows, null, 2), 'utf8');
@@ -982,7 +1166,8 @@ function withRelatorioImportLock(task) {
 async function ensureRelatorioTable() {
   if (relatorioDbDisabled) return false;
 
-  try {
+  const probe = async () => {
+    await ensureRelatorioTableSchema();
     await prisma.$queryRawUnsafe(
       `SELECT rowHash, agendamentoId, dadosOriginaisJson
          FROM ${quoteIdentifier(TABLE_NAME)}
@@ -990,8 +1175,22 @@ async function ensureRelatorioTable() {
     );
     await getRelatorioTableColumns();
     return true;
+  };
+
+  try {
+    return await probe();
   } catch (error) {
-    disableRelatorioDb(error, 'ensureRelatorioTable:readOnlyProbe');
+    if (isPrismaPanicLike(error)) {
+      try {
+        relatorioTableColumnsCache = null;
+        await resetPrismaClient();
+        return await probe();
+      } catch (retryError) {
+        disableRelatorioDb(retryError, 'ensureRelatorioTable');
+        return false;
+      }
+    }
+    disableRelatorioDb(error, 'ensureRelatorioTable');
     return false;
   }
 }
@@ -1133,8 +1332,8 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
     ];
     const filtered = await filterColumnsForRelatorioInsert(columns, values);
     const columnSql = filtered.columns.map((column) => quoteIdentifier(column)).join(', ');
-    const placeholders = filtered.columns.map(() => '?').join(', ');
-    await prisma.$executeRawUnsafe(`INSERT IGNORE INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${placeholders})`, ...filtered.values);
+    const valueSql = filtered.values.map((value) => sqlLiteral(value)).join(', ');
+    await prisma.$executeRawUnsafe(`INSERT IGNORE INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${valueSql})`);
   }
 }
 
@@ -1218,9 +1417,7 @@ export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, 
     const serie = normalizeCellValue(nota?.serie || '');
     if (rowHash) {
       await prisma.$executeRawUnsafe(
-        `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = ? WHERE rowHash = ?`,
-        Number(agendamentoId),
-        rowHash
+        `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = ${sqlLiteral(Number(agendamentoId))} WHERE rowHash = ${sqlLiteral(rowHash)}`
       );
       continue;
     }
@@ -1228,19 +1425,16 @@ export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, 
     if (!numeroNf) continue;
 
     const conditions = [
-      `LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(?)`,
-      `TRIM(${quoteIdentifier('Nr. nota')}) = ?`
+      `LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(${sqlLiteral(fornecedor)})`,
+      `TRIM(${quoteIdentifier('Nr. nota')}) = ${sqlLiteral(numeroNf)}`
     ];
-    const args = [Number(agendamentoId), fornecedor, numeroNf];
 
     if (serie) {
-      conditions.push(`TRIM(${quoteIdentifier('Série')}) = ?`);
-      args.push(serie);
+      conditions.push(`TRIM(${quoteIdentifier('Série')}) = ${sqlLiteral(serie)}`);
     }
 
     await prisma.$executeRawUnsafe(
-      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = ? WHERE ${conditions.join(' AND ')}`,
-      ...args
+      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = ${sqlLiteral(Number(agendamentoId))} WHERE ${conditions.join(' AND ')}`
     );
   }
 }
@@ -1250,8 +1444,7 @@ export async function unlinkRelatorioRowsFromAgendamento(agendamentoId) {
   try {
     if (!(await ensureRelatorioTable())) return;
     await prisma.$executeRawUnsafe(
-      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = NULL WHERE agendamentoId = ?`,
-      Number(agendamentoId)
+      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = NULL WHERE agendamentoId = ${sqlLiteral(Number(agendamentoId))}`
     );
   } catch {}
 }

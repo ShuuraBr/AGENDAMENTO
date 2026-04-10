@@ -1,131 +1,9 @@
 import { getPrismaClient } from "./prisma.js";
 
-function qid(name) {
-  return `\`${String(name).replace(/`/g, "``")}\``;
+function normalizeContains(value) {
+  const text = String(value || "").trim();
+  return text ? { contains: text } : undefined;
 }
-
-async function resolveTableName(candidates = []) {
-  const client = await getPrismaClient();
-  if (!client) throw new Error("Prisma client indisponível para fallback SQL.");
-
-  const normalized = [...new Set(candidates.map((v) => String(v).trim()).filter(Boolean))];
-  if (!normalized.length) throw new Error("Nenhuma tabela candidata informada.");
-
-  const placeholders = normalized.map(() => "LOWER(?)").join(", ");
-  const sql = `
-    SELECT TABLE_NAME
-    FROM information_schema.TABLES
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND LOWER(TABLE_NAME) IN (${placeholders})
-    ORDER BY TABLE_NAME ASC
-    LIMIT 1
-  `;
-
-  const rows = await client.$queryRawUnsafe(sql, ...normalized.map((v) => v.toLowerCase()));
-  const tableName = rows?.[0]?.TABLE_NAME || rows?.[0]?.table_name;
-  if (!tableName) {
-    throw new Error(`Tabela não encontrada. Procuradas: ${normalized.join(", ")}`);
-  }
-  return tableName;
-}
-
-export async function fetchUserByEmail(email) {
-  const client = await getPrismaClient();
-  if (!client) throw new Error("Prisma client indisponível.");
-  const table = await resolveTableName(["Usuario", "usuario", "usuarios"]);
-  const sql = `
-    SELECT id, nome, email, senhaHash, perfil, createdAt, updatedAt
-    FROM ${qid(table)}
-    WHERE email = ?
-    LIMIT 1
-  `;
-  const rows = await client.$queryRawUnsafe(sql, email);
-  return rows?.[0] || null;
-}
-
-export async function fetchJanelasDocas() {
-  const client = await getPrismaClient();
-  if (!client) throw new Error("Prisma client indisponível.");
-  const [janelaTable, docaTable] = await Promise.all([
-    resolveTableName(["Janela", "janela", "janelas"]),
-    resolveTableName(["Doca", "doca", "docas"])
-  ]);
-
-  const [janelas, docas] = await Promise.all([
-    client.$queryRawUnsafe(`SELECT id, codigo, descricao FROM ${qid(janelaTable)} ORDER BY codigo ASC`),
-    client.$queryRawUnsafe(`SELECT id, codigo, descricao FROM ${qid(docaTable)} ORDER BY codigo ASC`)
-  ]);
-
-  return { janelas, docas };
-}
-
-export async function fetchAgendamentosByDatasStatuses(datas = [], statuses = []) {
-  const client = await getPrismaClient();
-  if (!client) throw new Error("Prisma client indisponível.");
-  if (!datas.length || !statuses.length) return [];
-  const table = await resolveTableName(["Agendamento", "agendamento", "agendamentos"]);
-  const dataMarks = datas.map(() => "?").join(", ");
-  const statusMarks = statuses.map(() => "?").join(", ");
-  const sql = `
-    SELECT dataAgendada, janelaId, protocolo, status, motorista, placa, fornecedor, transportadora, horaAgendada
-    FROM ${qid(table)}
-    WHERE dataAgendada IN (${dataMarks})
-      AND status IN (${statusMarks})
-  `;
-  return client.$queryRawUnsafe(sql, ...datas, ...statuses);
-}
-
-export async function pingDatabase() {
-  const client = await getPrismaClient();
-  if (!client) throw new Error("Prisma client indisponível.");
-  const rows = await client.$queryRawUnsafe("SELECT 1 AS ok, DATABASE() AS databaseName");
-  return rows?.[0] || { ok: 1 };
-}
-
-
-export async function fetchAgendamentosRaw(filters = {}) {
-  const client = await getPrismaClient();
-  if (!client) throw new Error("Prisma client indisponível.");
-  const [agTable, docaTable, janelaTable] = await Promise.all([
-    resolveTableName(["Agendamento", "agendamento", "agendamentos"]),
-    resolveTableName(["Doca", "doca", "docas"]),
-    resolveTableName(["Janela", "janela", "janelas"])
-  ]);
-
-  const where = [];
-  const args = [];
-  const likeFields = ["fornecedor", "transportadora", "motorista", "placa"];
-  for (const field of likeFields) {
-    if (filters[field]) {
-      where.push(`a.${qid(field)} LIKE ?`);
-      args.push(`%${String(filters[field]).trim()}%`);
-    }
-  }
-  if (filters.status) { where.push(`a.${qid('status')} = ?`); args.push(String(filters.status)); }
-  if (filters.dataAgendada) { where.push(`a.${qid('dataAgendada')} = ?`); args.push(String(filters.dataAgendada)); }
-
-  const sql = `
-    SELECT
-      a.*,
-      d.id AS doca_id_rel, d.codigo AS doca_codigo, d.descricao AS doca_descricao,
-      j.id AS janela_id_rel, j.codigo AS janela_codigo, j.descricao AS janela_descricao
-    FROM ${qid(agTable)} a
-    LEFT JOIN ${qid(docaTable)} d ON d.id = a.docaId
-    LEFT JOIN ${qid(janelaTable)} j ON j.id = a.janelaId
-    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-    ORDER BY a.id DESC
-  `;
-
-  const rows = await client.$queryRawUnsafe(sql, ...args);
-  return rows.map((row) => ({
-    ...row,
-    doca: row.doca_codigo ? { id: row.doca_id_rel, codigo: row.doca_codigo, descricao: row.doca_descricao || '' } : null,
-    janela: row.janela_codigo ? { id: row.janela_id_rel, codigo: row.janela_codigo, descricao: row.janela_descricao || '' } : null,
-    notasFiscais: [],
-    documentos: []
-  }));
-}
-
 
 function occupiesDocaStatus(status) {
   return ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"].includes(String(status || ""));
@@ -142,50 +20,137 @@ function trafficColor(status) {
   return "VERMELHO";
 }
 
+function extractItemTotals(item = {}) {
+  const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : [];
+  const destinos = [...new Set(notas.map((nota) => String(nota?.destino || nota?.empresa || '').trim()).filter(Boolean))];
+  const totalItens = notas.reduce((acc, nota) => acc + Number(nota?.quantidadeItens || nota?.qtdItens || nota?.itens || 0), 0);
+  return {
+    totalNotas: Number(item?.quantidadeNotas || notas.length || 0),
+    totalVolumes: Number(item?.quantidadeVolumes || notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0) || 0),
+    pesoTotalKg: Number(item?.pesoTotalKg || notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0) || 0),
+    totalItens: Number(item?.totalItens || totalItens || 0),
+    destinos,
+    notasDetalhes: notas.map((nota) => ({
+      numeroNf: String(nota?.numeroNf || '').trim(),
+      serie: String(nota?.serie || '').trim(),
+      destino: String(nota?.destino || nota?.empresa || '').trim(),
+      peso: Number(nota?.peso || 0),
+      volumes: Number(nota?.volumes || 0),
+      itens: Number(nota?.quantidadeItens || nota?.qtdItens || nota?.itens || 0)
+    }))
+  };
+}
+
+function mapAgendamento(item = {}) {
+  return {
+    ...item,
+    doca: item?.doca ? { id: item.doca.id, codigo: item.doca.codigo, descricao: item.doca.descricao || '' } : null,
+    janela: item?.janela ? { id: item.janela.id, codigo: item.janela.codigo, descricao: item.janela.descricao || '' } : null,
+    documentos: Array.isArray(item?.documentos) ? item.documentos : [],
+    notasFiscais: Array.isArray(item?.notasFiscais) ? item.notasFiscais : []
+  };
+}
+
+export async function fetchUserByEmail(email) {
+  const client = await getPrismaClient();
+  if (!client) throw new Error("Prisma client indisponível.");
+  return client.usuario.findUnique({ where: { email: String(email || '').trim() } });
+}
+
+export async function fetchJanelasDocas() {
+  const client = await getPrismaClient();
+  if (!client) throw new Error("Prisma client indisponível.");
+  const [janelas, docas] = await Promise.all([
+    client.janela.findMany({ select: { id: true, codigo: true, descricao: true }, orderBy: { codigo: 'asc' } }),
+    client.doca.findMany({ select: { id: true, codigo: true, descricao: true }, orderBy: { codigo: 'asc' } })
+  ]);
+  return { janelas, docas };
+}
+
+export async function fetchAgendamentosByDatasStatuses(datas = [], statuses = []) {
+  const client = await getPrismaClient();
+  if (!client) throw new Error("Prisma client indisponível.");
+  if (!datas.length || !statuses.length) return [];
+  return client.agendamento.findMany({
+    where: {
+      dataAgendada: { in: datas.map((item) => String(item)) },
+      status: { in: statuses.map((item) => String(item)) }
+    },
+    select: {
+      dataAgendada: true,
+      janelaId: true,
+      protocolo: true,
+      status: true,
+      motorista: true,
+      placa: true,
+      fornecedor: true,
+      transportadora: true,
+      horaAgendada: true
+    }
+  });
+}
+
+export async function pingDatabase() {
+  const client = await getPrismaClient();
+  if (!client) throw new Error("Prisma client indisponível.");
+  const rows = await client.$queryRawUnsafe("SELECT 1 AS ok, DATABASE() AS databaseName");
+  return rows?.[0] || { ok: 1 };
+}
+
+export async function fetchAgendamentosRaw(filters = {}) {
+  const client = await getPrismaClient();
+  if (!client) throw new Error("Prisma client indisponível.");
+
+  const where = {
+    ...(normalizeContains(filters.fornecedor) ? { fornecedor: normalizeContains(filters.fornecedor) } : {}),
+    ...(normalizeContains(filters.transportadora) ? { transportadora: normalizeContains(filters.transportadora) } : {}),
+    ...(normalizeContains(filters.motorista) ? { motorista: normalizeContains(filters.motorista) } : {}),
+    ...(normalizeContains(filters.placa) ? { placa: normalizeContains(filters.placa) } : {}),
+    ...(filters.status ? { status: String(filters.status) } : {}),
+    ...(filters.dataAgendada ? { dataAgendada: String(filters.dataAgendada) } : {})
+  };
+
+  const rows = await client.agendamento.findMany({
+    where,
+    include: { doca: true, janela: true, notasFiscais: true, documentos: true },
+    orderBy: { id: 'desc' }
+  });
+
+  return rows.map(mapAgendamento);
+}
+
 export async function fetchDocaPainelRaw(dataAgendada = null) {
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
 
-  const [agTable, docaTable] = await Promise.all([
-    resolveTableName(["Agendamento", "agendamento", "agendamentos"]),
-    resolveTableName(["Doca", "doca", "docas"])
-  ]);
-
-  const where = [];
-  const args = [];
-  if (dataAgendada) {
-    where.push(`a.${qid("dataAgendada")} = ?`);
-    args.push(String(dataAgendada));
-  }
-
   const [docas, agendamentos] = await Promise.all([
-    client.$queryRawUnsafe(`SELECT id, codigo, descricao FROM ${qid(docaTable)} ORDER BY codigo ASC`),
-    client.$queryRawUnsafe(`
-      SELECT a.id, a.protocolo, a.status, a.motorista, a.placa, a.fornecedor, a.transportadora, a.horaAgendada, a.docaId, a.janelaId, a.dataAgendada
-      FROM ${qid(agTable)} a
-      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-      ORDER BY a.horaAgendada ASC, a.id ASC
-    `, ...args)
+    client.doca.findMany({ select: { id: true, codigo: true, descricao: true }, orderBy: { codigo: 'asc' } }),
+    client.agendamento.findMany({
+      where: dataAgendada ? { dataAgendada: String(dataAgendada) } : undefined,
+      include: { notasFiscais: true },
+      orderBy: [{ horaAgendada: 'asc' }, { id: 'asc' }]
+    })
   ]);
 
   return docas.map((doca) => {
     const fila = agendamentos
-      .filter((a) => Number(a.docaId) === Number(doca.id) && occupiesDocaStatus(a.status))
+      .filter((item) => Number(item?.docaId || 0) === Number(doca.id) && occupiesDocaStatus(item?.status))
       .sort((a, b) => {
-        const pa = queuePriority(a.status);
-        const pb = queuePriority(b.status);
+        const pa = queuePriority(a?.status);
+        const pb = queuePriority(b?.status);
         if (pa !== pb) return pa - pb;
-        return String(a.horaAgendada || "").localeCompare(String(b.horaAgendada || ""));
-      });
+        return String(a?.horaAgendada || '').localeCompare(String(b?.horaAgendada || ''));
+      })
+      .map((item) => ({ ...item, ...extractItemTotals(item) }));
 
-    const ativo = fila.find((a) => ["CHEGOU", "EM_DESCARGA"].includes(String(a.status || ""))) || fila[0] || null;
+    const ativo = fila.find((item) => ["CHEGOU", "EM_DESCARGA"].includes(String(item?.status || ''))) || fila[0] || null;
 
     return {
       docaId: doca.id,
       codigo: doca.codigo,
-      descricao: doca.descricao || "",
-      ocupacaoAtual: ativo ? ativo.status : "LIVRE",
-      semaforo: ativo ? trafficColor(ativo.status) : "VERDE",
+      descricao: doca.descricao || '',
+      ocupacaoAtual: ativo ? ativo.status : 'LIVRE',
+      semaforo: ativo ? trafficColor(ativo.status) : 'VERDE',
       fila
     };
   });

@@ -243,13 +243,13 @@
               <div class="form-grid operator-grid mt12">
                 <label>Fornecedor pendente
                   <input type="hidden" name="fornecedorPendenteInterno" id="internalFornecedorPendenteSelect" value="" />
-                  <div class="multi-select" id="internalFornecedorDropdown">
+                  <div class="multi-select-control"><div class="multi-select" id="internalFornecedorDropdown">
                     <button type="button" class="multi-select-trigger" id="internalFornecedorDropdownTrigger" aria-expanded="false">Selecione o fornecedor pendente</button>
                     <div class="multi-select-menu hidden" id="internalFornecedorDropdownMenu"></div>
-                  </div>
+                  </div><button type="button" id="btnClearInternalFornecedorSelection" class="icon-clear-btn" title="Limpar seleção">X</button></div>
                 </label>
                 <label>Transportadora<input name="transportadora" value="" required /></label>
-                <label>Placa<input name="placa" value="" required /></label>
+                <label>Placa<input name="placa" value="" /></label>
                 <label>Janela<select name="janelaId" id="internalJanelaSelect" required></select></label>
                 <label>Data<input name="dataAgendada" type="date" required /></label>
                 <label>Hora<input name="horaAgendada" type="text" inputmode="numeric" value="" placeholder="08:00" required /></label>
@@ -258,10 +258,10 @@
             <div class="card inner mt16">
               <h3>Dados do motorista</h3>
               <div class="form-grid operator-grid mt12">
-                <label>Motorista<input name="motorista" value="" required /></label>
-                <label>CPF do motorista<input name="cpfMotorista" type="text" inputmode="numeric" value="" placeholder="000.000.000-00" required /></label>
-                <label>Telefone do motorista<input name="telefoneMotorista" type="text" inputmode="numeric" value="" placeholder="(00) 00000-0000" required /></label>
-                <label>E-mail do motorista<input name="emailMotorista" value="" required /></label>
+                <label>Motorista<input name="motorista" value="" /></label>
+                <label>CPF do motorista<input name="cpfMotorista" type="text" inputmode="numeric" value="" placeholder="000.000.000-00" /></label>
+                <label>Telefone do motorista<input name="telefoneMotorista" type="text" inputmode="numeric" value="" placeholder="(00) 00000-0000" /></label>
+                <label>E-mail do motorista<input name="emailMotorista" value="" /></label>
                 <label>E-mail da transportadora<input name="emailTransportadora" value="" required /></label>
               </div>
             </div>
@@ -287,7 +287,7 @@
                 <label class="form-group-full">Observações<textarea name="observacoes" required></textarea></label>
               </div>
             </div>
-            <button type="submit">Salvar agendamento</button>
+            <div class="form-actions mt16"><button type="submit">Salvar agendamento</button><button type="button" id="btnRegistrarOcorrencia" class="btn-secondary btn-danger-soft">Ocorrência</button></div>
           </form>
           <p id="agendamentoMsg" class="msg"></p>
         </div>

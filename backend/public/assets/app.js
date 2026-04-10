@@ -774,6 +774,40 @@
     });
   }
 
+
+  function showHtmlModal({ title = 'Detalhes', html = '', confirmText = 'Fechar', cancelText = '', wide = false } = {}) {
+    const host = ensureModalHost();
+    const titleEl = byId('appModalTitle');
+    const bodyEl = byId('appModalBody');
+    const confirmBtn = byId('appModalConfirm');
+    const cancelBtn = byId('appModalCancel');
+    const card = host?.querySelector('.app-modal-card');
+    if (!titleEl || !bodyEl || !confirmBtn || !cancelBtn || !card) return Promise.resolve(false);
+    titleEl.textContent = title;
+    bodyEl.classList.add('app-modal-body-html');
+    bodyEl.innerHTML = html || '<p>Nenhum detalhe disponível.</p>';
+    confirmBtn.textContent = confirmText || 'Fechar';
+    cancelBtn.textContent = cancelText || 'Cancelar';
+    cancelBtn.classList.toggle('hidden', !cancelText);
+    card.classList.toggle('app-modal-card-wide', !!wide);
+    host.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    return new Promise((resolve) => {
+      const cleanup = (result) => {
+        host.classList.add('hidden');
+        document.body.classList.remove('modal-open');
+        confirmBtn.onclick = null;
+        cancelBtn.onclick = null;
+        card.classList.remove('app-modal-card-wide');
+        host.querySelectorAll('[data-modal-close]').forEach((el) => { el.onclick = null; });
+        resolve(result);
+      };
+      confirmBtn.onclick = () => cleanup(true);
+      cancelBtn.onclick = () => cleanup(false);
+      host.querySelectorAll('[data-modal-close]').forEach((el) => { el.onclick = () => cleanup(false); });
+    });
+  }
+
   function tableFromObjects(items) {
     if (!items?.length) return "<p>Nenhum registro.</p>";
     const cols = Object.keys(items[0]).filter((k) => typeof items[0][k] !== "object");
@@ -931,7 +965,14 @@
     if (!janelaSelect) return;
 
     const dia = state.disponibilidadePublica.find((item) => item.data === dataSelecionada);
-    const horarios = (dia?.horarios || []).filter((slot) => slot.disponivel > 0);
+    const hoje = new Date();
+    const hojeIso = hoje.toISOString().slice(0, 10);
+    const agora = `${String(hoje.getHours()).padStart(2, '0')}:${String(hoje.getMinutes()).padStart(2, '0')}`;
+    const horarios = (dia?.horarios || []).filter((slot) => {
+      if (Number(slot.disponivel || 0) <= 0) return false;
+      if (String(dataSelecionada || '') !== hojeIso) return true;
+      return String(slot.hora || '') > agora;
+    });
 
     if (!horarios.length) {
       janelaSelect.innerHTML = "<option value=''>Sem horários disponíveis</option>";
@@ -998,11 +1039,13 @@
     const trigger = byId('internalFornecedorDropdownTrigger');
     const hiddenInput = byId('internalFornecedorPendenteSelect');
     const fornecedorField = byId('internalFornecedorNome');
+    const clearBtn = byId('btnClearInternalFornecedorSelection');
     const selected = getSelectedInternalFornecedores();
     const ids = selected.map((item) => String(item?.id || '')).filter(Boolean);
     const names = selected.map((item) => String(item?.fornecedor || item?.nome || '').trim()).filter(Boolean);
     if (hiddenInput) hiddenInput.value = ids.join(',');
     if (fornecedorField) fornecedorField.value = names.join(', ');
+    if (clearBtn) clearBtn.disabled = !selected.length;
     if (!trigger) return;
     if (!selected.length) {
       trigger.textContent = 'Selecione o fornecedor pendente';
@@ -1354,6 +1397,28 @@
     applyPendingFornecedoresInterno(item ? [item] : []);
   }
 
+  function buildOccurrencePayload() {
+    const form = byId('agendamentoForm');
+    if (!form) throw new Error('Formulário de agendamento não localizado.');
+    const payload = Object.fromEntries(new FormData(form).entries());
+    payload.notas = selectedInternalNotas();
+    payload.fornecedor = String(payload.fornecedor || '').trim();
+    payload.transportadora = String(payload.transportadora || '').trim();
+    return payload;
+  }
+
+  async function registrarOcorrenciaInterna() {
+    const payload = buildOccurrencePayload();
+    if (!payload.fornecedor) throw new Error('Selecione o fornecedor pendente antes de registrar a ocorrência.');
+    if (!payload.notas.length) throw new Error('Selecione ao menos uma NF para registrar a ocorrência.');
+    const response = await api('/api/agendamentos/ocorrencia', { method: 'POST', body: JSON.stringify(payload) });
+    byId('agendamentoMsg').textContent = response.message || 'Ocorrência registrada com sucesso.';
+    clearInternalPendingSelectionState();
+    renderInternalFornecedorDropdown();
+    renderPendingNotasInterno();
+    await Promise.allSettled([loadFornecedoresPendentesInterno(), loadFornecedoresPendentes(), loadDashboard(), loadDocas(), loadFilterOptions()]);
+  }
+
   async function loadFornecedoresPendentesInterno() {
     try {
       const items = await api('/api/public/fornecedores-pendentes');
@@ -1581,6 +1646,66 @@
     return [];
   }
 
+  function buildDocaModalHtml(doca = {}) {
+    const fila = Array.isArray(doca?.fila) ? doca.fila : [];
+    const linhas = fila.map((item) => {
+      const notas = Array.isArray(item?.notasDetalhes) ? item.notasDetalhes : [];
+      const notasHtml = notas.length
+        ? notas.map((nota) => `NF ${escapeHtml(nota.numeroNf || '-')}` +
+            ` / Série ${escapeHtml(nota.serie || '-')}` +
+            ` / Destino ${escapeHtml(nota.destino || '-')}` +
+            ` / Vol ${escapeHtml(formatDecimalBR(nota.volumes || 0, 3))}` +
+            ` / Peso ${escapeHtml(formatDecimalBR(nota.peso || 0, 3))} kg` +
+            ` / Itens ${escapeHtml(formatIntegerBR(nota.itens || 0))}`).join('<br>')
+        : '-';
+      const destinos = Array.isArray(item?.destinos) && item.destinos.length ? item.destinos.join(', ') : '-';
+      return `
+        <tr>
+          <td>${escapeHtml(item.protocolo || '-')}</td>
+          <td>${escapeHtml(item.motorista || '-')}</td>
+          <td>${escapeHtml(item.placa || '-')}</td>
+          <td>${escapeHtml(formatHour(item.horaAgendada))}</td>
+          <td>${escapeHtml(item.status || '-')}</td>
+          <td>${escapeHtml(formatIntegerBR(item.totalNotas || notas.length || 0))}</td>
+          <td>${escapeHtml(destinos)}</td>
+          <td>${escapeHtml(formatDecimalBR(item.totalVolumes || 0, 3))}</td>
+          <td>${escapeHtml(formatDecimalBR(item.pesoTotalKg || 0, 3))} kg</td>
+          <td>${escapeHtml(formatIntegerBR(item.totalItens || 0))}</td>
+          <td>${notasHtml}</td>
+        </tr>
+      `;
+    }).join('');
+
+    return `
+      <div class="doca-modal-summary">
+        <div><strong>Doca:</strong> ${escapeHtml(doca.codigo || '-')}</div>
+        <div><strong>Descrição:</strong> ${escapeHtml(doca.descricao || '-')}</div>
+        <div><strong>Ocupação:</strong> ${escapeHtml(doca.ocupacaoAtual || '-')}</div>
+        <div><strong>Fila:</strong> ${escapeHtml(formatIntegerBR(fila.length))}</div>
+      </div>
+      <table class="table doca-modal-table">
+        <thead>
+          <tr>
+            <th>Protocolo</th>
+            <th>Motorista</th>
+            <th>Placa</th>
+            <th>Hora</th>
+            <th>Status</th>
+            <th>Notas</th>
+            <th>Destino</th>
+            <th>Volumes</th>
+            <th>Peso</th>
+            <th>Itens</th>
+            <th>Detalhes das NFs</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${linhas || '<tr><td colspan="11">Sem fila para a data selecionada.</td></tr>'}
+        </tbody>
+      </table>
+    `;
+  }
+
   async function loadDocas() {
     if (!hasPermission('docas.view')) return;
     const date = byId("docaData")?.value || "";
@@ -1590,41 +1715,30 @@
 
     wrap.innerHTML = data.map((d) => `
       <div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
-        <h3>${escapeHtml(d.codigo)}</h3>
-        <p>${escapeHtml(d.descricao || "")}</p>
-        <p><strong>Ocupação:</strong> ${escapeHtml(d.ocupacaoAtual)}</p>
-        <span class="badge ${statusTone(d.ocupacaoAtual, d.semaforo)}">${escapeHtml(d.semaforo)}</span>
-        <div class="mt12">
-          <strong>Fila (${d.fila.length})</strong>
-          ${d.fila.length ? d.fila.map((f) => {
-            const needsDoca = hasPermission('agendamentos.definir_doca') && d.codigo === "A DEFINIR" && ["CHEGOU", "APROVADO", "PENDENTE_APROVACAO"].includes(f.status);
-            return `
-              <div class="fila-item">
-                <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
-                <div>${escapeHtml(f.placa)} • ${escapeHtml(formatHour(f.horaAgendada))} • ${escapeHtml(f.status)}</div>
-                ${needsDoca ? `<div class="warning-box">Selecione a doca para este agendamento.</div><div class="row gap8 wrap mt12"><select data-doca-painel-select="${escapeHtml(f.id)}" class="dock-select">${docaSelectOptions(f.doca?.id || f.docaId || '')}</select><button type="button" data-doca-painel-save="${escapeHtml(f.id)}">Definir doca</button></div>` : ""}
-              </div>
-            `;
-          }).join("") : "<div class='fila-item'>Sem fila</div>"}
+        <button type="button" class="doca-card-toggle" data-doca-open="${escapeHtml(d.docaId || d.codigo)}">
+          <div>
+            <h3>${escapeHtml(d.codigo)}</h3>
+            <small>${escapeHtml(d.descricao || '')}</small>
+          </div>
+          <span class="badge ${statusTone(d.ocupacaoAtual, d.semaforo)}">${escapeHtml(d.semaforo)}</span>
+        </button>
+        <div class="doca-detail-summary mt12">
+          <span><strong>Ocupação:</strong> ${escapeHtml(d.ocupacaoAtual || '-')}</span>
+          <span><strong>Fila:</strong> ${escapeHtml(formatIntegerBR((Array.isArray(d.fila) ? d.fila.length : 0)))}</span>
         </div>
       </div>
     `).join("");
 
-    wrap.querySelectorAll('[data-doca-painel-save]').forEach((btn) => btn.addEventListener('click', async () => {
-      const agendamentoId = btn.dataset.docaPainelSave;
-      const select = wrap.querySelector(`[data-doca-painel-select="${agendamentoId}"]`);
-      const docaId = select?.value || '';
-      if (!docaId) {
-        byId('operacaoMsg').textContent = 'Selecione a doca antes de confirmar.';
-        return;
-      }
-      try {
-        await api(`/api/agendamentos/${agendamentoId}/definir-doca`, { method: 'POST', body: JSON.stringify({ docaId }) });
-        byId('operacaoMsg').textContent = 'Doca definida com sucesso.';
-        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
-      } catch (err) {
-        byId('operacaoMsg').textContent = err.message;
-      }
+    wrap.querySelectorAll('[data-doca-open]').forEach((btn) => btn.addEventListener('click', async () => {
+      const key = String(btn.dataset.docaOpen || '').trim();
+      const doca = (Array.isArray(data) ? data : []).find((item) => String(item.docaId || item.codigo) === key);
+      if (!doca) return;
+      await showHtmlModal({
+        title: `Doca ${doca.codigo || ''}`.trim(),
+        html: buildDocaModalHtml(doca),
+        confirmText: 'Fechar',
+        wide: true
+      });
     }));
   }
 
@@ -2058,6 +2172,19 @@ Deseja liberar manualmente a descarga deste veículo?`);
 
     byId("btnNovoCadastro")?.addEventListener("click", () => renderCadastroForm());
     byId("btnLimparCadastro")?.addEventListener("click", () => renderCadastroForm());
+    byId('btnClearInternalFornecedorSelection')?.addEventListener('click', () => {
+      clearInternalPendingSelectionState();
+      renderInternalFornecedorDropdown();
+      renderPendingNotasInterno();
+      byId('agendamentoMsg').textContent = 'Seleção de fornecedores limpa.';
+    });
+    byId('btnRegistrarOcorrencia')?.addEventListener('click', async () => {
+      try {
+        await registrarOcorrenciaInterna();
+      } catch (err) {
+        byId('agendamentoMsg').textContent = err.message;
+      }
+    });
     byId("saveCadastro")?.addEventListener("click", async () => { try { await saveCadastro(); } catch (err) { byId("cadastroMsg").textContent = err.message; } });
     byId("loadCadastro")?.addEventListener("click", async () => { try { await loadCadastro(); } catch (err) { byId("cadastroMsg").textContent = err.message; } });
 
