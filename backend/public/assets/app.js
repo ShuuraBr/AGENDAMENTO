@@ -862,14 +862,25 @@
       const select = byId('fornecedorPendenteSelect');
       if (!select) return;
       select.innerHTML = `<option value="">Selecionar manualmente</option>` + state.pendingFornecedores.map((item) => `<option value="${escapeHtml(item.id || '')}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('');
+      const clearSelection = () => {
+        select.value = '';
+        const form = byId('fornecedorForm');
+        if (form) {
+          ['fornecedor', 'transportadora', 'placa'].forEach((field) => {
+            const input = form.querySelector(`[name="${field}"]`);
+            if (input) input.value = '';
+          });
+        }
+        state.nfRows = 1;
+        state.nfDrafts = [{ numeroNf: '', serie: '', chaveAcesso: '', volumes: '0', peso: '0', valorNf: '0', observacao: '' }];
+        renderNfRows();
+        updateTotalsFromNotas();
+      };
       select.onchange = () => {
         const data = getPendingFornecedorById(select.value);
         const form = byId('fornecedorForm');
         if (!data || !form) {
-          state.nfRows = 1;
-          state.nfDrafts = [{ numeroNf: '', serie: '', chaveAcesso: '', volumes: '0', peso: '0', valorNf: '0', observacao: '' }];
-          renderNfRows();
-          updateTotalsFromNotas();
+          clearSelection();
           return;
         }
         ['fornecedor', 'transportadora', 'placa'].forEach((field) => {
@@ -883,6 +894,8 @@
         renderNfRows();
         updateTotalsFromNotas();
       };
+      const clearBtn = byId('btnClearFornecedorPendentePublico');
+      if (clearBtn) clearBtn.onclick = clearSelection;
     } catch {}
   }
 
@@ -985,10 +998,10 @@
       ? [...select.selectedOptions].map((option) => String(option.value || '').trim()).filter(Boolean)
       : [];
     if (idsFromDom.length) {
-      state.internalSelectedFornecedorIds = [...idsFromDom];
-      return idsFromDom;
+      state.internalSelectedFornecedorIds = [idsFromDom[0]];
+      return [idsFromDom[0]];
     }
-    return Array.isArray(state.internalSelectedFornecedorIds) ? state.internalSelectedFornecedorIds.filter(Boolean) : [];
+    return Array.isArray(state.internalSelectedFornecedorIds) ? state.internalSelectedFornecedorIds.filter(Boolean).slice(0, 1) : [];
   }
 
   function getSelectedInternalFornecedores() {
@@ -1320,27 +1333,37 @@
       const select = byId('internalFornecedorPendenteSelect');
       if (!select) return;
       const selectedIds = new Set(getSelectedInternalFornecedorIds());
-      select.innerHTML = state.pendingFornecedores.map((item) => {
+      select.innerHTML = `<option value="">Selecionar fornecedor pendente</option>` + state.pendingFornecedores.map((item) => {
         const value = String(item.id || '').trim();
         const selected = selectedIds.has(value) ? ' selected' : '';
         return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`;
       }).join('');
+
+      const clearInternalFornecedorSelection = () => {
+        select.value = '';
+        clearInternalPendingSelectionState();
+        const fornecedorField = byId('internalFornecedorNome');
+        if (fornecedorField) fornecedorField.value = '';
+        renderPendingNotasInterno();
+      };
+
       select.onchange = () => {
         const selectedItems = [...select.selectedOptions]
           .map((option) => getPendingFornecedorById(option.value))
-          .filter(Boolean);
+          .filter(Boolean)
+          .slice(0, 1);
         if (!selectedItems.length) {
-          clearInternalPendingSelectionState();
-          const fornecedorField = byId('internalFornecedorNome');
-          if (fornecedorField) fornecedorField.value = '';
-          renderPendingNotasInterno();
+          clearInternalFornecedorSelection();
           return;
         }
         applyFornecedorPendenteInterno(selectedItems);
       };
 
+      const clearBtn = byId('btnClearFornecedorPendenteInterno');
+      if (clearBtn) clearBtn.onclick = clearInternalFornecedorSelection;
+
       if (selectedIds.size) {
-        const selectedItems = [...selectedIds].map((id) => getPendingFornecedorById(id)).filter(Boolean);
+        const selectedItems = [...selectedIds].map((id) => getPendingFornecedorById(id)).filter(Boolean).slice(0, 1);
         if (selectedItems.length) applyFornecedorPendenteInterno(selectedItems);
       }
     } catch {}
@@ -2070,7 +2093,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
         const fornecedorField = byId('internalFornecedorNome');
         if (fornecedorField) fornecedorField.value = '';
         const fornecedorSelect = byId('internalFornecedorPendenteSelect');
-        if (fornecedorSelect) [...fornecedorSelect.options].forEach((option) => { option.selected = false; });
+        if (fornecedorSelect) fornecedorSelect.value = '';
         renderPendingNotasInterno();
         const dataInput = byId('agendamentoForm')?.querySelector('[name="dataAgendada"]');
         if (dataInput) dataInput.value = new Date().toISOString().slice(0, 10);

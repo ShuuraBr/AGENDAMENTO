@@ -226,7 +226,7 @@ router.get("/disponibilidade", async (req, res) => {
 
 router.get("/relatorio-status", async (_req, res) => {
   try {
-    await ensureLatestRelatorioImport({ forceIfEmpty: true });
+    await ensureLatestRelatorioImport({ forceIfEmpty: false });
     res.json({
       ultimoProcessamento: getRelatorioImportStatus(),
       totalLinhasNoBanco: await getRelatorioRowsCount()
@@ -239,7 +239,7 @@ router.get("/relatorio-status", async (_req, res) => {
 
 router.get("/fornecedores-pendentes", async (_req, res) => {
   try {
-    await ensureLatestRelatorioImport({ forceIfEmpty: true });
+    await ensureLatestRelatorioImport({ forceIfEmpty: false });
     return res.json(await listFornecedoresPendentesImportados());
   } catch (error) {
     console.error("[RELATORIO_IMPORT] Falha ao montar fornecedores pendentes:", error?.message || error);

@@ -31,7 +31,7 @@ const SUPPORTED_EXTENSIONS = new Set(['.ods', '.csv', '.json', '.xlsx']);
 const TABLE_NAME = 'RelatorioTerceirizado';
 const WATCH_INTERVAL_MS = 60 * 1000;
 
-const SHEET_COLUMNS = [
+const RAW_SHEET_COLUMNS = [
   'Entrada',
   'Fornecedor',
   'Nr. nota',
@@ -96,6 +96,16 @@ const SHEET_COLUMNS = [
   'Fornecedor substituto tributário',
   'destino'
 ];
+
+const SHEET_COLUMNS = Array.from(new Set(RAW_SHEET_COLUMNS));
+const DATE_COLUMNS = new Set([
+  'Data emissão',
+  'Data de Entrada',
+  'Data 1º vencimento',
+  'Data do cadastro',
+  'Data de emissão do CT-e',
+  'Data de entrada do CT-e'
+]);
 
 let watcherHandle = null;
 let watcherBusy = false;
@@ -171,6 +181,19 @@ function normalizeCellValue(value) {
   return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function normalizeSpreadsheetDate(value) {
+  const raw = normalizeCellValue(value);
+  if (!raw) return '';
+  const iso = toIsoDate(raw);
+  return iso || raw;
+}
+
+function formatSpreadsheetDateBr(value) {
+  const raw = normalizeCellValue(value);
+  if (!raw) return '';
+  return formatDateBR(raw) || raw;
+}
+
 function parseNumber(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   const raw = normalizeCellValue(value);
@@ -230,7 +253,10 @@ function findSpreadsheetValue(row = {}, column = '') {
 function normalizeSpreadsheetRow(row = {}) {
   const normalized = {};
   for (const column of SHEET_COLUMNS) {
-    normalized[column] = normalizeCellValue(findSpreadsheetValue(row, column));
+    const rawValue = findSpreadsheetValue(row, column);
+    normalized[column] = DATE_COLUMNS.has(column)
+      ? normalizeSpreadsheetDate(rawValue)
+      : normalizeCellValue(rawValue);
   }
   normalized['Destino'] = normalized['destino'] || normalizeCellValue(findSpreadsheetValue(row, 'Destino'));
   return normalized;
@@ -281,6 +307,7 @@ function normalizeImportedItems(rows = []) {
       empresa: normalizeCellValue(normalizedRow['Empresa']),
       destino: normalizeCellValue(normalizedRow['Destino']),
       dataEntrada: normalizeCellValue(normalizedRow['Data de Entrada']),
+      dataEntradaBr: formatSpreadsheetDateBr(normalizedRow['Data de Entrada']),
       entrada: normalizeCellValue(normalizedRow['Entrada']),
       volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
       peso: toFixedNumber(parseNumber(normalizedRow['Peso total']), 3),
@@ -432,6 +459,7 @@ function normalizeNoteFromSpreadsheetRow(row = {}) {
     empresa: normalizeCellValue(normalizedRow['Empresa']),
     destino: normalizeCellValue(normalizedRow['Destino']),
     dataEntrada: normalizeCellValue(normalizedRow['Data de Entrada']),
+    dataEntradaBr: formatSpreadsheetDateBr(normalizedRow['Data de Entrada']),
     entrada: normalizeCellValue(normalizedRow['Entrada']),
     chaveAcesso: '',
     volumes: toFixedNumber(parseNumber(normalizedRow['Volume total']), 3),
@@ -766,10 +794,11 @@ function columnLettersToIndex(letters = '') {
 function excelSerialDateToIso(value) {
   const numeric = Number(value || 0);
   if (!Number.isFinite(numeric) || numeric <= 0) return normalizeCellValue(value);
-  const millis = Math.round((numeric - 25569) * 86400 * 1000);
-  const date = new Date(millis);
+  const wholeDays = Math.floor(numeric);
+  const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+  const date = new Date(excelEpoch.getTime() + wholeDays * 86400000);
   if (Number.isNaN(date.getTime())) return normalizeCellValue(value);
-  return date.toISOString().slice(0, 10);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 function parseXlsxSharedStrings(xml = '') {
@@ -1032,16 +1061,18 @@ function buildImportKey(file = null) {
   return `${file.name}:${file.mtimeMs}:${file.size}`;
 }
 
-export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = true, source = 'sync', actor = null, ip = null } = {}) {
+export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = false, source = 'sync', actor = null, ip = null } = {}) {
   for (const dir of importDirCandidates) ensureDir(dir);
   const latest = listSupportedImportFiles()[0] || null;
   const state = readState();
 
   let totalLinhasNoBanco = 0;
-  try {
-    totalLinhasNoBanco = await countRelatorioRowsInDatabase();
-  } catch (error) {
-    console.error('Falha ao contar linhas do relatório no banco:', error?.message || error);
+  if (forceWhenDatabaseEmpty && !relatorioDbDisabled) {
+    try {
+      totalLinhasNoBanco = await countRelatorioRowsInDatabase();
+    } catch (error) {
+      console.error('Falha ao contar linhas do relatório no banco:', error?.message || error);
+    }
   }
 
   if (!latest) {
@@ -1078,10 +1109,12 @@ export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = t
   });
 
   let totalDepois = totalLinhasNoBanco;
-  try {
-    totalDepois = await countRelatorioRowsInDatabase();
-  } catch (error) {
-    console.error('Falha ao contar linhas do relatório no banco após importação:', error?.message || error);
+  if (forceWhenDatabaseEmpty && !relatorioDbDisabled) {
+    try {
+      totalDepois = await countRelatorioRowsInDatabase();
+    } catch (error) {
+      console.error('Falha ao contar linhas do relatório no banco após importação:', error?.message || error);
+    }
   }
 
   return {
@@ -1342,7 +1375,7 @@ export async function getRelatorioRowsCount() {
   }
 }
 
-export async function ensureLatestRelatorioImport({ forceIfEmpty = true } = {}) {
+export async function ensureLatestRelatorioImport({ forceIfEmpty = false } = {}) {
   const latest = listSupportedImportFiles()[0];
   if (!latest) {
     console.log(`[RELATORIO_IMPORT] Nenhuma planilha encontrada nas pastas monitoradas: ${importDirCandidates.join(' | ')}`);
@@ -1351,7 +1384,7 @@ export async function ensureLatestRelatorioImport({ forceIfEmpty = true } = {}) 
 
   const key = buildFileKey(latest.rawName || latest.name, latest);
   const state = readState();
-  const totalLinhasNoBanco = await getRelatorioRowsCount();
+  const totalLinhasNoBanco = forceIfEmpty && !relatorioDbDisabled ? await getRelatorioRowsCount() : 0;
   const shouldForceBecauseDatabaseEmpty = !relatorioDbDisabled && forceIfEmpty && totalLinhasNoBanco === 0;
   const shouldReimport = state.lastProcessedKey !== key || shouldForceBecauseDatabaseEmpty;
 
@@ -1404,7 +1437,7 @@ export async function scanImportFolderAndProcess() {
   watcherBusy = true;
   try {
     return await syncLatestRelatorioFromFolder({
-      forceWhenDatabaseEmpty: true,
+      forceWhenDatabaseEmpty: false,
       source: 'watcher'
     });
   } finally {
