@@ -160,7 +160,7 @@ export default function PublicFornecedorPage() {
               <input value={form.transportadora} onChange={(e) => updateField("transportadora", e.target.value)} />
             </label>
             <label style={{ display: "grid", gap: 6 }}>
-              <span>Motorista *</span>
+              <span>Motorista</span>
               <input value={form.motorista} onChange={(e) => updateField("motorista", e.target.value)} />
             </label>
             <label style={{ display: "grid", gap: 6 }}>
@@ -176,7 +176,7 @@ export default function PublicFornecedorPage() {
               <input type="email" value={form.emailTransportadora} onChange={(e) => updateField("emailTransportadora", e.target.value)} />
             </label>
             <label style={{ display: "grid", gap: 6 }}>
-              <span>Placa do veículo *</span>
+              <span>Placa do veículo</span>
               <input value={form.placa} onChange={(e) => updateField("placa", e.target.value.toUpperCase())} />
             </label>
             <label style={{ display: "grid", gap: 6 }}>
@@ -214,7 +214,7 @@ export default function PublicFornecedorPage() {
                 >
                   {availableSlots.map((slot) => (
                     <option key={slot.janelaId} value={slot.janelaId}>
-                      {slot.hora || slot.codigo} {slot.descricao ? `- ${slot.descricao}` : ""} ({slot.capacidade - slot.ocupados} vaga(s))
+                      {slot.hora || slot.codigo} {slot.descricao ? `- ${slot.descricao}` : ""} (disponível)
                     </option>
                   ))}
                 </select>

@@ -4,8 +4,8 @@ import { PrivateRoute } from './components/PrivateRoute';
 import LoginPage from './pages/admin/LoginPage';
 import DashboardPage from './pages/admin/DashboardPage';
 import AgendamentosPage from './pages/admin/AgendamentosPage';
-import PublicAgendamentoPage from './pages/public/PublicAgendamentoPage';
-import PublicMotoristaPage from './pages/public/PublicMotoristaPage';
+import PublicFornecedorPage from './pages/PublicFornecedorPage';
+import PublicMotoristaPage from './pages/PublicMotoristaPage';
 
 function Home() {
   return (
@@ -24,8 +24,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/public/agendar" element={<PublicAgendamentoPage />} />
-          <Route path="/public/motorista/:protocolo" element={<PublicMotoristaPage />} />
+          <Route path="/public/agendar" element={<PublicFornecedorPage />} />
+          <Route path="/public/motorista" element={<PublicMotoristaPage />} />
           <Route path="/dashboard" element={<PrivateRoute><DashboardPage /></PrivateRoute>} />
           <Route path="/agendamentos" element={<PrivateRoute><AgendamentosPage /></PrivateRoute>} />
         </Routes>
