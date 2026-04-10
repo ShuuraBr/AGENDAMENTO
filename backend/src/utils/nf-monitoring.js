@@ -46,22 +46,35 @@ function todayUtc() {
 }
 
 export function parseFlexibleDate(value) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : toDateOnly(new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate())));
+  }
+
   const raw = normalizeText(value);
   if (!raw) return null;
+
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
     const date = new Date(`${raw}T00:00:00Z`);
     return Number.isNaN(date.getTime()) ? null : toDateOnly(date);
   }
-  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+
+  const isoDateTime = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T].*$/);
+  if (isoDateTime) {
+    const date = new Date(Date.UTC(Number(isoDateTime[1]), Number(isoDateTime[2]) - 1, Number(isoDateTime[3])));
+    return Number.isNaN(date.getTime()) ? null : toDateOnly(date);
+  }
+
+  const br = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (br) {
     const date = new Date(Date.UTC(Number(br[3]), Number(br[2]) - 1, Number(br[1])));
     return Number.isNaN(date.getTime()) ? null : toDateOnly(date);
   }
-  const compact = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T].*$/);
-  if (compact) {
-    const date = new Date(Date.UTC(Number(compact[1]), Number(compact[2]) - 1, Number(compact[3])));
-    return Number.isNaN(date.getTime()) ? null : toDateOnly(date);
+
+  const hasOnlyNumericSeparators = /^\d{1,4}[\/\-]\d{1,2}[\/\-]\d{1,4}$/.test(raw);
+  if (hasOnlyNumericSeparators) {
+    return null;
   }
+
   const native = new Date(raw);
   return Number.isNaN(native.getTime()) ? null : toDateOnly(new Date(Date.UTC(native.getUTCFullYear(), native.getUTCMonth(), native.getUTCDate())));
 }

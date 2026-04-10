@@ -1,5 +1,7 @@
 import { getPrismaClient } from "./prisma.js";
 
+const tableNameCache = new Map();
+
 function qid(name) {
   return `\`${String(name).replace(/`/g, "``")}\``;
 }
@@ -10,6 +12,9 @@ async function resolveTableName(candidates = []) {
 
   const normalized = [...new Set(candidates.map((v) => String(v).trim()).filter(Boolean))];
   if (!normalized.length) throw new Error("Nenhuma tabela candidata informada.");
+
+  const cacheKey = normalized.map((value) => value.toLowerCase()).sort().join("|");
+  if (tableNameCache.has(cacheKey)) return tableNameCache.get(cacheKey);
 
   const placeholders = normalized.map(() => "LOWER(?)").join(", ");
   const sql = `
@@ -26,6 +31,7 @@ async function resolveTableName(candidates = []) {
   if (!tableName) {
     throw new Error(`Tabela não encontrada. Procuradas: ${normalized.join(", ")}`);
   }
+  tableNameCache.set(cacheKey, tableName);
   return tableName;
 }
 
@@ -46,10 +52,8 @@ export async function fetchUserByEmail(email) {
 export async function fetchJanelasDocas() {
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
-  const [janelaTable, docaTable] = await Promise.all([
-    resolveTableName(["Janela", "janela", "janelas"]),
-    resolveTableName(["Doca", "doca", "docas"])
-  ]);
+  const janelaTable = await resolveTableName(["Janela", "janela", "janelas"]);
+  const docaTable = await resolveTableName(["Doca", "doca", "docas"]);
 
   const [janelas, docas] = await Promise.all([
     client.$queryRawUnsafe(`SELECT id, codigo, descricao FROM ${qid(janelaTable)} ORDER BY codigo ASC`),
@@ -86,11 +90,9 @@ export async function pingDatabase() {
 export async function fetchAgendamentosRaw(filters = {}) {
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
-  const [agTable, docaTable, janelaTable] = await Promise.all([
-    resolveTableName(["Agendamento", "agendamento", "agendamentos"]),
-    resolveTableName(["Doca", "doca", "docas"]),
-    resolveTableName(["Janela", "janela", "janelas"])
-  ]);
+  const agTable = await resolveTableName(["Agendamento", "agendamento", "agendamentos"]);
+  const docaTable = await resolveTableName(["Doca", "doca", "docas"]);
+  const janelaTable = await resolveTableName(["Janela", "janela", "janelas"]);
 
   const where = [];
   const args = [];
@@ -146,10 +148,8 @@ export async function fetchDocaPainelRaw(dataAgendada = null) {
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
 
-  const [agTable, docaTable] = await Promise.all([
-    resolveTableName(["Agendamento", "agendamento", "agendamentos"]),
-    resolveTableName(["Doca", "doca", "docas"])
-  ]);
+  const agTable = await resolveTableName(["Agendamento", "agendamento", "agendamentos"]);
+  const docaTable = await resolveTableName(["Doca", "doca", "docas"]);
 
   const where = [];
   const args = [];

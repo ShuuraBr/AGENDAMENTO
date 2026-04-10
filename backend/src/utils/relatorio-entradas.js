@@ -889,15 +889,31 @@ function parseXlsxFile(filePath) {
   const sharedStringsXml = (() => { try { return readZipEntry(filePath, 'xl/sharedStrings.xml').toString('utf8'); } catch { return ''; } })();
   const stylesXml = (() => { try { return readZipEntry(filePath, 'xl/styles.xml').toString('utf8'); } catch { return ''; } })();
 
-  const firstSheet = (workbookXml.match(/<sheet\b[^>]*r:id="([^"]+)"[^>]*\/?>/i) || [])[1] || '';
-  const relationshipRegex = new RegExp(String.raw`<Relationship\b[^>]*Id="${firstSheet}"[^>]*Target="([^"]+)"[^>]*\/?>`, 'i');
-  const worksheetTarget = (relsXml.match(relationshipRegex) || [])[1] || 'worksheets/sheet1.xml';
-  const worksheetPath = `xl/${String(worksheetTarget).replace(/^\/+/,'').replace(/^xl\//,'')}`;
-
   const sharedStrings = sharedStringsXml ? parseXlsxSharedStrings(sharedStringsXml) : [];
   const styles = stylesXml ? parseXlsxStyles(stylesXml) : [];
-  const worksheetXml = readZipEntry(filePath, worksheetPath).toString('utf8');
-  return parseXlsxWorksheet(worksheetXml, sharedStrings, styles);
+
+  const relationshipTargets = new Map();
+  for (const match of String(relsXml || '').matchAll(/<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"[^>]*\/?>/gi)) {
+    relationshipTargets.set(String(match[1] || '').trim(), String(match[2] || '').trim());
+  }
+
+  const sheetIds = [...String(workbookXml || '').matchAll(/<sheet[^>]*r:id="([^"]+)"[^>]*\/?>/gi)].map((match) => String(match[1] || '').trim()).filter(Boolean);
+  const worksheetTargets = sheetIds
+    .map((id) => relationshipTargets.get(id))
+    .filter(Boolean)
+    .map((target) => `xl/${String(target).replace(/^\/+/, '').replace(/^xl\//, '')}`);
+
+  if (!worksheetTargets.length) worksheetTargets.push('xl/worksheets/sheet1.xml');
+
+  for (const worksheetPath of worksheetTargets) {
+    try {
+      const worksheetXml = readZipEntry(filePath, worksheetPath).toString('utf8');
+      const rows = parseXlsxWorksheet(worksheetXml, sharedStrings, styles);
+      if (rows.length) return rows;
+    } catch {}
+  }
+
+  return [];
 }
 
 function readZipEntry(filePath, entryName) {
@@ -1293,6 +1309,12 @@ export async function unlinkRelatorioRowsFromAgendamento(agendamentoId) {
 
 export async function importRelatorioSpreadsheet({ filePath, originalName = '', actor = null, source = 'manual', ip = null } = {}) {
   return withRelatorioImportLock(async () => {
+    const stats = fs.statSync(filePath);
+    const ageMs = Math.max(0, Date.now() - Number(stats.mtimeMs || 0));
+    if (ageMs < 5000) {
+      throw new Error('A planilha ainda está sendo copiada para a pasta monitorada. Aguarde alguns segundos e tente novamente.');
+    }
+
     const rows = parseSpreadsheetFile(filePath);
     if (!rows.length) throw new Error('Nenhuma linha válida foi encontrada na planilha.');
 
@@ -1326,7 +1348,6 @@ export async function importRelatorioSpreadsheet({ filePath, originalName = '', 
       importedAt: new Date().toISOString()
     };
 
-    const stats = fs.statSync(filePath);
     writeState({
       ...readState(),
       lastImport: summary,

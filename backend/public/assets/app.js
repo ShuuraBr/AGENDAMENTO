@@ -17,7 +17,9 @@
     internalSelectedNotas: [],
     internalSelectedNotaKeys: new Set(),
     internalPendingSearchTerm: "",
+    docaPainelExpanded: new Set(),
     docaOptions: [],
+    janelaOptions: [],
     currentUser: null,
     auditoria: [],
     avaliacaoToken: "",
@@ -169,6 +171,53 @@
     const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (match) return `${match[3]}-${match[2]}-${match[1]}`;
     return raw;
+  }
+
+  function escapeAttribute(value) {
+    return escapeHtml(String(value ?? '')).replaceAll('`', '&#96;');
+  }
+
+  function getDisponibilidadeByDate(dateValue = '') {
+    const dateIso = normalizeDateToIso(dateValue);
+    return (state.disponibilidadePublica || []).find((item) => String(item?.data || '') === dateIso) || null;
+  }
+
+  function getInternalAvailableSlotsByDate(dateValue = '') {
+    const disponibilidade = getDisponibilidadeByDate(dateValue);
+    if (!disponibilidade) return [];
+    return (Array.isArray(disponibilidade.horarios) ? disponibilidade.horarios : []).filter((slot) => Number(slot?.disponivel || 0) > 0);
+  }
+
+  function renderInternalJanelaOptions(dateValue = '', preserveValue = '') {
+    const select = byId('internalJanelaSelect');
+    if (!select) return;
+    const slots = getInternalAvailableSlotsByDate(dateValue);
+    if (slots.length) {
+      const preserved = String(preserveValue || select.value || '').trim();
+      select.innerHTML = slots.map((slot) => {
+        const selected = preserved && String(slot.janelaId) === preserved ? ' selected' : '';
+        const suffix = Number(slot.disponivel || 0) === 1 ? '1 vaga' : `${formatIntegerBR(slot.disponivel || 0)} vagas`;
+        return `<option value="${escapeAttribute(slot.janelaId)}"${selected}>${escapeHtml(slot.hora || '-')} • ${escapeHtml(suffix)}</option>`;
+      }).join('');
+      if (!select.value && slots[0]?.janelaId != null) select.value = String(slots[0].janelaId);
+      return;
+    }
+
+    const fallbackOptions = Array.isArray(state.janelaOptions) ? state.janelaOptions : [];
+    select.innerHTML = fallbackOptions.map((janela) => {
+      const selected = String(janela?.id || '') === String(preserveValue || '') ? ' selected' : '';
+      return `<option value="${escapeAttribute(janela?.id || '')}"${selected}>${escapeHtml(janela?.codigo || '-')}</option>`;
+    }).join('');
+  }
+
+  async function refreshInternalJanelaAvailability() {
+    const dateInput = byId('agendamentoForm')?.querySelector('[name="dataAgendada"]');
+    if (!dateInput) return;
+    const preserveValue = byId('internalJanelaSelect')?.value || '';
+    if (!state.disponibilidadePublica.length) {
+      try { await loadPublicDisponibilidade(); } catch {}
+    }
+    renderInternalJanelaOptions(dateInput.value, preserveValue);
   }
 
   function formatIntegerBR(value) {
@@ -998,10 +1047,10 @@
       ? [...select.selectedOptions].map((option) => String(option.value || '').trim()).filter(Boolean)
       : [];
     if (idsFromDom.length) {
-      state.internalSelectedFornecedorIds = [idsFromDom[0]];
-      return [idsFromDom[0]];
+      state.internalSelectedFornecedorIds = [...new Set(idsFromDom)];
+      return state.internalSelectedFornecedorIds;
     }
-    return Array.isArray(state.internalSelectedFornecedorIds) ? state.internalSelectedFornecedorIds.filter(Boolean).slice(0, 1) : [];
+    return Array.isArray(state.internalSelectedFornecedorIds) ? [...new Set(state.internalSelectedFornecedorIds.filter(Boolean))] : [];
   }
 
   function getSelectedInternalFornecedores() {
@@ -1333,14 +1382,14 @@
       const select = byId('internalFornecedorPendenteSelect');
       if (!select) return;
       const selectedIds = new Set(getSelectedInternalFornecedorIds());
-      select.innerHTML = `<option value="">Selecionar fornecedor pendente</option>` + state.pendingFornecedores.map((item) => {
+      select.innerHTML = state.pendingFornecedores.map((item) => {
         const value = String(item.id || '').trim();
         const selected = selectedIds.has(value) ? ' selected' : '';
         return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`;
       }).join('');
 
       const clearInternalFornecedorSelection = () => {
-        select.value = '';
+        [...select.options].forEach((option) => { option.selected = false; });
         clearInternalPendingSelectionState();
         const fornecedorField = byId('internalFornecedorNome');
         if (fornecedorField) fornecedorField.value = '';
@@ -1350,8 +1399,7 @@
       select.onchange = () => {
         const selectedItems = [...select.selectedOptions]
           .map((option) => getPendingFornecedorById(option.value))
-          .filter(Boolean)
-          .slice(0, 1);
+          .filter(Boolean);
         if (!selectedItems.length) {
           clearInternalFornecedorSelection();
           return;
@@ -1363,7 +1411,7 @@
       if (clearBtn) clearBtn.onclick = clearInternalFornecedorSelection;
 
       if (selectedIds.size) {
-        const selectedItems = [...selectedIds].map((id) => getPendingFornecedorById(id)).filter(Boolean).slice(0, 1);
+        const selectedItems = [...selectedIds].map((id) => getPendingFornecedorById(id)).filter(Boolean);
         if (selectedItems.length) applyFornecedorPendenteInterno(selectedItems);
       }
     } catch {}
@@ -1502,6 +1550,7 @@
     const payload = await api("/api/public/disponibilidade?dias=21");
     state.disponibilidadePublica = Array.isArray(payload.agenda) ? payload.agenda : [];
     renderPublicDates();
+    renderInternalJanelaOptions(byId('agendamentoForm')?.querySelector('[name="dataAgendada"]')?.value || '', byId('internalJanelaSelect')?.value || '');
   }
 
   function currentFilters() {
@@ -1520,10 +1569,9 @@
     if (!hasPermission('cadastros.view') && !hasPermission('agendamentos.create')) return;
     try {
       const janelas = await api("/api/cadastros/janelas");
-      const janelaOptions = janelas.map((j) => `<option value="${j.id}">${escapeHtml(j.codigo)}</option>`).join("");
-      const janelaSelect = byId("internalJanelaSelect");
-      if (janelaSelect) janelaSelect.innerHTML = janelaOptions;
-      await Promise.allSettled([loadDocaOptions(), loadFilterOptions()]);
+      state.janelaOptions = Array.isArray(janelas) ? janelas : [];
+      renderInternalJanelaOptions(byId('agendamentoForm')?.querySelector('[name="dataAgendada"]')?.value || '', '');
+      await Promise.allSettled([loadDocaOptions(), loadFilterOptions(), refreshInternalJanelaAvailability()]);
     } catch {}
   }
 
@@ -1590,31 +1638,70 @@
     const wrap = byId("docaPainel");
     if (!wrap) return;
 
-    wrap.innerHTML = data.map((d) => `
-      <div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
-        <h3>${escapeHtml(d.codigo)}</h3>
-        <p>${escapeHtml(d.descricao || "")}</p>
-        <p><strong>Ocupação:</strong> ${escapeHtml(d.ocupacaoAtual)}</p>
-        <span class="badge ${statusTone(d.ocupacaoAtual, d.semaforo)}">${escapeHtml(d.semaforo)}</span>
-        <div class="mt12">
-          <strong>Fila (${d.fila.length})</strong>
-          ${d.fila.length ? d.fila.map((f) => {
-            const needsDoca = hasPermission('agendamentos.definir_doca') && d.codigo === "A DEFINIR" && ["CHEGOU", "APROVADO", "PENDENTE_APROVACAO"].includes(f.status);
-            return `
-              <div class="fila-item">
-                <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista)}</div>
-                <div>${escapeHtml(f.placa)} • ${escapeHtml(formatHour(f.horaAgendada))} • ${escapeHtml(f.status)}</div>
-                ${needsDoca ? `<div class="warning-box">Selecione a doca para este agendamento.</div><div class="row gap8 wrap mt12"><select data-doca-painel-select="${escapeHtml(f.id)}" class="dock-select">${docaSelectOptions(f.doca?.id || f.docaId || '')}</select><button type="button" data-doca-painel-save="${escapeHtml(f.id)}">Definir doca</button></div>` : ""}
-              </div>
-            `;
-          }).join("") : "<div class='fila-item'>Sem fila</div>"}
+    wrap.innerHTML = data.map((d) => {
+      const cardKey = String(d.docaId || d.codigo || '');
+      const isExpanded = state.docaPainelExpanded.has(cardKey);
+      const filaHtml = d.fila.length ? d.fila.map((f) => {
+        const needsDoca = hasPermission('agendamentos.definir_doca') && d.codigo === "A DEFINIR" && ["CHEGOU", "APROVADO", "PENDENTE_APROVACAO"].includes(f.status);
+        const destinos = Array.isArray(f.destinos) && f.destinos.length ? f.destinos.join(' / ') : '-';
+        const quantidadeItens = formatIntegerBR(f.quantidadeItens || 0);
+        const quantidadeNotas = formatIntegerBR(f.quantidadeNotas || 0);
+        const volumes = formatDecimalBR(f.quantidadeVolumes || 0, 3);
+        const peso = formatDecimalBR(f.pesoTotalKg || 0, 3);
+        return `
+          <div class="fila-item fila-item-detalhado">
+            <div class="fila-item-head">
+              <div><strong>${escapeHtml(f.protocolo)}</strong> • ${escapeHtml(f.motorista || '-')}</div>
+              <div>${renderStatusBadge(f.status, trafficColor(f.status))}</div>
+            </div>
+            <div class="fila-item-meta">
+              <span><strong>Placa:</strong> ${escapeHtml(f.placa || '-')}</span>
+              <span><strong>Horário:</strong> ${escapeHtml(formatHour(f.horaAgendada || ''))}</span>
+              <span><strong>NF:</strong> ${escapeHtml(quantidadeNotas)}</span>
+              <span><strong>Itens:</strong> ${escapeHtml(quantidadeItens)}</span>
+              <span><strong>Volumes:</strong> ${escapeHtml(volumes)}</span>
+              <span><strong>Peso:</strong> ${escapeHtml(peso)} kg</span>
+              <span><strong>Destino:</strong> ${escapeHtml(destinos)}</span>
+            </div>
+            ${needsDoca ? `<div class="warning-box">Selecione a doca para este agendamento.</div><div class="row gap8 wrap mt12"><select data-doca-painel-select="${escapeAttribute(f.id)}" class="dock-select">${docaSelectOptions(f.doca?.id || f.docaId || '')}</select><button type="button" data-doca-painel-save="${escapeAttribute(f.id)}">Definir doca</button></div>` : ""}
+          </div>
+        `;
+      }).join("") : "<div class='fila-item'>Sem agendamentos para a data filtrada.</div>";
+
+      return `
+        <div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
+          <div class="doca-card-header">
+            <div>
+              <h3>${escapeHtml(d.codigo)}</h3>
+              <p>${escapeHtml(d.descricao || "")}</p>
+            </div>
+            <div class="doca-card-summary">
+              <span class="badge ${statusTone(d.ocupacaoAtual, d.semaforo)}">${escapeHtml(d.semaforo)}</span>
+              <span><strong>Ocupação:</strong> ${escapeHtml(d.ocupacaoAtual)}</span>
+              <span><strong>Agendamentos:</strong> ${escapeHtml(formatIntegerBR(d.fila.length))}</span>
+            </div>
+          </div>
+          <button type="button" class="btn-secondary doca-toggle-details mt12" data-doca-toggle="${escapeAttribute(cardKey)}">${isExpanded ? 'Ocultar detalhes' : 'Ver detalhes da doca'}</button>
+          <div class="doca-card-details${isExpanded ? '' : ' hidden'}" data-doca-details="${escapeAttribute(cardKey)}">
+            <div class="mt12">${filaHtml}</div>
+          </div>
         </div>
-      </div>
-    `).join("");
+      `;
+    }).join("");
+
+    wrap.querySelectorAll('[data-doca-toggle]').forEach((btn) => btn.addEventListener('click', () => {
+      const key = String(btn.dataset.docaToggle || '').trim();
+      if (!key) return;
+      if (state.docaPainelExpanded.has(key)) state.docaPainelExpanded.delete(key);
+      else state.docaPainelExpanded.add(key);
+      const details = wrap.querySelector(`[data-doca-details="${CSS.escape(key)}"]`);
+      if (details) details.classList.toggle('hidden');
+      btn.textContent = state.docaPainelExpanded.has(key) ? 'Ocultar detalhes' : 'Ver detalhes da doca';
+    }));
 
     wrap.querySelectorAll('[data-doca-painel-save]').forEach((btn) => btn.addEventListener('click', async () => {
       const agendamentoId = btn.dataset.docaPainelSave;
-      const select = wrap.querySelector(`[data-doca-painel-select="${agendamentoId}"]`);
+      const select = wrap.querySelector(`[data-doca-painel-select="${CSS.escape(String(agendamentoId))}"]`);
       const docaId = select?.value || '';
       if (!docaId) {
         byId('operacaoMsg').textContent = 'Selecione a doca antes de confirmar.';
@@ -1623,7 +1710,7 @@
       try {
         await api(`/api/agendamentos/${agendamentoId}/definir-doca`, { method: 'POST', body: JSON.stringify({ docaId }) });
         byId('operacaoMsg').textContent = 'Doca definida com sucesso.';
-        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
+        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions(), refreshInternalJanelaAvailability()]);
       } catch (err) {
         byId('operacaoMsg').textContent = err.message;
       }
@@ -2039,6 +2126,9 @@ Deseja liberar manualmente a descarga deste veículo?`);
 
     byId("loadDashboard")?.addEventListener("click", async () => { try { await loadDashboard(); } catch (err) { alert(err.message); } });
     byId("loadDocas")?.addEventListener("click", async () => { try { await loadDocas(); } catch (err) { alert(err.message); } });
+    byId('agendamentoForm')?.querySelector('[name="dataAgendada"]')?.addEventListener('change', async () => {
+      try { await refreshInternalJanelaAvailability(); } catch {}
+    });
 
     document.querySelectorAll(".cad-tab").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
@@ -2093,12 +2183,12 @@ Deseja liberar manualmente a descarga deste veículo?`);
         const fornecedorField = byId('internalFornecedorNome');
         if (fornecedorField) fornecedorField.value = '';
         const fornecedorSelect = byId('internalFornecedorPendenteSelect');
-        if (fornecedorSelect) fornecedorSelect.value = '';
+        if (fornecedorSelect) [...fornecedorSelect.options].forEach((option) => { option.selected = false; });
         renderPendingNotasInterno();
         const dataInput = byId('agendamentoForm')?.querySelector('[name="dataAgendada"]');
         if (dataInput) dataInput.value = new Date().toISOString().slice(0, 10);
         applyInputMasks(byId('agendamentoForm'));
-        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno(), loadFilterOptions()]);
+        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno(), loadFilterOptions(), loadPublicDisponibilidade(), refreshInternalJanelaAvailability()]);
       } catch (err) {
         byId("agendamentoMsg").textContent = err.message;
       }

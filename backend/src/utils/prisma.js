@@ -57,7 +57,9 @@ async function createPrismaClient() {
   if (!PrismaClient) {
     throw new Error('PrismaClient não disponível. Execute npm install e npm run prisma:generate.');
   }
-  return new PrismaClient({ log: ['error', 'warn'] });
+  const client = new PrismaClient({ log: ['error', 'warn'] });
+  await client.$connect();
+  return client;
 }
 
 export async function getPrismaClient() {
