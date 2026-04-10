@@ -113,6 +113,7 @@ let relatorioDbDisableReason = null;
 let relatorioImportPromise = null;
 let relatorioTableColumnsCache = null;
 let relatorioSchemaEnsured = false;
+let relatorioEnsurePromise = null;
 
 const RELATORIO_BASE_COLUMNS = [
   ['id', 'INT NOT NULL AUTO_INCREMENT'],
@@ -1187,6 +1188,7 @@ function withRelatorioImportLock(task) {
 
 async function ensureRelatorioTable() {
   if (relatorioDbDisabled) return false;
+  if (relatorioEnsurePromise) return relatorioEnsurePromise;
 
   const probe = async () => {
     await ensureRelatorioTableSchema();
@@ -1199,23 +1201,29 @@ async function ensureRelatorioTable() {
     return true;
   };
 
-  try {
-    return await probe();
-  } catch (error) {
-    if (isPrismaPanicLike(error)) {
-      try {
-        relatorioTableColumnsCache = null;
-        relatorioSchemaEnsured = false;
-        await resetPrismaClient();
-        return await probe();
-      } catch (retryError) {
-        disableRelatorioDb(retryError, 'ensureRelatorioTable');
-        return false;
+  relatorioEnsurePromise = (async () => {
+    try {
+      return await probe();
+    } catch (error) {
+      if (isPrismaPanicLike(error)) {
+        try {
+          relatorioTableColumnsCache = null;
+          relatorioSchemaEnsured = false;
+          await resetPrismaClient();
+          return await probe();
+        } catch (retryError) {
+          disableRelatorioDb(retryError, 'ensureRelatorioTable');
+          return false;
+        }
       }
+      disableRelatorioDb(error, 'ensureRelatorioTable');
+      return false;
+    } finally {
+      relatorioEnsurePromise = null;
     }
-    disableRelatorioDb(error, 'ensureRelatorioTable');
-    return false;
-  }
+  })();
+
+  return relatorioEnsurePromise;
 }
 
 async function getRelatorioTableColumns() {

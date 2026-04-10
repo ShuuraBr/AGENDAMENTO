@@ -9,7 +9,7 @@ import { qrSvg } from "../utils/qrcode.js";
 import { sendMail } from "../utils/email.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
 import { calculateTotals, normalizeCpf } from "../utils/agendamento-helpers.js";
-import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile, addDocumentoFile, addNotaFile } from "../utils/file-store.js";
+import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile, addDocumentoFile, addNotaFile, readAuditLogs } from "../utils/file-store.js";
 import { validateAgendamentoPayload, validateNf, validateStatusTransition, normalizeChaveAcesso } from "../utils/validators.js";
 import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js";
 import { auditLog } from "../utils/audit.js";
@@ -30,6 +30,32 @@ const storage = multer.diskStorage({
   filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, "-")}`)
 });
 const upload = multer({ storage });
+
+
+function parseAuditDetalhes(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function normalizeOccurrenceLog(item = {}) {
+  const detalhes = parseAuditDetalhes(item?.detalhes);
+  return {
+    id: Number(item?.id || 0) || null,
+    usuarioId: Number(item?.usuarioId || item?.usuario?.id || 0) || null,
+    usuarioNome: item?.usuarioNome || item?.usuario?.nome || null,
+    perfil: item?.perfil || item?.usuario?.perfil || null,
+    entidade: String(item?.entidade || '').trim(),
+    acao: String(item?.acao || '').trim(),
+    entidadeId: item?.entidadeId == null ? null : Number(item.entidadeId),
+    createdAt: item?.createdAt || null,
+    detalhes
+  };
+}
 
 function getBaseUrl(req) {
   if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL.replace(/\/$/, "");
@@ -487,6 +513,7 @@ async function sendApprovalNotifications(item, req) {
   if (targets.length) {
     await auditLog({
       usuarioId: req.user.sub,
+      usuarioNome: req.user.nome || req.user.name || null,
       perfil: req.user.perfil,
       acao: "ENVIAR_INFORMACOES",
       entidade: "AGENDAMENTO",
@@ -643,6 +670,7 @@ router.post("/notas/manual-alerta", requirePermission("agendamentos.notas"), asy
     const sent = await sendFiscalMissingPrelaunchEmail({ fornecedor, nota: persistedNota, actor: req.user });
     await auditLog({
       usuarioId: req.user.sub,
+      usuarioNome: req.user.nome || req.user.name || null,
       perfil: req.user.perfil,
       acao: "ALERTA_FISCAL_PRE_LANCAMENTO",
       entidade: "AGENDAMENTO",
@@ -665,6 +693,7 @@ router.post("/financeiro/resumo-mensal", requirePermission("financeiro.summary")
     });
     await auditLog({
       usuarioId: req.user.sub,
+      usuarioNome: req.user.nome || req.user.name || null,
       perfil: req.user.perfil,
       acao: "ENVIAR_RESUMO_FINANCEIRO",
       entidade: "AGENDAMENTO",
@@ -741,10 +770,32 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
   }
 });
 
+
+router.get('/ocorrencias', requirePermission('agendamentos.view'), async (req, res) => {
+  const limit = Math.max(5, Math.min(100, Number(req.query?.limit || 30)));
+  try {
+    const items = await prisma.logAuditoria.findMany({
+      where: { acao: 'OCORRENCIA_AGENDAMENTO', entidade: 'RELATORIO_TERCEIRIZADO' },
+      include: { usuario: true },
+      orderBy: { createdAt: 'desc' },
+      take: limit
+    });
+    return res.json(items.map(normalizeOccurrenceLog));
+  } catch (error) {
+    console.error('Erro ao carregar histórico de ocorrências no banco. Usando arquivo:', error?.message || error);
+    const items = readAuditLogs()
+      .filter((item) => String(item?.acao || '').trim() === 'OCORRENCIA_AGENDAMENTO' && String(item?.entidade || '').trim() === 'RELATORIO_TERCEIRIZADO')
+      .slice(0, limit)
+      .map(normalizeOccurrenceLog);
+    return res.json(items);
+  }
+});
+
 router.post('/ocorrencia', requirePermission('agendamentos.create'), async (req, res) => {
   try {
     const fornecedor = String(req.body?.fornecedor || '').trim();
     const transportadora = String(req.body?.transportadora || '').trim();
+    const motivo = String(req.body?.motivo || req.body?.motivoOcorrencia || '').trim();
     const notas = await canonicalizeNotasSelecionadasComRelatorio(fornecedor, Array.isArray(req.body?.notas) ? req.body.notas : []);
     if (!fornecedor) throw new Error('Fornecedor é obrigatório para registrar a ocorrência.');
     if (!notas.length) throw new Error('Selecione ao menos uma NF para registrar a ocorrência.');
@@ -758,11 +809,28 @@ router.post('/ocorrencia', requirePermission('agendamentos.create'), async (req,
 
     await auditLog({
       usuarioId: req.user.sub,
+      usuarioNome: req.user.nome || req.user.name || null,
       perfil: req.user.perfil,
       acao: 'OCORRENCIA_AGENDAMENTO',
       entidade: 'RELATORIO_TERCEIRIZADO',
       entidadeId: null,
-      detalhes: { fornecedor, transportadora, totalNotas: notas.length, recipients, removal, mailResult },
+      detalhes: {
+        fornecedor,
+        transportadora,
+        motivo: motivo || null,
+        totalNotas: notas.length,
+        notas: notas.map((nota) => ({
+          rowHash: nota?.rowHash || null,
+          numeroNf: String(nota?.numeroNf || '').trim(),
+          serie: String(nota?.serie || '').trim(),
+          destino: String(nota?.destino || nota?.empresa || '').trim(),
+          volumes: Number(nota?.volumes || 0),
+          peso: Number(nota?.peso || 0)
+        })),
+        recipients,
+        removal,
+        mailResult
+      },
       ip: req.ip
     });
 

@@ -144,6 +144,12 @@ export async function fetchDocaPainelRaw(dataAgendada = null) {
       .map((item) => ({ ...item, ...extractItemTotals(item) }));
 
     const ativo = fila.find((item) => ["CHEGOU", "EM_DESCARGA"].includes(String(item?.status || ''))) || fila[0] || null;
+    const resumo = {
+      totalAgendamentos: fila.length,
+      totalNotas: fila.reduce((acc, item) => acc + Number(item?.totalNotas || 0), 0),
+      totalVolumes: Number(fila.reduce((acc, item) => acc + Number(item?.totalVolumes || 0), 0).toFixed(3)),
+      totalPesoKg: Number(fila.reduce((acc, item) => acc + Number(item?.pesoTotalKg || 0), 0).toFixed(3))
+    };
 
     return {
       docaId: doca.id,
@@ -151,6 +157,7 @@ export async function fetchDocaPainelRaw(dataAgendada = null) {
       descricao: doca.descricao || '',
       ocupacaoAtual: ativo ? ativo.status : 'LIVRE',
       semaforo: ativo ? trafficColor(ativo.status) : 'VERDE',
+      ...resumo,
       fila
     };
   });

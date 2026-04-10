@@ -189,12 +189,19 @@ export function buildDocaPainelFromFiles(dataAgendada = null) {
       };
     });
     const ativo = filaDetalhada.find((a) => ['CHEGOU', 'EM_DESCARGA'].includes(a.status)) || filaDetalhada[0] || null;
+    const resumo = {
+      totalAgendamentos: filaDetalhada.length,
+      totalNotas: filaDetalhada.reduce((acc, item) => acc + Number(item?.totalNotas || 0), 0),
+      totalVolumes: Number(filaDetalhada.reduce((acc, item) => acc + Number(item?.totalVolumes || 0), 0).toFixed(3)),
+      totalPesoKg: Number(filaDetalhada.reduce((acc, item) => acc + Number(item?.pesoTotalKg || 0), 0).toFixed(3))
+    };
     return {
       docaId: doca.id,
       codigo: doca.codigo,
       descricao: doca.descricao || '',
       ocupacaoAtual: ativo ? ativo.status : 'LIVRE',
       semaforo: ativo ? color(ativo.status) : 'VERDE',
+      ...resumo,
       fila: filaDetalhada,
     };
   });

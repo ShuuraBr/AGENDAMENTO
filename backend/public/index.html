@@ -80,6 +80,7 @@
             </div>
             <div>
               <div class="info-box"><strong>Doca:</strong> definida pelo operador do recebimento conforme disponibilidade operacional.</div>
+              <label>Buscar fornecedor pendente<input id="publicPendingFornecedorSearch" type="text" placeholder="Digite para localizar o fornecedor" /></label>
               <label>Fornecedor pendente<select name="fornecedorPendenteSelect"><option value="">Selecionar manualmente</option></select></label>
               <label>Data<select name="dataAgendada" id="publicDataSelect"></select></label>
               <label>Horário disponível<select name="janelaId" id="publicJanelaSelect"></select></label>
@@ -312,6 +313,11 @@
             <button id="btnResumoFinanceiro" class="btn-secondary">Enviar resumo financeiro</button>
           </div>
           <p id="operacaoMsg" class="msg"></p>
+          <div class="card inner mt16">
+            <h3>Histórico de ocorrências</h3>
+            <p class="hint">As NF marcadas como ocorrência ficam registradas aqui para acompanhamento operacional.</p>
+            <div id="ocorrenciasWorkflowList" class="mt12"></div>
+          </div>
           <div id="agendamentosList" class="mt16"></div>
         </div>
       </div>

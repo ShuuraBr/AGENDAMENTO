@@ -51,6 +51,15 @@ export function trafficColor(status) {
   return "VERMELHO";
 }
 
+function summarizeDocaFila(fila = []) {
+  return {
+    totalAgendamentos: Array.isArray(fila) ? fila.length : 0,
+    totalNotas: (Array.isArray(fila) ? fila : []).reduce((acc, item) => acc + Number(item?.totalNotas || 0), 0),
+    totalVolumes: Number((Array.isArray(fila) ? fila : []).reduce((acc, item) => acc + Number(item?.totalVolumes || 0), 0).toFixed(3)),
+    totalPesoKg: Number((Array.isArray(fila) ? fila : []).reduce((acc, item) => acc + Number(item?.pesoTotalKg || 0), 0).toFixed(3))
+  };
+}
+
 function buildDocaFilaItem(item = {}) {
   const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : [];
   const destinos = [...new Set(notas.map((nota) => String(nota?.destino || nota?.empresa || '').trim()).filter(Boolean))];
@@ -93,12 +102,15 @@ export async function docaPainel(dataAgendada = null) {
 
     const ativo = fila.find(a => ["CHEGOU", "EM_DESCARGA"].includes(a.status)) || fila[0] || null;
 
+    const resumo = summarizeDocaFila(fila);
+
     return {
       docaId: doca.id,
       codigo: doca.codigo,
       descricao: doca.descricao,
       ocupacaoAtual: ativo ? ativo.status : "LIVRE",
       semaforo: ativo ? trafficColor(ativo.status) : "VERDE",
+      ...resumo,
       fila
     };
   });

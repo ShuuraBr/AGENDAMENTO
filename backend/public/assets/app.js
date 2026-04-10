@@ -16,6 +16,8 @@
     internalSelectedNotas: [],
     internalSelectedNotaKeys: new Set(),
     internalPendingSearchTerm: "",
+    internalFornecedorSearchTerm: "",
+    publicPendingSearchTerm: "",
     docaOptions: [],
     currentUser: null,
     auditoria: [],
@@ -885,13 +887,33 @@
     form.querySelector('[name="valorTotalNf"]').value = formatDecimalBR(totalValor, 2);
   }
 
+
+  function getFilteredPublicPendingFornecedores() {
+    const term = String(state.publicPendingSearchTerm || '').trim().toLowerCase();
+    if (!term) return [...(state.pendingFornecedores || [])];
+    return (state.pendingFornecedores || []).filter((item) => {
+      const fornecedor = String(item?.fornecedor || item?.nome || '').toLowerCase();
+      return fornecedor.includes(term);
+    });
+  }
+
+  function renderPublicPendingFornecedorOptions() {
+    const select = byId('fornecedorPendenteSelect');
+    if (!select) return;
+    const previous = String(select.value || '').trim();
+    const items = getFilteredPublicPendingFornecedores();
+    select.innerHTML = `<option value="">Selecionar manualmente</option>` + items.map((item) => `<option value="${escapeHtml(item.id || '')}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('');
+    const hasPrevious = items.some((item) => String(item?.id || '') === previous);
+    select.value = hasPrevious ? previous : '';
+  }
+
   async function loadFornecedoresPendentes() {
     try {
       const items = await api('/api/public/fornecedores-pendentes');
       state.pendingFornecedores = Array.isArray(items) ? items.map(normalizePendingFornecedor) : [];
       const select = byId('fornecedorPendenteSelect');
       if (!select) return;
-      select.innerHTML = `<option value="">Selecionar manualmente</option>` + state.pendingFornecedores.map((item) => `<option value="${escapeHtml(item.id || '')}">${escapeHtml(item.fornecedor || item.nome || '-')} (${escapeHtml(item.quantidadeNotas ?? 0)} NF)</option>`).join('');
+      renderPublicPendingFornecedorOptions();
       select.onchange = () => {
         const data = getPendingFornecedorById(select.value);
         const form = byId('fornecedorForm');
@@ -1084,6 +1106,7 @@
     state.internalSelectedNotas = [];
     state.internalSelectedNotaKeys = new Set();
     state.internalPendingSearchTerm = '';
+    state.internalFornecedorSearchTerm = '';
     const searchInput = byId('internalPendingSearch');
     if (searchInput) searchInput.value = '';
   }
@@ -1101,12 +1124,30 @@
       return;
     }
 
-    menu.innerHTML = state.pendingFornecedores.map((item) => {
+    const fornecedorTerm = String(state.internalFornecedorSearchTerm || '').trim().toLowerCase();
+    const fornecedoresVisiveis = fornecedorTerm
+      ? state.pendingFornecedores.filter((item) => String(item?.fornecedor || item?.nome || '').toLowerCase().includes(fornecedorTerm))
+      : [...state.pendingFornecedores];
+
+    menu.innerHTML = `
+      <div class="multi-select-search">
+        <input type="text" id="internalFornecedorSearchInput" placeholder="Buscar fornecedor pendente" value="${escapeHtml(state.internalFornecedorSearchTerm || '')}" />
+      </div>
+      ${fornecedoresVisiveis.map((item) => {
       const id = String(item?.id || '').trim();
       const checked = selectedIds.has(id) ? 'checked' : '';
       const label = `${String(item.fornecedor || item.nome || '-').trim()} (${formatIntegerBR(item.quantidadeNotas ?? 0)} NF)`;
       return `<label class="multi-select-option" data-fornecedor-id="${escapeHtml(id)}"><input type="checkbox" data-fornecedor-id="${escapeHtml(id)}" ${checked} /><span class="multi-select-option-text">${escapeHtml(label)}</span></label>`;
-    }).join('');
+    }).join('')}
+      ${fornecedoresVisiveis.length ? '' : '<div class="multi-select-empty">Nenhum fornecedor encontrado para esta busca.</div>'}
+    `;
+
+    menu.querySelector('#internalFornecedorSearchInput')?.addEventListener('input', (event) => {
+      state.internalFornecedorSearchTerm = String(event.target.value || '').trim();
+      renderInternalFornecedorDropdown();
+      menu.classList.remove('hidden');
+      trigger.setAttribute('aria-expanded', 'true');
+    });
 
     menu.querySelectorAll('input[type="checkbox"][data-fornecedor-id]').forEach((input) => {
       input.addEventListener('change', () => {
@@ -1369,6 +1410,7 @@
     state.internalPendingFornecedor = fornecedor;
     state.internalSelectedNotaKeys.add(buildInternalNotaKey(normalized));
     state.internalPendingSearchTerm = '';
+    state.internalFornecedorSearchTerm = '';
     const searchInput = byId('internalPendingSearch');
     if (searchInput) searchInput.value = '';
     refreshPendingFornecedorOptionText(fornecedor);
@@ -1416,7 +1458,7 @@
     clearInternalPendingSelectionState();
     renderInternalFornecedorDropdown();
     renderPendingNotasInterno();
-    await Promise.allSettled([loadFornecedoresPendentesInterno(), loadFornecedoresPendentes(), loadDashboard(), loadDocas(), loadFilterOptions()]);
+    await Promise.allSettled([loadFornecedoresPendentesInterno(), loadFornecedoresPendentes(), loadDashboard(), loadDocas(), loadFilterOptions(), loadAuditoria()]);
   }
 
   async function loadFornecedoresPendentesInterno() {
@@ -1638,40 +1680,73 @@
     return date.toLocaleString('pt-BR');
   }
 
-  function renderAuditoria(_items = []) {
-    return;
+  function renderAuditoria(items = []) {
+    const wrap = byId('ocorrenciasWorkflowList');
+    if (!wrap) return;
+    if (!Array.isArray(items) || !items.length) {
+      wrap.innerHTML = '<div class="warning-box">Nenhuma ocorrência registrada até o momento.</div>';
+      return;
+    }
+    wrap.innerHTML = items.map((item) => {
+      const detalhes = item?.detalhes || {};
+      const notas = Array.isArray(detalhes?.notas) ? detalhes.notas : [];
+      const notasTexto = notas.length
+        ? notas.map((nota) => {
+            const partes = [`NF ${nota?.numeroNf || '-'}`];
+            if (nota?.destino) partes.push(`Destino ${nota.destino}`);
+            if (Number(nota?.volumes || 0)) partes.push(`Vol ${formatDecimalBR(nota.volumes || 0, 3)}`);
+            if (Number(nota?.peso || 0)) partes.push(`Peso ${formatDecimalBR(nota.peso || 0, 3)} kg`);
+            return partes.join(' • ');
+          }).join('<br>')
+        : '-';
+      return `
+        <div class="occurrence-log-card">
+          <div class="occurrence-log-head">
+            <strong>${escapeHtml(detalhes?.fornecedor || '-')}</strong>
+            <span>${escapeHtml(formatDateTimeBR(item?.createdAt || ''))}</span>
+          </div>
+          <div class="occurrence-log-meta">
+            <span><strong>Transportadora:</strong> ${escapeHtml(detalhes?.transportadora || '-')}</span>
+            <span><strong>Operador:</strong> ${escapeHtml(item?.usuarioNome || item?.perfil || '-')}</span>
+            <span><strong>NF registradas:</strong> ${escapeHtml(formatIntegerBR(detalhes?.totalNotas || notas.length || 0))}</span>
+            <span><strong>Removidas da fila:</strong> ${escapeHtml(formatIntegerBR(detalhes?.removal?.removed || 0))}</span>
+          </div>
+          ${detalhes?.motivo ? `<div class="occurrence-log-reason"><strong>Motivo:</strong> ${escapeHtml(detalhes.motivo)}</div>` : ''}
+          <div class="occurrence-log-notes">${notasTexto}</div>
+        </div>
+      `;
+    }).join('');
   }
 
   async function loadAuditoria() {
-    return [];
+    if (!hasPermission('agendamentos.view')) return [];
+    try {
+      const items = await api('/api/agendamentos/ocorrencias?limit=40');
+      state.auditoria = Array.isArray(items) ? items : [];
+      renderAuditoria(state.auditoria);
+      return state.auditoria;
+    } catch {
+      state.auditoria = [];
+      renderAuditoria([]);
+      return [];
+    }
   }
 
   function buildDocaModalHtml(doca = {}) {
     const fila = Array.isArray(doca?.fila) ? doca.fila : [];
     const linhas = fila.map((item) => {
       const notas = Array.isArray(item?.notasDetalhes) ? item.notasDetalhes : [];
-      const notasHtml = notas.length
-        ? notas.map((nota) => `NF ${escapeHtml(nota.numeroNf || '-')}` +
-            ` / Série ${escapeHtml(nota.serie || '-')}` +
-            ` / Destino ${escapeHtml(nota.destino || '-')}` +
-            ` / Vol ${escapeHtml(formatDecimalBR(nota.volumes || 0, 3))}` +
-            ` / Peso ${escapeHtml(formatDecimalBR(nota.peso || 0, 3))} kg` +
-            ` / Itens ${escapeHtml(formatIntegerBR(nota.itens || 0))}`).join('<br>')
+      const nfList = notas.length
+        ? notas.map((nota) => escapeHtml(nota.numeroNf || '-')).join(', ')
         : '-';
       const destinos = Array.isArray(item?.destinos) && item.destinos.length ? item.destinos.join(', ') : '-';
       return `
         <tr>
           <td>${escapeHtml(item.protocolo || '-')}</td>
-          <td>${escapeHtml(item.motorista || '-')}</td>
-          <td>${escapeHtml(item.placa || '-')}</td>
-          <td>${escapeHtml(formatHour(item.horaAgendada))}</td>
-          <td>${escapeHtml(item.status || '-')}</td>
-          <td>${escapeHtml(formatIntegerBR(item.totalNotas || notas.length || 0))}</td>
+          <td>${nfList}</td>
           <td>${escapeHtml(destinos)}</td>
           <td>${escapeHtml(formatDecimalBR(item.totalVolumes || 0, 3))}</td>
           <td>${escapeHtml(formatDecimalBR(item.pesoTotalKg || 0, 3))} kg</td>
-          <td>${escapeHtml(formatIntegerBR(item.totalItens || 0))}</td>
-          <td>${notasHtml}</td>
         </tr>
       `;
     }).join('');
@@ -1679,28 +1754,23 @@
     return `
       <div class="doca-modal-summary">
         <div><strong>Doca:</strong> ${escapeHtml(doca.codigo || '-')}</div>
-        <div><strong>Descrição:</strong> ${escapeHtml(doca.descricao || '-')}</div>
-        <div><strong>Ocupação:</strong> ${escapeHtml(doca.ocupacaoAtual || '-')}</div>
-        <div><strong>Fila:</strong> ${escapeHtml(formatIntegerBR(fila.length))}</div>
+        <div><strong>Agendamentos:</strong> ${escapeHtml(formatIntegerBR(doca.totalAgendamentos || fila.length || 0))}</div>
+        <div><strong>Total de NF:</strong> ${escapeHtml(formatIntegerBR(doca.totalNotas || 0))}</div>
+        <div><strong>Total de volumes:</strong> ${escapeHtml(formatDecimalBR(doca.totalVolumes || 0, 3))}</div>
+        <div><strong>Total de peso:</strong> ${escapeHtml(formatDecimalBR(doca.totalPesoKg || 0, 3))} kg</div>
       </div>
       <table class="table doca-modal-table">
         <thead>
           <tr>
-            <th>Protocolo</th>
-            <th>Motorista</th>
-            <th>Placa</th>
-            <th>Hora</th>
-            <th>Status</th>
-            <th>Notas</th>
-            <th>Destino</th>
+            <th>Agendamento</th>
+            <th>NF(s)</th>
+            <th>Destino(s)</th>
             <th>Volumes</th>
             <th>Peso</th>
-            <th>Itens</th>
-            <th>Detalhes das NFs</th>
           </tr>
         </thead>
         <tbody>
-          ${linhas || '<tr><td colspan="11">Sem fila para a data selecionada.</td></tr>'}
+          ${linhas || '<tr><td colspan="5">Sem fila para a data selecionada.</td></tr>'}
         </tbody>
       </table>
     `;
@@ -1722,9 +1792,11 @@
           </div>
           <span class="badge ${statusTone(d.ocupacaoAtual, d.semaforo)}">${escapeHtml(d.semaforo)}</span>
         </button>
-        <div class="doca-detail-summary mt12">
-          <span><strong>Ocupação:</strong> ${escapeHtml(d.ocupacaoAtual || '-')}</span>
-          <span><strong>Fila:</strong> ${escapeHtml(formatIntegerBR((Array.isArray(d.fila) ? d.fila.length : 0)))}</span>
+        <div class="doca-detail-summary mt12 doca-meta-summary">
+          <span><strong>Agendamentos:</strong> ${escapeHtml(formatIntegerBR(d.totalAgendamentos || (Array.isArray(d.fila) ? d.fila.length : 0) || 0))}</span>
+          <span><strong>Total NF:</strong> ${escapeHtml(formatIntegerBR(d.totalNotas || 0))}</span>
+          <span><strong>Total peso:</strong> ${escapeHtml(formatDecimalBR(d.totalPesoKg || 0, 3))} kg</span>
+          <span><strong>Total volume:</strong> ${escapeHtml(formatDecimalBR(d.totalVolumes || 0, 3))}</span>
         </div>
       </div>
     `).join("");
@@ -1862,7 +1934,7 @@
     Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
     const items = await api(`/api/agendamentos?${params.toString()}`);
     renderOperationalTable(items || [], { targetId: 'agendamentosList', includeActions: false });
-    await maybeShowMissingRelatorioAlerts(items || []);
+    await Promise.allSettled([maybeShowMissingRelatorioAlerts(items || []), loadAuditoria()]);
   }
 
   function buildAwarenessMessage(analysis) {
@@ -2360,6 +2432,10 @@ Deseja liberar manualmente a descarga deste veículo?`);
     byId("stopCamera")?.addEventListener("click", stopCameraScan);
 
     byId("publicDataSelect")?.addEventListener("change", (e) => renderPublicSlots(e.target.value));
+    byId('publicPendingFornecedorSearch')?.addEventListener('input', (e) => {
+      state.publicPendingSearchTerm = String(e.target.value || '').trim();
+      renderPublicPendingFornecedorOptions();
+    });
 
     byId('internalPendingSearch')?.addEventListener('input', (e) => {
       syncInternalSelectionFromDom();

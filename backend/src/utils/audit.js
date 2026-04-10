@@ -1,4 +1,5 @@
 import { prisma } from "./prisma.js";
+import { readAuditLogs, writeAuditLogs } from "./file-store.js";
 
 function normalizePayload({ usuarioId, usuarioNome, perfil, acao, entidade, entidadeId, detalhes, ip }) {
   return {
@@ -29,7 +30,28 @@ export async function auditLog({ usuarioId, usuarioNome, perfil, acao, entidade,
         ip: entry.ip
       }
     });
+    return;
   } catch (err) {
     console.error("Falha ao gravar log de auditoria no banco:", err?.message || err);
+  }
+
+  try {
+    const items = readAuditLogs();
+    const nextId = items.reduce((max, item) => Math.max(max, Number(item?.id || 0)), 0) + 1;
+    items.unshift({
+      id: nextId,
+      usuarioId: entry.usuarioId,
+      usuarioNome: entry.usuarioNome,
+      perfil: entry.perfil,
+      acao: entry.acao,
+      entidade: entry.entidade,
+      entidadeId: entry.entidadeId,
+      detalhes: entry.detalhes,
+      ip: entry.ip,
+      createdAt: entry.createdAt
+    });
+    writeAuditLogs(items.slice(0, 5000));
+  } catch (fallbackError) {
+    console.error("Falha ao gravar log de auditoria em arquivo:", fallbackError?.message || fallbackError);
   }
 }
