@@ -78,6 +78,7 @@ export function readFornecedoresPendentes() {
       notasFiscais: notas,
       quantidadeNotas: Number(item?.quantidadeNotas ?? notas.length ?? 0),
       quantidadeVolumes: Number(item?.quantidadeVolumes ?? notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0)),
+      quantidadeItens: Number(item?.quantidadeItens ?? notas.reduce((acc, nota) => acc + Number(nota?.quantidadeItens || 0), 0)),
       pesoTotalKg: Number(item?.pesoTotalKg ?? notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0)),
       valorTotalNf: Number(item?.valorTotalNf ?? notas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0))
     };
@@ -157,6 +158,27 @@ export function buildDocaPainelFromFiles(dataAgendada = null) {
     if (["APROVADO", "PENDENTE_APROVACAO"].includes(status)) return 'AMARELO';
     return 'VERDE';
   };
+  const normalizeFilaItem = (item = {}) => {
+    const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : Array.isArray(item?.notas) ? item.notas : [];
+    return {
+      ...item,
+      notas,
+      totalNotas: Number(item?.quantidadeNotas || notas.length || 0),
+      totalVolumes: Number(item?.quantidadeVolumes || notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0) || 0),
+      totalItens: Number(item?.quantidadeItens || notas.reduce((acc, nota) => acc + Number(nota?.quantidadeItens || 0), 0) || 0),
+      pesoTotalKg: Number(item?.pesoTotalKg || notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0) || 0),
+      notasResumo: notas.map((nota) => ({
+        rowHash: nota?.rowHash || null,
+        numeroNf: String(nota?.numeroNf || '').trim(),
+        serie: String(nota?.serie || '').trim(),
+        destino: String(nota?.destino || '').trim(),
+        volumes: Number(nota?.volumes || 0),
+        quantidadeItens: Number(nota?.quantidadeItens || 0),
+        peso: Number(nota?.peso || 0),
+        valorNf: Number(nota?.valorNf || 0)
+      }))
+    };
+  };
 
   return docas.map((doca) => {
     const fila = agendamentos
@@ -166,7 +188,8 @@ export function buildDocaPainelFromFiles(dataAgendada = null) {
         const pb = priority[b.status] ?? 99;
         if (pa !== pb) return pa - pb;
         return String(a.horaAgendada || '').localeCompare(String(b.horaAgendada || ''));
-      });
+      })
+      .map(normalizeFilaItem);
     const ativo = fila.find((a) => ['CHEGOU', 'EM_DESCARGA'].includes(a.status)) || fila[0] || null;
     return {
       docaId: doca.id,
@@ -174,6 +197,11 @@ export function buildDocaPainelFromFiles(dataAgendada = null) {
       descricao: doca.descricao || '',
       ocupacaoAtual: ativo ? ativo.status : 'LIVRE',
       semaforo: ativo ? color(ativo.status) : 'VERDE',
+      totalAgendamentos: fila.length,
+      totalNotas: fila.reduce((acc, item) => acc + Number(item.totalNotas || 0), 0),
+      totalVolumes: fila.reduce((acc, item) => acc + Number(item.totalVolumes || 0), 0),
+      totalItens: fila.reduce((acc, item) => acc + Number(item.totalItens || 0), 0),
+      pesoTotalKg: Number(fila.reduce((acc, item) => acc + Number(item.pesoTotalKg || 0), 0).toFixed(3)),
       fila,
     };
   });

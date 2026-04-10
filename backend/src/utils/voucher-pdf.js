@@ -131,6 +131,7 @@ export async function generateVoucherPdf(agendamento, options = {}) {
   doc.text(checkoutUrl, summaryX + 290, qrY + 218, { width: 220, ellipsis: true });
   doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#0f172a').text('Orientações operacionais', summaryX, 772, { width: contentWidth });
   doc.font('Helvetica').fontSize(8).fillColor('#475569').text('Compareça com 10 minutos de antecedência e apresente este voucher na portaria ou no recebimento.', summaryX, 785, { width: contentWidth });
+  doc.text('O motorista deve estar utilizando EPI (botina, cinta lombar, luvas e, se necessário, capacete) e acompanhado de um auxiliar para descarregar.', summaryX, 798, { width: contentWidth });
   doc.end();
   return await new Promise((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
 }

@@ -15,7 +15,7 @@ import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js
 import { auditLog } from "../utils/audit.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
-import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento, persistManualPendingNota } from "../utils/relatorio-entradas.js";
+import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento, persistManualPendingNota, removePendingNotasFromRelatorio } from "../utils/relatorio-entradas.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
 import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, sendMonthlyNearDueDigestIfNeeded, searchByNumeroNf } from "../utils/nf-monitoring.js";
 import { encodeNotaObservacao } from "../utils/nota-metadata.js";
@@ -173,6 +173,62 @@ function fiscalCcRecipients() {
   return emails.length ? [...new Set(emails)].join(', ') : '';
 }
 
+function buyersAndCoordinatorsRecipients() {
+  const raw = [
+    process.env.COMPRADORES_EMAILS,
+    process.env.EMAILS_COMPRADORES,
+    process.env.COORDENADORES_EMAILS,
+    process.env.EMAILS_COORDENADORES,
+    process.env.OCORRENCIA_EMAILS,
+    process.env.URGENCIA_AGENDAMENTO_EMAILS
+  ].filter(Boolean).join(',');
+
+  const emails = raw
+    .split(/[;,]/)
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+
+  return [...new Set(emails)];
+}
+
+function escapeHtml(value = '') {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildNotasTableHtml(notas = [], fornecedor = '') {
+  const rows = (Array.isArray(notas) ? notas : []).map((nota) => `
+    <tr>
+      <td style="padding:8px;border:1px solid #e2e8f0">${escapeHtml(nota?.numeroNf || '-')}</td>
+      <td style="padding:8px;border:1px solid #e2e8f0">${escapeHtml(nota?.serie || '-')}</td>
+      <td style="padding:8px;border:1px solid #e2e8f0">${escapeHtml(nota?.destino || '-')}</td>
+      <td style="padding:8px;border:1px solid #e2e8f0;text-align:right">${Number(nota?.volumes || 0)}</td>
+      <td style="padding:8px;border:1px solid #e2e8f0;text-align:right">${Number(nota?.quantidadeItens || 0)}</td>
+      <td style="padding:8px;border:1px solid #e2e8f0;text-align:right">${Number(nota?.peso || 0).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 3 })}</td>
+      <td style="padding:8px;border:1px solid #e2e8f0">${escapeHtml(fornecedor || '-')}</td>
+    </tr>`).join('');
+
+  return `
+    <table style="border-collapse:collapse;width:100%;margin-top:12px;font-family:Arial,sans-serif;font-size:13px">
+      <thead>
+        <tr style="background:#f8fafc">
+          <th style="padding:8px;border:1px solid #e2e8f0">NF</th>
+          <th style="padding:8px;border:1px solid #e2e8f0">Série</th>
+          <th style="padding:8px;border:1px solid #e2e8f0">Destino</th>
+          <th style="padding:8px;border:1px solid #e2e8f0">Volumes</th>
+          <th style="padding:8px;border:1px solid #e2e8f0">Itens</th>
+          <th style="padding:8px;border:1px solid #e2e8f0">Peso</th>
+          <th style="padding:8px;border:1px solid #e2e8f0">Fornecedor</th>
+        </tr>
+      </thead>
+      <tbody>${rows || '<tr><td colspan="7" style="padding:8px;border:1px solid #e2e8f0">Nenhuma nota informada.</td></tr>'}</tbody>
+    </table>`;
+}
+
 function buildManualNotaFiscalMail({ fornecedor = '', nota = {}, actor = null } = {}) {
   const operador = String(actor?.nome || actor?.name || actor?.email || actor?.sub || 'Não identificado').trim();
   const numeroNf = String(nota?.numeroNf || '').trim() || '-';
@@ -321,12 +377,12 @@ async function createAgendamentoInDatabase(payload) {
         checkoutToken,
         fornecedor: payload.fornecedor,
         transportadora: payload.transportadora,
-        motorista: payload.motorista,
+        motorista: payload.motorista || "NÃO INFORMADO",
         cpfMotorista: payload.cpfMotorista || "",
         telefoneMotorista: payload.telefoneMotorista || "",
         emailMotorista: payload.emailMotorista || "",
         emailTransportadora: payload.emailTransportadora || "",
-        placa: payload.placa,
+        placa: payload.placa || "NÃO INFORMADA",
         docaId: Number(payload.docaId),
         janelaId: Number(payload.janelaId),
         dataAgendada: payload.dataAgendada,
@@ -376,7 +432,8 @@ async function sendApprovalNotifications(item, req) {
     `Token do motorista: ${item.publicTokenMotorista}`,
     `Voucher PDF: ${links.voucher}`,
     `Check-in: ${links.checkin}`,
-    `Check-out: ${links.checkout}`
+    `Check-out: ${links.checkout}`,
+    'Aviso: o motorista responsável pela entrega deve estar portando o voucher para descarregar.'
   ].join("\n");
 
   const commonHtml = `
@@ -390,6 +447,7 @@ async function sendApprovalNotifications(item, req) {
     <p><a href="${links.voucher}">Voucher em PDF</a></p>
     <p><a href="${links.checkin}">Check-in</a></p>
     <p><a href="${links.checkout}">Check-out</a></p>
+    <p><strong>Aviso:</strong> o motorista responsável pela entrega deve estar portando o voucher para descarregar.</p>
   `;
 
   if (item.emailMotorista) {
@@ -649,14 +707,14 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
     }
     payload.docaId = Number(payload.docaId || defaultDoca?.id || 1);
 
-    try { await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada }); } catch {}
+    await assertJanelaDocaDisponivel({ janelaId: payload.janelaId, dataAgendada: payload.dataAgendada });
 
     let item;
     try {
       item = await createAgendamentoInDatabase(payload);
     } catch (dbError) {
       console.error('Erro ao criar agendamento no banco. Usando fallback em arquivo:', dbError?.message || dbError);
-      item = createAgendamentoFile({ protocolo: generateProtocol(), publicTokenMotorista: generatePublicToken("MOT", payload.cpfMotorista), publicTokenFornecedor: generatePublicToken("FOR", payload.fornecedor), checkinToken: generatePublicToken("CHK", payload.cpfMotorista || payload.placa), checkoutToken: generatePublicToken("OUT", payload.cpfMotorista || payload.placa), fornecedor: payload.fornecedor, transportadora: payload.transportadora, motorista: payload.motorista, cpfMotorista: payload.cpfMotorista || '', telefoneMotorista: payload.telefoneMotorista || '', emailMotorista: payload.emailMotorista || '', emailTransportadora: payload.emailTransportadora || '', placa: payload.placa, docaId: Number(payload.docaId), janelaId: Number(payload.janelaId), dataAgendada: payload.dataAgendada, horaAgendada: payload.horaAgendada, quantidadeNotas: Number(payload.quantidadeNotas || 0), quantidadeVolumes: Number(payload.quantidadeVolumes || 0), pesoTotalKg: Number(payload.pesoTotalKg || 0), valorTotalNf: Number(payload.valorTotalNf || 0), status: 'PENDENTE_APROVACAO', observacoes: payload.observacoes || '', notasFiscais: payload.notasFiscais || [] });
+      item = createAgendamentoFile({ protocolo: generateProtocol(), publicTokenMotorista: generatePublicToken("MOT", payload.cpfMotorista), publicTokenFornecedor: generatePublicToken("FOR", payload.fornecedor), checkinToken: generatePublicToken("CHK", payload.cpfMotorista || payload.placa), checkoutToken: generatePublicToken("OUT", payload.cpfMotorista || payload.placa), fornecedor: payload.fornecedor, transportadora: payload.transportadora, motorista: payload.motorista || 'NÃO INFORMADO', cpfMotorista: payload.cpfMotorista || '', telefoneMotorista: payload.telefoneMotorista || '', emailMotorista: payload.emailMotorista || '', emailTransportadora: payload.emailTransportadora || '', placa: payload.placa || 'NÃO INFORMADA', docaId: Number(payload.docaId), janelaId: Number(payload.janelaId), dataAgendada: payload.dataAgendada, horaAgendada: payload.horaAgendada, quantidadeNotas: Number(payload.quantidadeNotas || 0), quantidadeVolumes: Number(payload.quantidadeVolumes || 0), pesoTotalKg: Number(payload.pesoTotalKg || 0), valorTotalNf: Number(payload.valorTotalNf || 0), status: 'PENDENTE_APROVACAO', observacoes: payload.observacoes || '', notasFiscais: payload.notasFiscais || [] });
     }
 
     await auditLog({ usuarioId: req.user.sub, usuarioNome: req.user.nome || req.user.name || null, perfil: req.user.perfil, acao: "CREATE", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: payload, ip: req.ip });
@@ -704,14 +762,11 @@ router.post("/:id/definir-doca", requirePermission("agendamentos.definir_doca"),
       throw new Error("Não é possível alterar a doca para este status.");
     }
 
-    try {
-      await assertJanelaDocaDisponivel({
-        docaId,
-        janelaId: found.janelaId,
-        dataAgendada: found.dataAgendada,
-        ignoreAgendamentoId: found.id
-      });
-    } catch {}
+    await assertJanelaDocaDisponivel({
+      janelaId: found.janelaId,
+      dataAgendada: found.dataAgendada,
+      ignoreAgendamentoId: found.id
+    });
 
     let item;
     try { item = await prisma.agendamento.update({ where: { id: found.id }, data: { docaId } }); }
@@ -968,13 +1023,53 @@ router.post("/:id/enviar-confirmacao", requirePermission("agendamentos.notify"),
       text: `${scheduleIntro}
 Protocolo: ${ag.protocolo}
 Doca: ${textoDoca}
-Consulta: ${links.consulta}`,
-      html: `<p>${scheduleIntro}</p><p><strong>Protocolo:</strong> ${ag.protocolo}</p><p><strong>Data:</strong> ${formatDateBR(ag.dataAgendada)}</p><p><strong>Hora:</strong> ${ag.horaAgendada}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><a href="${links.consulta}">Consulta do agendamento</a></p>`,
+Consulta: ${links.consulta}
+Aviso: o motorista responsável pela entrega deve estar portando o voucher para descarregar.`,
+      html: `<p>${scheduleIntro}</p><p><strong>Protocolo:</strong> ${ag.protocolo}</p><p><strong>Data:</strong> ${formatDateBR(ag.dataAgendada)}</p><p><strong>Hora:</strong> ${ag.horaAgendada}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><a href="${links.consulta}">Consulta do agendamento</a></p><p><strong>Aviso:</strong> o motorista responsável pela entrega deve estar portando o voucher para descarregar.</p>`,
       attachments: [{ filename: `voucher-${ag.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
     });
 
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "ENVIAR_CONFIRMACAO", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: { targets: ["transportadora/fornecedor"] }, ip: req.ip });
     res.json({ ok: true, sent, to: ag.emailTransportadora, consulta: links.consulta, voucher: links.voucher });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+router.post("/ocorrencia", requirePermission("agendamentos.create"), async (req, res) => {
+  try {
+    const fornecedor = String(req.body?.fornecedor || '').trim();
+    const transportadora = String(req.body?.transportadora || fornecedor || '').trim();
+    const notas = Array.isArray(req.body?.notas) ? req.body.notas : [];
+    if (!fornecedor) throw new Error('Fornecedor é obrigatório para registrar ocorrência.');
+    if (!notas.length) throw new Error('Selecione ao menos uma nota para registrar a ocorrência.');
+
+    await removePendingNotasFromRelatorio({ fornecedor, notas });
+
+    const recipients = buyersAndCoordinatorsRecipients();
+    const tableHtml = buildNotasTableHtml(notas, fornecedor);
+    let emailResult = { sent: false, reason: 'Destinatários de ocorrência não configurados.' };
+    if (recipients.length) {
+      emailResult = await sendMail({
+        to: recipients.join(', '),
+        subject: `Urgente: transportadora ${transportadora || fornecedor} negou agendamento`,
+        text: `Urgente: após contato com a transportadora "${transportadora || fornecedor}" para o agendamento das notas abaixo, a mesma negou agendamento.`,
+        html: `<div style="font-family:Arial,sans-serif"><p><strong>Urgente:</strong> após contato com a transportadora "${escapeHtml(transportadora || fornecedor)}" para o agendamento das notas abaixo, a mesma negou agendamento.</p>${tableHtml}</div>`
+      });
+    }
+
+    await auditLog({
+      usuarioId: req.user.sub,
+      usuarioNome: req.user.nome || req.user.name || null,
+      perfil: req.user.perfil,
+      acao: 'OCORRENCIA_AGENDAMENTO',
+      entidade: 'RELATORIO_TERCEIRIZADO',
+      entidadeId: null,
+      detalhes: { fornecedor, transportadora, notas, emailResult },
+      ip: req.ip
+    });
+
+    res.json({ ok: true, fornecedor, transportadora, notasRemovidas: notas.length, email: emailResult });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
