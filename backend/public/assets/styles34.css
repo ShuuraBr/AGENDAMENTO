@@ -3,6 +3,7 @@
 .brand{display:flex;align-items:center;gap:16px;justify-content:space-between;width:100%}
 .topbar h1{margin:0;font-size:28px}
 .nav-menu{display:flex;gap:8px;flex-wrap:wrap}
+.nav-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
 .logo{height:92px;max-width:300px;object-fit:contain}
 button{border:0;background:#2563eb;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
 button:hover{opacity:.94}
