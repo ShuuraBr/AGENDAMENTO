@@ -1,6 +1,42 @@
 (() => {
+  function safeStorageGet(key) {
+    try {
+      return window.localStorage?.getItem(key) || "";
+    } catch {
+      return "";
+    }
+  }
+
+  function safeStorageSet(key, value) {
+    try {
+      window.localStorage?.setItem(key, value);
+    } catch {}
+  }
+
+  function safeStorageRemove(key) {
+    try {
+      window.localStorage?.removeItem(key);
+    } catch {}
+  }
+
+  const ASSET_BASE = (() => {
+    try {
+      return new URL('./assets/', document.baseURI || window.location.href).toString();
+    } catch {
+      return './assets/';
+    }
+  })();
+
+  function assetUrl(file) {
+    try {
+      return new URL(file, ASSET_BASE).toString();
+    } catch {
+      return `./assets/${String(file || '').replace(/^\/+/, '')}`;
+    }
+  }
+
   const state = {
-    token: localStorage.getItem("token") || "",
+    token: safeStorageGet("token") || "",
     cadastroTipo: "fornecedores",
     cadastroEditId: null,
     cadastroCache: [],
@@ -61,6 +97,18 @@
     agendamentos: "agendamentos.view",
     "consulta-nf": "agendamentos.consulta_nf",
     checkin: "agendamentos.checkin"
+  };
+
+
+  const CADASTRO_TAB_PERMISSIONS = {
+    fornecedores: 'cadastros.view',
+    transportadoras: 'cadastros.view',
+    motoristas: 'cadastros.view',
+    veiculos: 'cadastros.view',
+    docas: 'cadastros.view',
+    janelas: 'cadastros.view',
+    regras: 'cadastros.view',
+    usuarios: 'users.manage'
   };
 
   const CADASTRO_CONFIG = {
@@ -224,10 +272,10 @@
   }
 
   const STORE_LOGOS = {
-    'OBJ': '/assets/store-obj.svg',
-    'AC COELHO': '/assets/store-ac-coelho.svg',
-    'SR ACABAMENTOS': '/assets/store-sr-acabamentos.svg',
-    'FINITURA': '/assets/store-finitura.svg'
+    'OBJ': assetUrl('store-obj.svg'),
+    'AC COELHO': assetUrl('store-ac-coelho.svg'),
+    'SR ACABAMENTOS': assetUrl('store-sr-acabamentos.svg'),
+    'FINITURA': assetUrl('store-finitura.svg')
   };
 
   function resolveStoreKey(value) {
@@ -579,6 +627,11 @@
     return !permission || hasPermission(permission);
   }
 
+  function canAccessCadastroTab(tipo) {
+    const permission = CADASTRO_TAB_PERMISSIONS[String(tipo || '').trim()];
+    return !permission || hasPermission(permission);
+  }
+
   function firstAllowedPrivateView() {
     const candidates = ["dashboard", "docas", "agendamentos", "consulta-nf", "checkin", "cadastros"];
     return candidates.find((viewId) => canAccessView(viewId)) || 'public-home';
@@ -603,16 +656,24 @@
       btn.classList.toggle('hidden', !canAccessView(btn.dataset.view));
     });
 
-    const usersTab = document.querySelector('.cad-tab[data-tipo="usuarios"]');
-    if (usersTab) usersTab.classList.toggle('hidden', !hasPermission('users.manage'));
-    if (!hasPermission('users.manage') && state.cadastroTipo === 'usuarios') {
-      state.cadastroTipo = 'fornecedores';
-      setActiveButton('.cad-tab', document.querySelector('.cad-tab[data-tipo="fornecedores"]'));
-      renderCadastroForm();
-      loadCadastro().catch(() => {});
+    const canViewCadastros = hasPermission('cadastros.view');
+    document.querySelectorAll('.cad-tab[data-tipo]').forEach((btn) => {
+      const allowed = canViewCadastros && canAccessCadastroTab(btn.dataset.tipo);
+      btn.classList.toggle('hidden', !allowed);
+      btn.disabled = !allowed;
+    });
+
+    if (canViewCadastros && !canAccessCadastroTab(state.cadastroTipo)) {
+      const firstVisibleTab = [...document.querySelectorAll('.cad-tab[data-tipo]')].find((btn) => !btn.classList.contains('hidden'));
+      if (firstVisibleTab) {
+        state.cadastroTipo = firstVisibleTab.dataset.tipo || 'fornecedores';
+        setActiveButton('.cad-tab', firstVisibleTab);
+        renderCadastroForm();
+        loadCadastro().catch(() => {});
+      }
     }
 
-    const canManageCadastros = hasPermission('cadastros.manage') && (state.cadastroTipo !== 'usuarios' || hasPermission('users.manage'));
+    const canManageCadastros = canViewCadastros && hasPermission('cadastros.manage') && (state.cadastroTipo !== 'usuarios' || hasPermission('users.manage'));
     const saveCadastroBtn = byId('saveCadastro');
     const novoCadastroBtn = byId('btnNovoCadastro');
     if (saveCadastroBtn) saveCadastroBtn.classList.toggle('hidden', !canManageCadastros);
@@ -660,7 +721,7 @@
   }
 
   function logout() {
-    localStorage.removeItem("token");
+    safeStorageRemove("token");
     state.token = "";
     state.currentUser = null;
     updateNav();
@@ -672,7 +733,6 @@
     if (logged) syncCurrentUserFromToken();
     byId("publicNav")?.classList.toggle("hidden", logged);
     byId("privateNav")?.classList.toggle("hidden", !logged);
-    applyRoleAccess();
     if (logged) {
       const activeView = document.querySelector('.view.active')?.id || '';
       if (activeView && !canAccessView(activeView)) showView(firstAllowedPrivateView());
@@ -1124,6 +1184,9 @@
       return;
     }
 
+    const activeSearchInput = document.activeElement?.id === 'internalFornecedorSearchInput' ? document.activeElement : null;
+    const activeSelectionStart = typeof activeSearchInput?.selectionStart === 'number' ? activeSearchInput.selectionStart : null;
+    const activeSelectionEnd = typeof activeSearchInput?.selectionEnd === 'number' ? activeSearchInput.selectionEnd : null;
     const fornecedorTerm = String(state.internalFornecedorSearchTerm || '').trim().toLowerCase();
     const fornecedoresVisiveis = fornecedorTerm
       ? state.pendingFornecedores.filter((item) => String(item?.fornecedor || item?.nome || '').toLowerCase().includes(fornecedorTerm))
@@ -1143,7 +1206,7 @@
     `;
 
     menu.querySelector('#internalFornecedorSearchInput')?.addEventListener('input', (event) => {
-      state.internalFornecedorSearchTerm = String(event.target.value || '').trim();
+      state.internalFornecedorSearchTerm = String(event.target.value || '');
       renderInternalFornecedorDropdown();
       menu.classList.remove('hidden');
       trigger.setAttribute('aria-expanded', 'true');
@@ -1156,6 +1219,14 @@
         applyPendingFornecedoresInterno(checkedIds.map((id) => getPendingFornecedorById(id)).filter(Boolean));
       });
     });
+
+    const refreshedSearchInput = menu.querySelector('#internalFornecedorSearchInput');
+    if (refreshedSearchInput && activeSearchInput) {
+      refreshedSearchInput.focus();
+      const start = activeSelectionStart == null ? refreshedSearchInput.value.length : Math.min(activeSelectionStart, refreshedSearchInput.value.length);
+      const end = activeSelectionEnd == null ? start : Math.min(activeSelectionEnd, refreshedSearchInput.value.length);
+      try { refreshedSearchInput.setSelectionRange(start, end); } catch {}
+    }
 
     if (!wrapper.dataset.bound) {
       trigger.addEventListener('click', (event) => {
@@ -2167,6 +2238,8 @@ Deseja liberar manualmente a descarga deste veículo?`);
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.setAttribute("type", "button");
       btn.addEventListener("click", (e) => {
+        const href = btn.getAttribute("href");
+        if (href && !href.startsWith("#")) return;
         e.preventDefault();
         e.stopPropagation();
         showView(btn.dataset.view);
@@ -2201,7 +2274,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
         const payload = Object.fromEntries(new FormData(e.target).entries());
         const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
         state.token = data.token;
-        localStorage.setItem("token", data.token);
+        safeStorageSet("token", data.token);
         state.currentUser = data.user || null;
         syncCurrentUserFromToken();
         updateNav();
@@ -2227,8 +2300,8 @@ Deseja liberar manualmente a descarga deste veículo?`);
     document.querySelectorAll(".cad-tab").forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         e.preventDefault();
-        if (btn.dataset.tipo === "usuarios" && !hasPermission('users.manage')) {
-          byId("cadastroMsg").textContent = "Apenas administradores podem acessar o cadastro de usuários.";
+        if (!canAccessCadastroTab(btn.dataset.tipo)) {
+          byId("cadastroMsg").textContent = "Seu perfil não possui acesso a esta aba.";
           return;
         }
         state.cadastroTipo = btn.dataset.tipo;
@@ -2531,10 +2604,16 @@ Deseja liberar manualmente a descarga deste veículo?`);
       const input = byId("consultaForm")?.querySelector('input[name="token"]');
       if (input) input.value = token;
       byId("consultaForm")?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+    } else if (view === "login") {
+      showView("login");
+    } else if (view === "motorista") {
+      showView("motorista");
     } else if (view === "consulta") {
       showView("consulta");
     } else if (view === "fornecedor") {
       showView("fornecedor");
+    } else if (view === "public-home") {
+      showView("public-home");
     }
   });
 })();

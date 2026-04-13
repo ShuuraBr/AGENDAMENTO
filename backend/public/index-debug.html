@@ -4,9 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agendamento de Descarga V3.2</title>
-  <link rel="stylesheet" href="./assets/styles34.css" />
-  <link rel="icon" href="./assets/Favicon.png" type="image">
-</head>
+  <link rel="stylesheet" href="/assets/styles34.css" />
+  <link rel="icon" href="assets/Favicon.png" type="image">
+<script>window.onerror=function(m,s,l,c,e){document.body.insertAdjacentHTML("beforeend",`<pre id="__err">ERR:${String(m)} at ${String(s)}:${l}:${c}</pre>`)};window.addEventListener("unhandledrejection",function(e){document.body.insertAdjacentHTML("beforeend",`<pre id="__rej">REJ:${String(e.reason&&e.reason.message||e.reason)}</pre>`)});</script></head>
 <body>
   <header class="topbar">
     <div class="brand">
@@ -14,12 +14,12 @@
         <h1>Agendamento de Descarga</h1>
         <small>Controle Operacional</small>
       </div>
-      <img src="./assets/objetiva.png" alt="Logo Objetiva" class="logo" />
+      <img src="/assets/objetiva.png" alt="Logo Objetiva" class="logo" />
     </div>
 
     <nav id="publicNav" class="nav-menu">
       <button type="button" class="nav-btn active" data-view="public-home">Início</button>
-      <a class="nav-btn nav-link-btn" data-view="login" href="?view=login">Área do Colaborador</a>
+      <button type="button" class="nav-btn" data-view="login">Área do Colaborador</button>
     </nav>
 
     <nav id="privateNav" class="nav-menu hidden">
@@ -39,8 +39,8 @@
         <h2>Portais disponíveis</h2>
         <p>Acesso segregado entre área pública e área interna. O colaborador acessa com login direto e permissões por perfil.</p>
         <div class="portal-links mt12">
-                    <a class="nav-btn nav-link-btn" data-view="consulta" href="?view=consulta">Consulta da transportadora/fornecedor</a>
-          <a class="nav-btn nav-link-btn" data-view="motorista" href="?view=motorista">Acompanhamento do motorista</a>
+                    <button type="button" class="nav-btn" data-view="consulta">Consulta da transportadora/fornecedor</button>
+          <button type="button" class="nav-btn" data-view="motorista">Acompanhamento do motorista</button>
         </div>
       </div>
     </section>
@@ -393,6 +393,6 @@
     </div>
   </div>
 
-  <script src="./assets/app.js"></script>
+  <script src="/assets/app.js"></script>
 </body>
 </html>
