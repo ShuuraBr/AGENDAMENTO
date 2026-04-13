@@ -26,14 +26,27 @@ if (!process.env.DATABASE_URL && hasDbParts) {
 let prismaClient = null;
 let prismaLoadError = null;
 let prismaLoadingPromise = null;
-let prismaDisabled = ['1', 'true', 'yes', 'on'].includes(String(process.env.PRISMA_DISABLED || '').trim().toLowerCase());
-let prismaDisableReason = prismaDisabled ? 'Prisma desabilitado por variável de ambiente (PRISMA_DISABLED).' : null;
-let panicAlreadyLogged = false;
+let prismaDisabled = String(process.env.PRISMA_DISABLED || '').trim() === '1';
+let prismaDisableReason = prismaDisabled ? 'PRISMA_DISABLED=1' : null;
+const loggedDisableReasons = new Set();
+
+function createPrismaDisabledError(context = 'Prisma') {
+  const reason = prismaDisableReason || 'Prisma desabilitado';
+  const error = new Error(`${context}: ${reason}`);
+  error.code = 'PRISMA_DISABLED';
+  error.isPrismaDisabled = true;
+  return error;
+}
+
+function logDisableOnce(reason) {
+  const key = String(reason || 'motivo_desconhecido');
+  if (loggedDisableReasons.has(key)) return;
+  loggedDisableReasons.add(key);
+  console.error(`[PRISMA_DISABLED] ${key}`);
+}
 
 async function createPrismaClient() {
-  if (prismaDisabled) {
-    throw new Error(prismaDisableReason || 'Prisma desabilitado.');
-  }
+  if (prismaDisabled) throw createPrismaDisabledError('Prisma indisponível');
   const prismaPkg = await import('@prisma/client');
   const PrismaClient = prismaPkg.PrismaClient || prismaPkg.default?.PrismaClient;
   if (!PrismaClient) {
@@ -44,41 +57,13 @@ async function createPrismaClient() {
   return client;
 }
 
-export function isPrismaEnginePanic(error) {
+function isPrismaEnginePanic(error) {
   const message = String(error?.message || error || '');
   return message.includes('PANIC: timer has gone away')
     || message.includes('PrismaClientRustPanicError')
     || message.includes('This is a non-recoverable error')
     || message.includes('Raw query failed. Code: `N/A`')
     || message.includes('Raw query failed. Code: `N/A`. Message: `N/A`');
-}
-
-async function disconnectCurrentClientSilently() {
-  const current = prismaClient;
-  prismaClient = null;
-  prismaLoadingPromise = null;
-  if (current && typeof current.$disconnect === 'function') {
-    try { await current.$disconnect(); } catch {}
-  }
-}
-
-export async function disablePrisma(reason = 'Prisma desabilitado.') {
-  prismaDisabled = true;
-  prismaDisableReason = String(reason || 'Prisma desabilitado.');
-  prismaLoadError = new Error(prismaDisableReason);
-  await disconnectCurrentClientSilently();
-  if (!panicAlreadyLogged) {
-    console.error(`[PRISMA] ${prismaDisableReason}`);
-    panicAlreadyLogged = true;
-  }
-  return prismaLoadError;
-}
-
-export async function resetPrismaClient() {
-  await disconnectCurrentClientSilently();
-  prismaLoadError = null;
-  prismaLoadingPromise = null;
-  if (!prismaDisabled) prismaDisableReason = null;
 }
 
 export function isPrismaDisabled() {
@@ -89,31 +74,50 @@ export function getPrismaDisableReason() {
   return prismaDisableReason;
 }
 
-export function getPrismaStatus() {
-  return {
-    disabled: prismaDisabled,
-    reason: prismaDisableReason,
-    hasClient: !!prismaClient,
-    hasLoadError: !!prismaLoadError
-  };
+export function isPrismaDisabledError(error) {
+  return Boolean(error?.isPrismaDisabled || error?.code === 'PRISMA_DISABLED' || String(error?.message || '').includes('Prisma desabilitado'));
+}
+
+export async function disablePrismaClient(reason = 'Prisma desabilitado manualmente') {
+  prismaDisabled = true;
+  prismaDisableReason = String(reason || 'Prisma desabilitado manualmente');
+  logDisableOnce(prismaDisableReason);
+  const current = prismaClient;
+  prismaClient = null;
+  prismaLoadingPromise = null;
+  prismaLoadError = createPrismaDisabledError('Prisma desabilitado');
+  if (current && typeof current.$disconnect === 'function') {
+    try { await current.$disconnect(); } catch {}
+  }
+}
+
+export async function resetPrismaClient() {
+  const current = prismaClient;
+  prismaClient = null;
+  prismaLoadError = null;
+  prismaLoadingPromise = null;
+  if (current && typeof current.$disconnect === 'function') {
+    try { await current.$disconnect(); } catch {}
+  }
 }
 
 export async function getPrismaClient() {
-  if (prismaDisabled) {
-    throw prismaLoadError || new Error(prismaDisableReason || 'Prisma desabilitado.');
-  }
+  if (prismaDisabled) throw createPrismaDisabledError('Prisma desabilitado');
   if (prismaClient) return prismaClient;
   if (prismaLoadError) throw prismaLoadError;
   if (!prismaLoadingPromise) {
     prismaLoadingPromise = createPrismaClient()
       .then((client) => {
         prismaClient = client;
-        prismaLoadError = null;
         return client;
       })
-      .catch(async (error) => {
+      .catch((error) => {
         if (isPrismaEnginePanic(error)) {
-          throw await disablePrisma(`Prisma desabilitado após panic do engine: ${error?.message || error}`);
+          prismaDisabled = true;
+          prismaDisableReason = `Prisma desabilitado após panic do engine: ${error?.message || error}`;
+          logDisableOnce(prismaDisableReason);
+          prismaLoadError = createPrismaDisabledError('Prisma desabilitado');
+          throw prismaLoadError;
         }
         prismaLoadError = error;
         throw error;
@@ -137,7 +141,11 @@ function createModelProxy(pathParts = []) {
     },
     apply(_target, _thisArg, args) {
       return (async () => {
-        try {
+        if (prismaDisabled) {
+          throw createPrismaDisabledError(`Prisma desabilitado em ${pathParts.join('.') || 'operação'}`);
+        }
+
+        const execute = async () => {
           const client = await getPrismaClient();
           let current = client;
           for (const part of pathParts) {
@@ -146,10 +154,15 @@ function createModelProxy(pathParts = []) {
           if (typeof current !== 'function') {
             throw new Error(`Operação Prisma inválida: ${pathParts.join('.')}`);
           }
-          return await current.apply(client, args);
+          return current.apply(client, args);
+        };
+
+        try {
+          return await execute();
         } catch (error) {
           if (!isPrismaEnginePanic(error)) throw error;
-          throw await disablePrisma(`Prisma desabilitado após panic do engine: ${error?.message || error}`);
+          await disablePrismaClient(`Prisma desabilitado após panic do engine: ${error?.message || error}`);
+          throw createPrismaDisabledError(`Prisma desabilitado em ${pathParts.join('.') || 'operação'}`);
         }
       })();
     }

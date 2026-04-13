@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authRequired, requirePermission } from "../middlewares/auth.js";
-import { prisma, isPrismaDisabled } from "../utils/prisma.js";
+import { prisma, isPrismaDisabled, getPrismaDisableReason, isPrismaDisabledError } from "../utils/prisma.js";
 import { validateProfile } from "../utils/validators.js";
 import bcrypt from "bcryptjs";
 import { auditLog } from "../utils/audit.js";
@@ -20,6 +20,8 @@ const models = {
   usuarios: "usuario"
 };
 
+const fallbackWarnings = new Set();
+
 function model(tipo) { return models[tipo]; }
 
 function ensureUserCadastroPermission(req, tipo) {
@@ -30,14 +32,28 @@ function ensureUserCadastroPermission(req, tipo) {
   }
 }
 
+function logCadastroFallbackOnce(tipo, action, reason) {
+  const key = `${tipo}:${action}:${String(reason || '').trim()}`;
+  if (fallbackWarnings.has(key)) return;
+  fallbackWarnings.add(key);
+  console.error(`Cadastro ${tipo} operando em arquivo (${action}): ${reason}`);
+}
+
 async function listItems(tipo, m) {
   if (isPrismaDisabled()) {
+    logCadastroFallbackOnce(tipo, 'listagem', getPrismaDisableReason() || 'Prisma desabilitado');
     return readCadastroFile(tipo);
   }
+
   try {
     return await prisma[m].findMany({ orderBy: { id: "desc" } });
   } catch (err) {
-    console.error(`Fallback em arquivo para cadastro ${tipo}:`, err?.message || err);
+    const reason = err?.message || err;
+    if (isPrismaDisabledError(err) || isPrismaDisabled()) {
+      logCadastroFallbackOnce(tipo, 'listagem', getPrismaDisableReason() || reason);
+    } else {
+      console.error(`Fallback em arquivo para cadastro ${tipo}:`, reason);
+    }
     return readCadastroFile(tipo);
   }
 }
@@ -69,15 +85,17 @@ router.post("/:tipo", requirePermission("cadastros.manage"), async (req, res) =>
     }
 
     let item;
-    if (isPrismaDisabled()) {
-      item = upsertCadastroFile(tipo, data);
-    } else {
-      try {
-        item = await prisma[m].create({ data });
-      } catch (err) {
-        console.error(`Prisma indisponível em cadastro ${tipo}. Gravando em arquivo:`, err?.message || err);
-        item = upsertCadastroFile(tipo, data);
+    try {
+      if (isPrismaDisabled()) throw new Error(getPrismaDisableReason() || 'Prisma desabilitado');
+      item = await prisma[m].create({ data });
+    } catch (err) {
+      const reason = err?.message || err;
+      if (isPrismaDisabledError(err) || isPrismaDisabled()) {
+        logCadastroFallbackOnce(tipo, 'criacao', getPrismaDisableReason() || reason);
+      } else {
+        console.error(`Prisma indisponível em cadastro ${tipo}. Gravando em arquivo:`, reason);
       }
+      item = upsertCadastroFile(tipo, data);
     }
 
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CREATE", entidade: tipo.toUpperCase(), entidadeId: item.id, detalhes: data, ip: req.ip });
@@ -102,15 +120,17 @@ router.put("/:tipo/:id", requirePermission("cadastros.manage"), async (req, res)
     }
 
     let item;
-    if (isPrismaDisabled()) {
-      item = upsertCadastroFile(tipo, data, req.params.id);
-    } else {
-      try {
-        item = await prisma[m].update({ where: { id: Number(req.params.id) }, data });
-      } catch (err) {
-        console.error(`Prisma indisponível em atualização ${tipo}. Gravando em arquivo:`, err?.message || err);
-        item = upsertCadastroFile(tipo, data, req.params.id);
+    try {
+      if (isPrismaDisabled()) throw new Error(getPrismaDisableReason() || 'Prisma desabilitado');
+      item = await prisma[m].update({ where: { id: Number(req.params.id) }, data });
+    } catch (err) {
+      const reason = err?.message || err;
+      if (isPrismaDisabledError(err) || isPrismaDisabled()) {
+        logCadastroFallbackOnce(tipo, 'atualizacao', getPrismaDisableReason() || reason);
+      } else {
+        console.error(`Prisma indisponível em atualização ${tipo}. Gravando em arquivo:`, reason);
       }
+      item = upsertCadastroFile(tipo, data, req.params.id);
     }
 
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "UPDATE", entidade: tipo.toUpperCase(), entidadeId: item.id, detalhes: data, ip: req.ip });
