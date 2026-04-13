@@ -42,7 +42,9 @@ function isPrismaEnginePanic(error) {
   const message = String(error?.message || error || '');
   return message.includes('PANIC: timer has gone away')
     || message.includes('PrismaClientRustPanicError')
-    || message.includes('This is a non-recoverable error');
+    || message.includes('This is a non-recoverable error')
+    || message.includes('Raw query failed. Code: `N/A`')
+    || message.includes('Raw query failed. Code: `N/A`. Message: `N/A`');
 }
 
 export async function resetPrismaClient() {

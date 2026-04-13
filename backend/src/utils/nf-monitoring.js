@@ -236,7 +236,7 @@ function buildMonthlyDigestHtmlReport({ rows = [], monthKey = '', triggeredBy = 
                   <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Entrada</th>
                   <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">1º vencimento</th>
                   <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Dias</th>
-                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Situação relatório</th>
+                  <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Status da NF</th>
                   <th align="left" style="padding:14px 12px;border-bottom:1px solid #e2e8f0">Agendamento</th>
                 </tr>
               </thead>
@@ -533,7 +533,17 @@ export async function sendMonthlyNearDueDigestIfNeeded({ triggeredBy = '', force
     `Total de NFs: ${nearDue.length}`,
     `Total de fornecedores: ${qtdFornecedores}`,
     '',
-    'O detalhamento foi enviado no próprio corpo do e-mail, em formato visual.'
+    ...nearDue.map((item) => [
+      `Fornecedor: ${item.fornecedor || '-'}`,
+      `NF: ${item.numeroNf || '-'}${item.serie ? ` / Série ${item.serie}` : ''}`,
+      `Status NF: ${item.statusRelatorio || '-'}`,
+      `Destino: ${item.destino || '-'}`,
+      `1º vencimento: ${item.dataPrimeiroVencimentoBr || '-'}`,
+      `Dias para vencer: ${item.diasParaPrimeiroVencimento == null ? '-' : item.diasParaPrimeiroVencimento}`,
+      `Agendamento: ${item.agendamentoId || '-'}`
+    ].join(' | ')),
+    '',
+    'O detalhamento visual também segue no corpo do e-mail.'
   ].join('\n');
   const html = buildMonthlyDigestHtmlReport({
     rows: nearDue,
