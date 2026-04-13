@@ -1,7 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { prisma } from "../utils/prisma.js";
-import { fetchUserByEmail } from "../utils/db-fallback.js";
+import { prisma, isPrismaEnginePanic, resetPrismaClient } from "../utils/prisma.js";
 import { readUsuarios } from "../utils/file-store.js";
 import { signInternalSession } from "../utils/security.js";
 import { auditLog } from "../utils/audit.js";
@@ -11,17 +10,18 @@ import { getAccessProfileSummary, normalizeProfile } from "../utils/permissions.
 const router = Router();
 
 async function findUserByEmail(email) {
+  const normalizedEmail = String(email || '').trim();
   try {
-    return await prisma.usuario.findUnique({ where: { email } });
+    return await prisma.usuario.findUnique({ where: { email: normalizedEmail } });
   } catch (ormError) {
-    console.error("Prisma ORM falhou em /auth/login. Tentando fallback SQL:", ormError?.message || ormError);
-    try {
-      const dbUser = await fetchUserByEmail(email);
-      if (dbUser) return dbUser;
-    } catch (fallbackError) {
-      console.error("Fallback SQL falhou em /auth/login. Tentando arquivo JSON:", fallbackError?.message || fallbackError);
+    const message = ormError?.message || ormError;
+    if (isPrismaEnginePanic(ormError)) {
+      console.error("Prisma ORM falhou em /auth/login. Tentando arquivo JSON:", message);
+      try { await resetPrismaClient(); } catch {}
+    } else {
+      console.error("Prisma ORM falhou em /auth/login. Sem fallback SQL, tentando arquivo JSON:", message);
     }
-    const fileUser = readUsuarios().find((item) => String(item.email || '').toLowerCase() === String(email || '').toLowerCase());
+    const fileUser = readUsuarios().find((item) => String(item.email || '').toLowerCase() === normalizedEmail.toLowerCase());
     if (!fileUser) return null;
     return {
       id: fileUser.id,

@@ -170,6 +170,9 @@ function buildScheduleIntro(item) {
   return `O agendamento foi efetuado para o dia ${formatDateBR(item.dataAgendada)}, às ${item.horaAgendada || "-"}. Solicitamos chegada com 10 minutos de antecedência.`;
 }
 
+const MANDATORY_VOUCHER_NOTICE_TEXT = 'Obrigatório: Compareça com 10 minutos de antecedência e apresente este voucher na portaria ou no recebimento. O motorista deve estar utilizando EPI (botina, cinta lombar, luvas e, se necessário, capacete) e acompanhado de um auxiliar para descarregar.';
+const MANDATORY_VOUCHER_NOTICE_HTML = '<strong>Obrigatório:</strong> Compareça com 10 minutos de antecedência e apresente este voucher na portaria ou no recebimento. O motorista deve estar utilizando EPI (botina, cinta lombar, luvas e, se necessário, capacete) e acompanhado de um auxiliar para descarregar.';
+
 function fiscalRecipient() {
   return String(
     process.env.FISCAL_EMAIL
@@ -465,7 +468,9 @@ async function sendApprovalNotifications(item, req) {
     `Token do motorista: ${item.publicTokenMotorista}`,
     `Voucher PDF: ${links.voucher}`,
     `Check-in: ${links.checkin}`,
-    `Check-out: ${links.checkout}`
+    `Check-out: ${links.checkout}`,
+    '',
+    MANDATORY_VOUCHER_NOTICE_TEXT
   ].join("\n");
 
   const commonHtml = `
@@ -479,6 +484,7 @@ async function sendApprovalNotifications(item, req) {
     <p><a href="${links.voucher}">Voucher em PDF</a></p>
     <p><a href="${links.checkin}">Check-in</a></p>
     <p><a href="${links.checkout}">Check-out</a></p>
+    <p>${MANDATORY_VOUCHER_NOTICE_HTML}</p>
   `;
 
   if (item.emailMotorista) {
@@ -631,7 +637,7 @@ router.post("/analise-vencimento", requirePermission("agendamentos.create"), asy
   }
 });
 
-router.post("/:id/analise-vencimento", requirePermission("agendamentos.reschedule"), async (req, res) => {
+router.post("/:id(\\d+)/analise-vencimento", requirePermission("agendamentos.reschedule"), async (req, res) => {
   try {
     const found = await full(req.params.id);
     if (!found) throw new Error('Agendamento não encontrado.');
@@ -707,7 +713,7 @@ router.post("/financeiro/resumo-mensal", requirePermission("financeiro.summary")
   }
 });
 
-router.get("/:id", async (req, res) => {
+router.get("/:id(\\d+)", async (req, res) => {
   const item = await full(req.params.id);
   if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
   res.json(await enrichResponseItem({ ...item, semaforo: trafficColor(item.status), notificacoes: await safeNotificationSummary(item.id) }));
@@ -863,7 +869,7 @@ async function transition(id, target, data = {}, req) {
   return updated;
 }
 
-router.post("/:id/definir-doca", requirePermission("agendamentos.definir_doca"), async (req, res) => {
+router.post("/:id(\\d+)/definir-doca", requirePermission("agendamentos.definir_doca"), async (req, res) => {
   try {
     const found = await full(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -892,7 +898,7 @@ router.post("/:id/definir-doca", requirePermission("agendamentos.definir_doca"),
   }
 });
 
-router.post("/:id/aprovar", requirePermission("agendamentos.approve"), async (req, res) => {
+router.post("/:id(\\d+)/aprovar", requirePermission("agendamentos.approve"), async (req, res) => {
   try {
     const found = await full(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -942,7 +948,7 @@ router.post("/:id/aprovar", requirePermission("agendamentos.approve"), async (re
   }
 });
 
-router.post("/:id/reprovar", requirePermission("agendamentos.reprove"), async (req, res) => {
+router.post("/:id(\\d+)/reprovar", requirePermission("agendamentos.reprove"), async (req, res) => {
   try {
     const item = await transition(req.params.id, "REPROVADO", { motivoReprovacao: req.body?.motivo || "Reprovado" }, req);
     await unlinkRelatorioRowsFromAgendamento(item?.id);
@@ -950,7 +956,7 @@ router.post("/:id/reprovar", requirePermission("agendamentos.reprove"), async (r
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/reagendar", requirePermission("agendamentos.reschedule"), async (req, res) => {
+router.post("/:id(\\d+)/reagendar", requirePermission("agendamentos.reschedule"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -990,7 +996,7 @@ router.post("/:id/reagendar", requirePermission("agendamentos.reschedule"), asyn
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/cancelar", requirePermission("agendamentos.cancel"), async (req, res) => {
+router.post("/:id(\\d+)/cancelar", requirePermission("agendamentos.cancel"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -1007,11 +1013,11 @@ router.post("/:id/cancelar", requirePermission("agendamentos.cancel"), async (re
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/iniciar", requirePermission("agendamentos.start"), async (req, res) => {
+router.post("/:id(\\d+)/iniciar", requirePermission("agendamentos.start"), async (req, res) => {
   try { res.json(await transition(req.params.id, "EM_DESCARGA", { inicioDescargaEm: new Date() }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/finalizar", requirePermission("agendamentos.finish"), async (req, res) => {
+router.post("/:id(\\d+)/finalizar", requirePermission("agendamentos.finish"), async (req, res) => {
   try {
     const found = await full(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -1029,7 +1035,7 @@ router.post("/:id/finalizar", requirePermission("agendamentos.finish"), async (r
   }
 });
 
-router.post("/:id/no-show", requirePermission("agendamentos.no_show"), async (req, res) => {
+router.post("/:id(\\d+)/no-show", requirePermission("agendamentos.no_show"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -1046,7 +1052,7 @@ router.post("/:id/no-show", requirePermission("agendamentos.no_show"), async (re
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/checkin", requirePermission("agendamentos.checkin"), async (req, res) => {
+router.post("/:id(\\d+)/checkin", requirePermission("agendamentos.checkin"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -1059,7 +1065,7 @@ router.post("/:id/checkin", requirePermission("agendamentos.checkin"), async (re
   }
 });
 
-router.post("/:id/documentos", requirePermission("agendamentos.documentos"), upload.single("arquivo"), async (req, res) => {
+router.post("/:id(\\d+)/documentos", requirePermission("agendamentos.documentos"), upload.single("arquivo"), async (req, res) => {
   try {
     const ag = await mustExist(req.params.id);
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
@@ -1075,7 +1081,7 @@ router.post("/:id/documentos", requirePermission("agendamentos.documentos"), upl
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/notas", requirePermission("agendamentos.notas"), async (req, res) => {
+router.post("/:id(\\d+)/notas", requirePermission("agendamentos.notas"), async (req, res) => {
   try {
     const ag = await mustExist(req.params.id);
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
@@ -1111,7 +1117,7 @@ router.post("/:id/notas", requirePermission("agendamentos.notas"), async (req, r
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/enviar-informacoes", requirePermission("agendamentos.notify"), async (req, res) => {
+router.post("/:id(\\d+)/enviar-informacoes", requirePermission("agendamentos.notify"), async (req, res) => {
   try {
     const item = await full(req.params.id);
     if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
@@ -1121,7 +1127,7 @@ router.post("/:id/enviar-informacoes", requirePermission("agendamentos.notify"),
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id/enviar-confirmacao", requirePermission("agendamentos.notify"), async (req, res) => {
+router.post("/:id(\\d+)/enviar-confirmacao", requirePermission("agendamentos.notify"), async (req, res) => {
   try {
     const ag = await full(req.params.id);
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
@@ -1137,8 +1143,10 @@ router.post("/:id/enviar-confirmacao", requirePermission("agendamentos.notify"),
       text: `${scheduleIntro}
 Protocolo: ${ag.protocolo}
 Doca: ${textoDoca}
-Consulta: ${links.consulta}`,
-      html: `<p>${scheduleIntro}</p><p><strong>Protocolo:</strong> ${ag.protocolo}</p><p><strong>Data:</strong> ${formatDateBR(ag.dataAgendada)}</p><p><strong>Hora:</strong> ${ag.horaAgendada}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><a href="${links.consulta}">Consulta do agendamento</a></p>`,
+Consulta: ${links.consulta}
+
+${MANDATORY_VOUCHER_NOTICE_TEXT}`,
+      html: `<p>${scheduleIntro}</p><p><strong>Protocolo:</strong> ${ag.protocolo}</p><p><strong>Data:</strong> ${formatDateBR(ag.dataAgendada)}</p><p><strong>Hora:</strong> ${ag.horaAgendada}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><a href="${links.consulta}">Consulta do agendamento</a></p><p>${MANDATORY_VOUCHER_NOTICE_HTML}</p>`,
       attachments: [{ filename: `voucher-${ag.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
     });
 
@@ -1149,7 +1157,7 @@ Consulta: ${links.consulta}`,
   }
 });
 
-router.get("/:id/qrcode.svg", async (req, res) => {
+router.get("/:id(\\d+)/qrcode.svg", async (req, res) => {
   const item = await mustExist(req.params.id);
   if (!item) return res.status(404).send("Agendamento não encontrado.");
   const url = `${getBaseUrl(req)}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`;
@@ -1158,7 +1166,7 @@ router.get("/:id/qrcode.svg", async (req, res) => {
   res.send(svg);
 });
 
-router.get("/:id/voucher", async (req, res) => {
+router.get("/:id(\\d+)/voucher", async (req, res) => {
   const item = await full(req.params.id);
   if (!item) return res.status(404).send("Agendamento não encontrado.");
   const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
