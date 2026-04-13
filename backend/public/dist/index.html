@@ -18,10 +18,10 @@
     </div>
 
     <nav id="publicNav" class="nav-menu">
-      <button type="button" class="nav-btn active" data-view="public-home">Início</button>
+      <button type="button" class="nav-btn active" data-view="public-home" onclick="window.location.href = window.location.pathname;">Início</button>
       <button type="button" class="nav-btn" data-view="fornecedor">Fornecedor/Transportadora</button>
       <button type="button" class="nav-btn" data-view="motorista">Motorista</button>
-      <button type="button" class="nav-btn" data-view="login">Área do Colaborador</button>
+      <button type="button" class="nav-btn" data-view="login" onclick="window.location.href = window.location.pathname + '?view=login';">Área do Colaborador</button>
     </nav>
 
     <nav id="privateNav" class="nav-menu hidden">
@@ -275,6 +275,20 @@
     </section>
   </main>
 
+
+  <script>
+    document.addEventListener("click", function (event) {
+      const btn = event.target.closest("#publicNav [data-view], .portal-links [data-view]");
+      if (!btn) return;
+      const view = btn.getAttribute("data-view");
+      if (!view) return;
+      if (view === "public-home") {
+        window.location.href = window.location.pathname;
+        return;
+      }
+      window.location.href = window.location.pathname + "?view=" + encodeURIComponent(view);
+    }, true);
+  </script>
   <script src="/assets/app.js"></script>
 </body>
 </html>
