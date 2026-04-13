@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authRequired, requirePermission } from "../middlewares/auth.js";
-import { prisma } from "../utils/prisma.js";
+import { prisma, isPrismaDisabled } from "../utils/prisma.js";
 import { validateProfile } from "../utils/validators.js";
 import bcrypt from "bcryptjs";
 import { auditLog } from "../utils/audit.js";
@@ -31,6 +31,9 @@ function ensureUserCadastroPermission(req, tipo) {
 }
 
 async function listItems(tipo, m) {
+  if (isPrismaDisabled()) {
+    return readCadastroFile(tipo);
+  }
   try {
     return await prisma[m].findMany({ orderBy: { id: "desc" } });
   } catch (err) {
@@ -66,11 +69,15 @@ router.post("/:tipo", requirePermission("cadastros.manage"), async (req, res) =>
     }
 
     let item;
-    try {
-      item = await prisma[m].create({ data });
-    } catch (err) {
-      console.error(`Prisma indisponível em cadastro ${tipo}. Gravando em arquivo:`, err?.message || err);
+    if (isPrismaDisabled()) {
       item = upsertCadastroFile(tipo, data);
+    } else {
+      try {
+        item = await prisma[m].create({ data });
+      } catch (err) {
+        console.error(`Prisma indisponível em cadastro ${tipo}. Gravando em arquivo:`, err?.message || err);
+        item = upsertCadastroFile(tipo, data);
+      }
     }
 
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CREATE", entidade: tipo.toUpperCase(), entidadeId: item.id, detalhes: data, ip: req.ip });
@@ -95,11 +102,15 @@ router.put("/:tipo/:id", requirePermission("cadastros.manage"), async (req, res)
     }
 
     let item;
-    try {
-      item = await prisma[m].update({ where: { id: Number(req.params.id) }, data });
-    } catch (err) {
-      console.error(`Prisma indisponível em atualização ${tipo}. Gravando em arquivo:`, err?.message || err);
+    if (isPrismaDisabled()) {
       item = upsertCadastroFile(tipo, data, req.params.id);
+    } else {
+      try {
+        item = await prisma[m].update({ where: { id: Number(req.params.id) }, data });
+      } catch (err) {
+        console.error(`Prisma indisponível em atualização ${tipo}. Gravando em arquivo:`, err?.message || err);
+        item = upsertCadastroFile(tipo, data, req.params.id);
+      }
     }
 
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "UPDATE", entidade: tipo.toUpperCase(), entidadeId: item.id, detalhes: data, ip: req.ip });

@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { authRequired, requirePermission } from "../middlewares/auth.js";
-import { prisma } from "../utils/prisma.js";
+import { prisma, isPrismaDisabled } from "../utils/prisma.js";
 import { normalizeCpf, normalizeChaveAcesso } from "../utils/validators.js";
+import { listFornecedoresPendentesImportados } from "../utils/relatorio-entradas.js";
+import { readFornecedoresPendentes } from "../utils/file-store.js";
 
 const router = Router();
 router.use(authRequired);
@@ -28,24 +30,36 @@ function summarizeNotas(notas = []) {
 }
 
 router.get("/pendentes", requirePermission("relatorio.terceirizado.view"), async (_req, res) => {
-  const itens = await prisma.relatorioTerceirizado.findMany({
-    where: { status: "AGUARDANDO_CHEGADA", agendamentoId: null },
-    orderBy: [{ fornecedor: "asc" }, { id: "desc" }]
-  });
-  res.json(itens.map((item) => ({
-    id: item.id,
-    fornecedor: item.fornecedor,
-    transportadora: item.transportadora,
-    motorista: item.motorista,
-    cpfMotorista: item.cpfMotorista,
-    placa: item.placa,
-    quantidadeNotas: item.quantidadeNotas,
-    quantidadeVolumes: item.quantidadeVolumes,
-    pesoTotalKg: item.pesoTotalKg,
-    valorTotalNf: item.valorTotalNf,
-    status: item.status,
-    referenciaExterna: item.referenciaExterna
-  })));
+  try {
+    if (!isPrismaDisabled()) {
+      const itens = await prisma.relatorioTerceirizado.findMany({
+        where: { status: "AGUARDANDO_CHEGADA", agendamentoId: null },
+        orderBy: [{ fornecedor: "asc" }, { id: "desc" }]
+      });
+      return res.json(itens.map((item) => ({
+        id: item.id,
+        fornecedor: item.fornecedor,
+        transportadora: item.transportadora,
+        motorista: item.motorista,
+        cpfMotorista: item.cpfMotorista,
+        placa: item.placa,
+        quantidadeNotas: item.quantidadeNotas,
+        quantidadeVolumes: item.quantidadeVolumes,
+        pesoTotalKg: item.pesoTotalKg,
+        valorTotalNf: item.valorTotalNf,
+        status: item.status,
+        referenciaExterna: item.referenciaExterna
+      })));
+    }
+  } catch (error) {
+    console.error("Falha ao consultar pendências do relatório no Prisma:", error?.message || error);
+  }
+
+  try {
+    return res.json(await listFornecedoresPendentesImportados());
+  } catch {
+    return res.json(readFornecedoresPendentes());
+  }
 });
 
 router.post("/importar", requirePermission("relatorio.terceirizado.manage"), async (req, res) => {

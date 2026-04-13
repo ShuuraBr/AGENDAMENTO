@@ -8,8 +8,10 @@
     "prisma:generate": "node ./node_modules/prisma/build/index.js generate --schema=prisma/schema.prisma",
     "prisma:push": "node ./node_modules/prisma/build/index.js db push --schema=prisma/schema.prisma",
     "prisma:seed": "node prisma/seed.js",
-    "build": "npm run prisma:generate",
-    "postinstall": "npm run prisma:generate"
+    "build": "npm run prisma:generate:safe",
+    "postinstall": "npm run prisma:generate:safe",
+    "prisma:generate:safe": "node ./scripts/prisma-generate-safe.mjs prisma/schema.prisma",
+    "prisma:env:check": "node ./scripts/check-prisma-env.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
