@@ -26,8 +26,57 @@ if (!process.env.DATABASE_URL && hasDbParts) {
 let prismaClient = null;
 let prismaLoadError = null;
 let prismaLoadingPromise = null;
+let prismaDisabled = false;
+let prismaDisableReason = '';
+let prismaDisableLogged = false;
+
+function normalizeDisableReason(errorOrReason) {
+  const raw = String(errorOrReason?.message || errorOrReason || 'Prisma desabilitado.');
+  return raw.startsWith('Prisma desabilitado') ? raw : `Prisma desabilitado após panic do engine: ${raw}`;
+}
+
+function createPrismaDisabledError(reason = prismaDisableReason || 'Prisma desabilitado.') {
+  const error = new Error(normalizeDisableReason(reason));
+  error.code = 'PRISMA_DISABLED';
+  error.prismaDisabled = true;
+  return error;
+}
+
+export function isPrismaEnginePanic(error) {
+  const message = String(error?.message || error || '');
+  return message.includes('PANIC: timer has gone away')
+    || message.includes('PrismaClientRustPanicError')
+    || message.includes('This is a non-recoverable error')
+    || message.includes('Raw query failed. Code: `N/A`')
+    || message.includes('Raw query failed. Code: `N/A`. Message: `N/A`');
+}
+
+export async function disablePrisma(errorOrReason) {
+  prismaDisabled = true;
+  prismaDisableReason = normalizeDisableReason(errorOrReason);
+  const current = prismaClient;
+  prismaClient = null;
+  prismaLoadError = createPrismaDisabledError(prismaDisableReason);
+  prismaLoadingPromise = null;
+  process.env.PRISMA_DISABLED = '1';
+
+  if (!prismaDisableLogged) {
+    prismaDisableLogged = true;
+    console.error(`[PRISMA_DISABLED] ${prismaDisableReason}`);
+  }
+
+  if (current && typeof current.$disconnect === 'function') {
+    try { await current.$disconnect(); } catch {}
+  }
+
+  return prismaLoadError;
+}
 
 async function createPrismaClient() {
+  if (prismaDisabled || String(process.env.PRISMA_DISABLED || '') === '1') {
+    throw createPrismaDisabledError(prismaDisableReason || 'Prisma desabilitado por configuração.');
+  }
+
   const prismaPkg = await import('@prisma/client');
   const PrismaClient = prismaPkg.PrismaClient || prismaPkg.default?.PrismaClient;
   if (!PrismaClient) {
@@ -36,15 +85,6 @@ async function createPrismaClient() {
   const client = new PrismaClient({ log: ['error', 'warn'] });
   await client.$connect();
   return client;
-}
-
-function isPrismaEnginePanic(error) {
-  const message = String(error?.message || error || '');
-  return message.includes('PANIC: timer has gone away')
-    || message.includes('PrismaClientRustPanicError')
-    || message.includes('This is a non-recoverable error')
-    || message.includes('Raw query failed. Code: `N/A`')
-    || message.includes('Raw query failed. Code: `N/A`. Message: `N/A`');
 }
 
 export async function resetPrismaClient() {
@@ -58,6 +98,9 @@ export async function resetPrismaClient() {
 }
 
 export async function getPrismaClient() {
+  if (prismaDisabled || String(process.env.PRISMA_DISABLED || '') === '1') {
+    throw createPrismaDisabledError(prismaDisableReason || 'Prisma desabilitado por configuração.');
+  }
   if (prismaClient) return prismaClient;
   if (prismaLoadError) throw prismaLoadError;
   if (!prismaLoadingPromise) {
@@ -66,7 +109,10 @@ export async function getPrismaClient() {
         prismaClient = client;
         return client;
       })
-      .catch((error) => {
+      .catch(async (error) => {
+        if (isPrismaEnginePanic(error)) {
+          throw await disablePrisma(error);
+        }
         prismaLoadError = error;
         throw error;
       })
@@ -81,6 +127,14 @@ export function getPrismaLoadError() {
   return prismaLoadError;
 }
 
+export function isPrismaDisabled() {
+  return prismaDisabled || String(process.env.PRISMA_DISABLED || '') === '1';
+}
+
+export function getPrismaDisableReason() {
+  return prismaDisableReason || 'Prisma desabilitado.';
+}
+
 function createModelProxy(pathParts = []) {
   return new Proxy(function () {}, {
     get(_target, prop) {
@@ -89,7 +143,7 @@ function createModelProxy(pathParts = []) {
     },
     apply(_target, _thisArg, args) {
       return (async () => {
-        const execute = async () => {
+        try {
           const client = await getPrismaClient();
           let current = client;
           for (const part of pathParts) {
@@ -99,14 +153,11 @@ function createModelProxy(pathParts = []) {
             throw new Error(`Operação Prisma inválida: ${pathParts.join('.')}`);
           }
           return current.apply(client, args);
-        };
-
-        try {
-          return await execute();
         } catch (error) {
-          if (!isPrismaEnginePanic(error)) throw error;
-          await resetPrismaClient();
-          return execute();
+          if (isPrismaEnginePanic(error)) {
+            throw await disablePrisma(error);
+          }
+          throw error;
         }
       })();
     }

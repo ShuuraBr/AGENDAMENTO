@@ -1,5 +1,6 @@
-import { prisma } from "./prisma.js";
 import { readAuditLogs, writeAuditLogs } from "./file-store.js";
+import { executeMysql, isDirectMysqlEnabled } from "./mysql-direct.js";
+import { logOnce } from "./log-once.js";
 
 function normalizePayload({ usuarioId, usuarioNome, perfil, acao, entidade, entidadeId, detalhes, ip }) {
   return {
@@ -18,21 +19,16 @@ function normalizePayload({ usuarioId, usuarioNome, perfil, acao, entidade, enti
 export async function auditLog({ usuarioId, usuarioNome, perfil, acao, entidade, entidadeId, detalhes, ip }) {
   const entry = normalizePayload({ usuarioId, usuarioNome, perfil, acao, entidade, entidadeId, detalhes, ip });
 
-  try {
-    await prisma.logAuditoria.create({
-      data: {
-        usuarioId: entry.usuarioId,
-        perfil: entry.perfil,
-        acao: entry.acao,
-        entidade: entry.entidade,
-        entidadeId: entry.entidadeId,
-        detalhes: entry.detalhes,
-        ip: entry.ip
-      }
-    });
-    return;
-  } catch (err) {
-    console.error("Falha ao gravar log de auditoria no banco:", err?.message || err);
+  if (isDirectMysqlEnabled()) {
+    try {
+      await executeMysql(
+        'INSERT INTO `LogAuditoria` (`usuarioId`, `perfil`, `acao`, `entidade`, `entidadeId`, `detalhes`, `ip`, `createdAt`) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
+        [entry.usuarioId, entry.perfil, entry.acao, entry.entidade, entry.entidadeId, entry.detalhes, entry.ip]
+      );
+      return;
+    } catch (err) {
+      logOnce('audit-direct-mysql', 'Auditoria operando em arquivo:', err?.message || err);
+    }
   }
 
   try {

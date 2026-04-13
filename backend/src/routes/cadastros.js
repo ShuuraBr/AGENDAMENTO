@@ -1,26 +1,24 @@
 import { Router } from "express";
 import { authRequired, requirePermission } from "../middlewares/auth.js";
-import { prisma } from "../utils/prisma.js";
 import { validateProfile } from "../utils/validators.js";
 import bcrypt from "bcryptjs";
 import { auditLog } from "../utils/audit.js";
 import { readCadastroFile, upsertCadastroFile } from "../utils/file-store.js";
+import { createCadastroDirect, directCadastrosEnabled, listCadastroDirect, updateCadastroDirect } from "../utils/direct-cadastros.js";
+import { logOnce } from "../utils/log-once.js";
 
 const router = Router();
 router.use(authRequired);
 
-const models = {
-  fornecedores: "fornecedor",
-  transportadoras: "transportadora",
-  motoristas: "motorista",
-  veiculos: "veiculo",
-  docas: "doca",
-  janelas: "janela",
-  regras: "regra",
-  usuarios: "usuario"
-};
+const validTipos = new Set([
+  'fornecedores', 'transportadoras', 'motoristas', 'veiculos', 'docas', 'janelas', 'regras', 'usuarios'
+]);
 
-function model(tipo) { return models[tipo]; }
+function ensureTipo(tipo) {
+  const normalized = String(tipo || '');
+  if (!validTipos.has(normalized)) throw new Error('Tipo inválido.');
+  return normalized;
+}
 
 function ensureUserCadastroPermission(req, tipo) {
   if (tipo === "usuarios" && req.user?.perfil !== "ADMIN") {
@@ -30,21 +28,22 @@ function ensureUserCadastroPermission(req, tipo) {
   }
 }
 
-async function listItems(tipo, m) {
-  try {
-    return await prisma[m].findMany({ orderBy: { id: "desc" } });
-  } catch (err) {
-    console.error(`Fallback em arquivo para cadastro ${tipo}:`, err?.message || err);
-    return readCadastroFile(tipo);
+async function listItems(tipo) {
+  if (directCadastrosEnabled()) {
+    try {
+      return await listCadastroDirect(tipo);
+    } catch (err) {
+      logOnce(`cadastro-list-${tipo}`, `Cadastro ${tipo} operando em arquivo (listagem):`, err?.message || err);
+    }
   }
+  return readCadastroFile(tipo);
 }
 
 router.get("/:tipo", requirePermission("cadastros.view"), async (req, res) => {
   try {
-    const m = model(req.params.tipo);
-    if (!m) return res.status(400).json({ message: "Tipo inválido." });
-    ensureUserCadastroPermission(req, req.params.tipo);
-    res.json(await listItems(req.params.tipo, m));
+    const tipo = ensureTipo(req.params.tipo);
+    ensureUserCadastroPermission(req, tipo);
+    res.json(await listItems(tipo));
   } catch (err) {
     res.status(err.statusCode || 400).json({ message: err.message });
   }
@@ -52,9 +51,7 @@ router.get("/:tipo", requirePermission("cadastros.view"), async (req, res) => {
 
 router.post("/:tipo", requirePermission("cadastros.manage"), async (req, res) => {
   try {
-    const tipo = req.params.tipo;
-    const m = model(tipo);
-    if (!m) return res.status(400).json({ message: "Tipo inválido." });
+    const tipo = ensureTipo(req.params.tipo);
     ensureUserCadastroPermission(req, tipo);
 
     const data = { ...req.body };
@@ -65,11 +62,15 @@ router.post("/:tipo", requirePermission("cadastros.manage"), async (req, res) =>
       delete data.senha;
     }
 
-    let item;
-    try {
-      item = await prisma[m].create({ data });
-    } catch (err) {
-      console.error(`Prisma indisponível em cadastro ${tipo}. Gravando em arquivo:`, err?.message || err);
+    let item = null;
+    if (directCadastrosEnabled()) {
+      try {
+        item = await createCadastroDirect(tipo, data);
+      } catch (err) {
+        logOnce(`cadastro-create-${tipo}`, `Cadastro ${tipo} operando em arquivo (criação):`, err?.message || err);
+      }
+    }
+    if (!item) {
       item = upsertCadastroFile(tipo, data);
     }
 
@@ -82,9 +83,7 @@ router.post("/:tipo", requirePermission("cadastros.manage"), async (req, res) =>
 
 router.put("/:tipo/:id", requirePermission("cadastros.manage"), async (req, res) => {
   try {
-    const tipo = req.params.tipo;
-    const m = model(tipo);
-    if (!m) return res.status(400).json({ message: "Tipo inválido." });
+    const tipo = ensureTipo(req.params.tipo);
     ensureUserCadastroPermission(req, tipo);
 
     const data = { ...req.body };
@@ -94,11 +93,15 @@ router.put("/:tipo/:id", requirePermission("cadastros.manage"), async (req, res)
       delete data.senha;
     }
 
-    let item;
-    try {
-      item = await prisma[m].update({ where: { id: Number(req.params.id) }, data });
-    } catch (err) {
-      console.error(`Prisma indisponível em atualização ${tipo}. Gravando em arquivo:`, err?.message || err);
+    let item = null;
+    if (directCadastrosEnabled()) {
+      try {
+        item = await updateCadastroDirect(tipo, req.params.id, data);
+      } catch (err) {
+        logOnce(`cadastro-update-${tipo}`, `Cadastro ${tipo} operando em arquivo (atualização):`, err?.message || err);
+      }
+    }
+    if (!item) {
       item = upsertCadastroFile(tipo, data, req.params.id);
     }
 

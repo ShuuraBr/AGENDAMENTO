@@ -1,37 +1,35 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { prisma } from "../utils/prisma.js";
-import { fetchUserByEmail } from "../utils/db-fallback.js";
+import { findUserByEmailDirect, directCadastrosEnabled } from "../utils/direct-cadastros.js";
 import { readUsuarios } from "../utils/file-store.js";
 import { signInternalSession } from "../utils/security.js";
 import { auditLog } from "../utils/audit.js";
 import { loginRateLimit, registerLoginFailure, clearLoginFailures } from "../middlewares/rateLimit.js";
 import { getAccessProfileSummary, normalizeProfile } from "../utils/permissions.js";
+import { logOnce } from "../utils/log-once.js";
 
 const router = Router();
 
 async function findUserByEmail(email) {
-  try {
-    return await prisma.usuario.findUnique({ where: { email } });
-  } catch (ormError) {
-    console.error("Prisma ORM falhou em /auth/login. Tentando fallback SQL:", ormError?.message || ormError);
+  if (directCadastrosEnabled()) {
     try {
-      const dbUser = await fetchUserByEmail(email);
+      const dbUser = await findUserByEmailDirect(email);
       if (dbUser) return dbUser;
-    } catch (fallbackError) {
-      console.error("Fallback SQL falhou em /auth/login. Tentando arquivo JSON:", fallbackError?.message || fallbackError);
+    } catch (dbError) {
+      logOnce('auth-login-direct-db', 'Login operando sem MySQL direto. Usando arquivo local:', dbError?.message || dbError);
     }
-    const fileUser = readUsuarios().find((item) => String(item.email || '').toLowerCase() === String(email || '').toLowerCase());
-    if (!fileUser) return null;
-    return {
-      id: fileUser.id,
-      nome: fileUser.nome,
-      email: fileUser.email,
-      perfil: fileUser.perfil || 'ADMIN',
-      senhaHash: fileUser.senhaHash || null,
-      senha: fileUser.senha || null,
-    };
   }
+
+  const fileUser = readUsuarios().find((item) => String(item.email || '').toLowerCase() === String(email || '').toLowerCase());
+  if (!fileUser) return null;
+  return {
+    id: fileUser.id,
+    nome: fileUser.nome,
+    email: fileUser.email,
+    perfil: fileUser.perfil || 'ADMIN',
+    senhaHash: fileUser.senhaHash || null,
+    senha: fileUser.senha || null,
+  };
 }
 
 router.post("/login", loginRateLimit, async (req, res) => {
