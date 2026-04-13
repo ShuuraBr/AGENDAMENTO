@@ -2186,25 +2186,31 @@ Deseja liberar manualmente a descarga deste veículo?`);
     if (msg && data.respondeu) msg.textContent = 'Esta avaliação já foi respondida. Obrigado pelo retorno.';
   }
 
-  document.addEventListener("DOMContentLoaded", async () => {
-    syncCurrentUserFromToken();
-    updateNav();
-    renderNfRows();
-    renderCadastroForm();
-    renderPendingNotasInterno();
-    byId("loginForm")?.reset();
-    applyInputMasks(document);
-    const internalDateInput = byId("agendamentoForm")?.querySelector('[name="dataAgendada"]');
-    if (internalDateInput && !internalDateInput.value) internalDateInput.value = new Date().toISOString().slice(0, 10);
-
+  function bindViewNavigation() {
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.setAttribute("type", "button");
+      if (btn.dataset.navBound === "true") return;
+      btn.dataset.navBound = "true";
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
         showView(btn.dataset.view);
       });
     });
+  }
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    bindViewNavigation();
+
+    try { syncCurrentUserFromToken(); } catch (err) { console.error('[INIT] syncCurrentUserFromToken falhou:', err); }
+    try { updateNav(); } catch (err) { console.error('[INIT] updateNav falhou:', err); }
+    try { renderNfRows(); } catch (err) { console.error('[INIT] renderNfRows falhou:', err); }
+    try { renderCadastroForm(); } catch (err) { console.error('[INIT] renderCadastroForm falhou:', err); }
+    try { renderPendingNotasInterno(); } catch (err) { console.error('[INIT] renderPendingNotasInterno falhou:', err); }
+    byId("loginForm")?.reset();
+    applyInputMasks(document);
+    const internalDateInput = byId("agendamentoForm")?.querySelector('[name="dataAgendada"]');
+    if (internalDateInput && !internalDateInput.value) internalDateInput.value = new Date().toISOString().slice(0, 10);
 
     byId("btnLogout")?.addEventListener("click", logout);
 
@@ -2568,6 +2574,8 @@ Deseja liberar manualmente a descarga deste veículo?`);
       showView("consulta");
     } else if (view === "fornecedor") {
       showView("fornecedor");
+    } else if (!document.querySelector('.view.active')) {
+      showView(state.token && !isTokenExpired(state.token) ? firstAllowedPrivateView() : 'public-home');
     }
   });
 })();

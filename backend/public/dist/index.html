@@ -18,10 +18,10 @@
     </div>
 
     <nav id="publicNav" class="nav-menu">
-      <button type="button" id="btnPublicHome" class="nav-btn active" data-view="public-home" onclick="window.__publicView && window.__publicView('public-home'); return false;">Início</button>
-      <button type="button" id="btnPublicFornecedor" class="nav-btn" data-view="fornecedor" onclick="window.__publicView && window.__publicView('fornecedor'); return false;">Fornecedor/Transportadora</button>
-      <button type="button" id="btnPublicMotorista" class="nav-btn" data-view="motorista" onclick="window.__publicView && window.__publicView('motorista'); return false;">Motorista</button>
-      <button type="button" id="btnPublicLogin" class="nav-btn" data-view="login" onclick="window.__publicView && window.__publicView('login'); return false;">Área do Colaborador</button>
+      <button type="button" class="nav-btn active" data-view="public-home" onclick="return window.__agendamentoShowView && window.__agendamentoShowView('public-home');">Início</button>
+      <button type="button" class="nav-btn" data-view="fornecedor" onclick="return window.__agendamentoShowView && window.__agendamentoShowView('fornecedor');">Fornecedor/Transportadora</button>
+      <button type="button" class="nav-btn" data-view="motorista" onclick="return window.__agendamentoShowView && window.__agendamentoShowView('motorista');">Motorista</button>
+      <button type="button" class="nav-btn" data-view="login" onclick="return window.__agendamentoShowView && window.__agendamentoShowView('login');">Área do Colaborador</button>
     </nav>
 
     <nav id="privateNav" class="nav-menu hidden">
@@ -275,6 +275,42 @@
     </section>
   </main>
 
-  <script src="/assets/app.js"></script>
+  <script>
+(function () {
+  function showView(target) {
+    var id = String(target || '').trim();
+    if (!id) return false;
+    var view = document.getElementById(id);
+    if (!view) return false;
+    document.querySelectorAll('.view').forEach(function (section) {
+      section.classList.remove('active');
+    });
+    view.classList.add('active');
+    document.querySelectorAll('[data-view]').forEach(function (button) {
+      button.classList.toggle('active', button.getAttribute('data-view') === id);
+    });
+    return false;
+  }
+
+  window.__agendamentoShowView = showView;
+
+  document.addEventListener('click', function (event) {
+    var button = event.target && event.target.closest ? event.target.closest('[data-view]') : null;
+    if (!button) return;
+    var target = button.getAttribute('data-view');
+    if (!target) return;
+    event.preventDefault();
+    event.stopPropagation();
+    showView(target);
+  }, true);
+
+  document.addEventListener('DOMContentLoaded', function () {
+    if (!document.querySelector('.view.active')) {
+      showView('public-home');
+    }
+  });
+})();
+</script>
+<script src="/assets/app.js"></script>
 </body>
 </html>
