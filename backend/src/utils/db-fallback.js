@@ -1,4 +1,4 @@
-import { getPrismaClient } from "./prisma.js";
+import { getPrismaClient, isPrismaDisabled, getPrismaDisableReason } from "./prisma.js";
 
 function normalizeContains(value) {
   const text = String(value || "").trim();
@@ -52,12 +52,14 @@ function mapAgendamento(item = {}) {
 }
 
 export async function fetchUserByEmail(email) {
+  if (isPrismaDisabled()) throw new Error(getPrismaDisableReason() || "Prisma desabilitado.");
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
   return client.usuario.findUnique({ where: { email: String(email || '').trim() } });
 }
 
 export async function fetchJanelasDocas() {
+  if (isPrismaDisabled()) throw new Error(getPrismaDisableReason() || "Prisma desabilitado.");
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
   const [janelas, docas] = await Promise.all([
@@ -68,6 +70,7 @@ export async function fetchJanelasDocas() {
 }
 
 export async function fetchAgendamentosByDatasStatuses(datas = [], statuses = []) {
+  if (isPrismaDisabled()) throw new Error(getPrismaDisableReason() || "Prisma desabilitado.");
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
   if (!datas.length || !statuses.length) return [];
@@ -91,6 +94,7 @@ export async function fetchAgendamentosByDatasStatuses(datas = [], statuses = []
 }
 
 export async function pingDatabase() {
+  if (isPrismaDisabled()) throw new Error(getPrismaDisableReason() || "Prisma desabilitado.");
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
   const rows = await client.$queryRawUnsafe("SELECT 1 AS ok, DATABASE() AS databaseName");
@@ -98,6 +102,7 @@ export async function pingDatabase() {
 }
 
 export async function fetchAgendamentosRaw(filters = {}) {
+  if (isPrismaDisabled()) throw new Error(getPrismaDisableReason() || "Prisma desabilitado.");
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
 
@@ -120,6 +125,7 @@ export async function fetchAgendamentosRaw(filters = {}) {
 }
 
 export async function fetchDocaPainelRaw(dataAgendada = null) {
+  if (isPrismaDisabled()) throw new Error(getPrismaDisableReason() || "Prisma desabilitado.");
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
 

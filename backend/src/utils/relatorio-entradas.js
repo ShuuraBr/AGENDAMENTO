@@ -4,7 +4,7 @@ import path from 'path';
 import zlib from 'zlib';
 import multer from 'multer';
 import { fileURLToPath } from 'url';
-import { prisma, resetPrismaClient } from './prisma.js';
+import { prisma, resetPrismaClient, isPrismaDisabled, getPrismaDisableReason } from './prisma.js';
 import { auditLog } from './audit.js';
 import { readAgendamentos } from './file-store.js';
 import { computeDueInfo, toIsoDate, formatDateBR } from './nf-monitoring.js';
@@ -1190,6 +1190,10 @@ function withRelatorioImportLock(task) {
 
 async function ensureRelatorioTable() {
   if (relatorioDbDisabled) return false;
+  if (isPrismaDisabled()) {
+    disableRelatorioDb(getPrismaDisableReason() || 'Prisma desabilitado.', 'ensureRelatorioTable');
+    return false;
+  }
   if (relatorioEnsurePromise) return relatorioEnsurePromise;
 
   const probe = async () => {
