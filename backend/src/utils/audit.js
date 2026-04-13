@@ -1,11 +1,5 @@
-import { prisma, isPrismaEnginePanic, resetPrismaClient } from "./prisma.js";
+import { prisma } from "./prisma.js";
 import { readAuditLogs, writeAuditLogs } from "./file-store.js";
-
-let auditDbDisabledUntil = 0;
-
-function auditDbTemporarilyDisabled() {
-  return Date.now() < auditDbDisabledUntil;
-}
 
 function normalizePayload({ usuarioId, usuarioNome, perfil, acao, entidade, entidadeId, detalhes, ip }) {
   return {
@@ -24,27 +18,21 @@ function normalizePayload({ usuarioId, usuarioNome, perfil, acao, entidade, enti
 export async function auditLog({ usuarioId, usuarioNome, perfil, acao, entidade, entidadeId, detalhes, ip }) {
   const entry = normalizePayload({ usuarioId, usuarioNome, perfil, acao, entidade, entidadeId, detalhes, ip });
 
-  if (!auditDbTemporarilyDisabled()) {
-    try {
-      await prisma.logAuditoria.create({
-        data: {
-          usuarioId: entry.usuarioId,
-          perfil: entry.perfil,
-          acao: entry.acao,
-          entidade: entry.entidade,
-          entidadeId: entry.entidadeId,
-          detalhes: entry.detalhes,
-          ip: entry.ip
-        }
-      });
-      return;
-    } catch (err) {
-      if (isPrismaEnginePanic(err)) {
-        auditDbDisabledUntil = Date.now() + (10 * 60 * 1000);
-        try { await resetPrismaClient(); } catch {}
+  try {
+    await prisma.logAuditoria.create({
+      data: {
+        usuarioId: entry.usuarioId,
+        perfil: entry.perfil,
+        acao: entry.acao,
+        entidade: entry.entidade,
+        entidadeId: entry.entidadeId,
+        detalhes: entry.detalhes,
+        ip: entry.ip
       }
-      console.error("Falha ao gravar log de auditoria no banco:", err?.message || err);
-    }
+    });
+    return;
+  } catch (err) {
+    console.error("Falha ao gravar log de auditoria no banco:", err?.message || err);
   }
 
   try {

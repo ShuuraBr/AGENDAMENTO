@@ -4,9 +4,8 @@
 .topbar h1{margin:0;font-size:28px}
 .nav-menu{display:flex;gap:8px;flex-wrap:wrap}
 .logo{height:92px;max-width:300px;object-fit:contain}
-button,.nav-btn,.btn-link,.nav-link-btn{display:inline-flex;align-items:center;justify-content:center;border:0;background:#2563eb;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer;text-decoration:none;line-height:1.2}
-button:hover,.nav-btn:hover,.btn-link:hover,.nav-link-btn:hover{opacity:.94}
-.nav-btn:visited,.btn-link:visited,.nav-link-btn:visited{color:#fff}
+button{border:0;background:#2563eb;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
+button:hover{opacity:.94}
 .container{padding:24px}
 .view{display:none}.view.active{display:block}
 .card{background:#fff;padding:18px;border-radius:16px;box-shadow:0 4px 14px rgba(15,23,42,.08)}
@@ -343,5 +342,3 @@ body.modal-open{overflow:hidden}
 .multi-select-search{padding:6px 6px 10px}.multi-select-search input{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;font:inherit}
 .doca-meta-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .occurrence-log-card{border:1px solid #e2e8f0;border-radius:14px;padding:14px;background:#f8fafc;display:grid;gap:10px}.occurrence-log-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.occurrence-log-head span{color:#64748b;font-size:13px}.occurrence-log-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;font-size:13px}.occurrence-log-reason{padding:10px 12px;border-radius:10px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}.occurrence-log-notes{padding:12px;border-radius:10px;background:#fff;border:1px solid #e2e8f0;line-height:1.55}@media (max-width:720px){.occurrence-log-head,.occurrence-log-meta{grid-template-columns:1fr;display:grid}.doca-meta-summary{grid-template-columns:1fr}}
-
-.nav-link-btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}

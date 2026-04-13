@@ -15,13 +15,6 @@ const monitorStateFile = path.join(backendRoot, 'data', 'financeiro-monitorament
 const TABLE_NAME = 'RelatorioTerceirizado';
 const NEAR_DUE_DAYS = 5;
 const AWARENESS_GAP_DAYS = 3;
-const RELATORIO_DB_READ_COOLDOWN_MS = 10 * 60 * 1000;
-const MONTHLY_DIGEST_CHECK_COOLDOWN_MS = 5 * 60 * 1000;
-
-let relatorioDbReadDisabledReason = '';
-let relatorioDbReadDisabledAt = 0;
-let lastMonthlyDigestCheckAt = 0;
-let monthlyDigestInFlight = null;
 
 function ensureDir(filePath) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -41,25 +34,6 @@ function normalizeSerie(value = '') {
 
 function quoteIdentifier(value = '') {
   return `\`${String(value).replace(/`/g, '``')}\``;
-}
-
-function isPrismaPanicLike(error) {
-  const message = String(error?.message || error || '');
-  return message.includes('PANIC: timer has gone away')
-    || message.includes('PrismaClientRustPanicError')
-    || message.includes('This is a non-recoverable error')
-    || message.includes('Raw query failed. Code: `N/A`')
-    || message.includes('Raw query failed. Code: `N/A`. Message: `N/A`');
-}
-
-function disableRelatorioDbReads(error, context = 'relatorio_db_read') {
-  relatorioDbReadDisabledAt = Date.now();
-  relatorioDbReadDisabledReason = `${context}: ${error?.message || String(error || 'erro_desconhecido')}`;
-  console.error(`[NF_MONITOR] Leitura do relatório via banco desabilitada temporariamente. Motivo: ${relatorioDbReadDisabledReason}`);
-}
-
-function isRelatorioDbReadDisabled() {
-  return relatorioDbReadDisabledAt > 0 && (Date.now() - relatorioDbReadDisabledAt) < RELATORIO_DB_READ_COOLDOWN_MS;
 }
 
 function toDateOnly(date) {
@@ -356,37 +330,24 @@ function normalizeRelatorioRow(row = {}) {
 }
 
 async function loadRelatorioRowsFromDb() {
-  if (isRelatorioDbReadDisabled()) {
-    throw new Error(`relatorio_db_read_disabled:${relatorioDbReadDisabledReason || 'cooldown_ativo'}`);
-  }
-
-  try {
-    const rows = await prisma.$queryRawUnsafe(
-      `SELECT rowHash, agendamentoId, ${quoteIdentifier('Fornecedor')} AS fornecedorRaw, ${quoteIdentifier('Nr. nota')} AS numeroNfRaw, ${quoteIdentifier('Série')} AS serieRaw, ${quoteIdentifier('Status')} AS statusRaw, ${quoteIdentifier('Data 1º vencimento')} AS vencimentoRaw, ${quoteIdentifier('Data de Entrada')} AS dataEntradaRaw, ${quoteIdentifier('Data do cadastro')} AS dataCadastroRaw, ${quoteIdentifier('Entrada')} AS entradaRaw, ${quoteIdentifier('Empresa')} AS empresaRaw, ${quoteIdentifier('Destino')} AS destinoRaw, dadosOriginaisJson FROM ${quoteIdentifier(TABLE_NAME)}`
-    );
-    relatorioDbReadDisabledAt = 0;
-    relatorioDbReadDisabledReason = '';
-    return (rows || []).map((row) => normalizeRelatorioRow({
-      rowHash: row.rowHash,
-      agendamentoId: row.agendamentoId,
-      dadosOriginaisJson: row.dadosOriginaisJson,
-      'Fornecedor': row.fornecedorRaw,
-      'Nr. nota': row.numeroNfRaw,
-      'Série': row.serieRaw,
-      'Status': row.statusRaw,
-      'Data 1º vencimento': row.vencimentoRaw,
-      'Data de Entrada': row.dataEntradaRaw,
-      'Data do cadastro': row.dataCadastroRaw,
-      'Entrada': row.entradaRaw,
-      'Empresa': row.empresaRaw,
-      'Destino': row.destinoRaw
-    }));
-  } catch (error) {
-    if (isPrismaPanicLike(error)) {
-      disableRelatorioDbReads(error, 'loadRelatorioRowsFromDb');
-    }
-    throw error;
-  }
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT rowHash, agendamentoId, ${quoteIdentifier('Fornecedor')} AS fornecedorRaw, ${quoteIdentifier('Nr. nota')} AS numeroNfRaw, ${quoteIdentifier('Série')} AS serieRaw, ${quoteIdentifier('Status')} AS statusRaw, ${quoteIdentifier('Data 1º vencimento')} AS vencimentoRaw, ${quoteIdentifier('Data de Entrada')} AS dataEntradaRaw, ${quoteIdentifier('Data do cadastro')} AS dataCadastroRaw, ${quoteIdentifier('Entrada')} AS entradaRaw, ${quoteIdentifier('Empresa')} AS empresaRaw, ${quoteIdentifier('Destino')} AS destinoRaw, dadosOriginaisJson FROM ${quoteIdentifier(TABLE_NAME)}`
+  );
+  return (rows || []).map((row) => normalizeRelatorioRow({
+    rowHash: row.rowHash,
+    agendamentoId: row.agendamentoId,
+    dadosOriginaisJson: row.dadosOriginaisJson,
+    'Fornecedor': row.fornecedorRaw,
+    'Nr. nota': row.numeroNfRaw,
+    'Série': row.serieRaw,
+    'Status': row.statusRaw,
+    'Data 1º vencimento': row.vencimentoRaw,
+    'Data de Entrada': row.dataEntradaRaw,
+    'Data do cadastro': row.dataCadastroRaw,
+    'Entrada': row.entradaRaw,
+    'Empresa': row.empresaRaw,
+    'Destino': row.destinoRaw
+  }));
 }
 
 function loadRelatorioRowsFromFile() {
@@ -535,18 +496,10 @@ export async function sendFinanceAwarenessEmail({ agendamento, analysis, actor }
 }
 
 export async function sendMonthlyNearDueDigestIfNeeded({ triggeredBy = '', forceSend = false } = {}) {
-  if (!forceSend) {
-    if (monthlyDigestInFlight) return monthlyDigestInFlight;
-    if (lastMonthlyDigestCheckAt > 0 && (Date.now() - lastMonthlyDigestCheckAt) < MONTHLY_DIGEST_CHECK_COOLDOWN_MS) {
-      return { sent: false, reason: 'Verificação mensal em cooldown.' };
-    }
-  }
+  const to = financeRecipient();
+  if (!to) return { sent: false, reason: 'E-mail do financeiro não configurado.' };
 
-  const runner = (async () => {
-    const to = financeRecipient();
-    if (!to) return { sent: false, reason: 'E-mail do financeiro não configurado.' };
-
-    const now = new Date();
+  const now = new Date();
   const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
   const rows = await getRelatorioRowsSnapshot();
   const nearDue = rows
@@ -611,23 +564,7 @@ export async function sendMonthlyNearDueDigestIfNeeded({ triggeredBy = '', force
     });
   }
 
-    return { ...sent, totalNotas: nearDue.length, totalFornecedores: qtdFornecedores, formato: 'html_visual' };
-  })();
-
-  if (!forceSend) {
-    monthlyDigestInFlight = runner
-      .finally(() => {
-        lastMonthlyDigestCheckAt = Date.now();
-        monthlyDigestInFlight = null;
-      });
-    return monthlyDigestInFlight;
-  }
-
-  try {
-    return await runner;
-  } finally {
-    lastMonthlyDigestCheckAt = Date.now();
-  }
+  return { ...sent, totalNotas: nearDue.length, totalFornecedores: qtdFornecedores, formato: 'html_visual' };
 }
 
 export async function searchByNumeroNf(numeroNf = '') {

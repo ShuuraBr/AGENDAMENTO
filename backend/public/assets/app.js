@@ -1,42 +1,6 @@
 (() => {
-  function safeStorageGet(key) {
-    try {
-      return window.localStorage?.getItem(key) || "";
-    } catch {
-      return "";
-    }
-  }
-
-  function safeStorageSet(key, value) {
-    try {
-      window.localStorage?.setItem(key, value);
-    } catch {}
-  }
-
-  function safeStorageRemove(key) {
-    try {
-      window.localStorage?.removeItem(key);
-    } catch {}
-  }
-
-  const ASSET_BASE = (() => {
-    try {
-      return new URL('./assets/', document.baseURI || window.location.href).toString();
-    } catch {
-      return './assets/';
-    }
-  })();
-
-  function assetUrl(file) {
-    try {
-      return new URL(file, ASSET_BASE).toString();
-    } catch {
-      return `./assets/${String(file || '').replace(/^\/+/, '')}`;
-    }
-  }
-
   const state = {
-    token: safeStorageGet("token") || "",
+    token: localStorage.getItem("token") || "",
     cadastroTipo: "fornecedores",
     cadastroEditId: null,
     cadastroCache: [],
@@ -272,10 +236,10 @@
   }
 
   const STORE_LOGOS = {
-    'OBJ': assetUrl('store-obj.svg'),
-    'AC COELHO': assetUrl('store-ac-coelho.svg'),
-    'SR ACABAMENTOS': assetUrl('store-sr-acabamentos.svg'),
-    'FINITURA': assetUrl('store-finitura.svg')
+    'OBJ': '/assets/store-obj.svg',
+    'AC COELHO': '/assets/store-ac-coelho.svg',
+    'SR ACABAMENTOS': '/assets/store-sr-acabamentos.svg',
+    'FINITURA': '/assets/store-finitura.svg'
   };
 
   function resolveStoreKey(value) {
@@ -656,24 +620,21 @@
       btn.classList.toggle('hidden', !canAccessView(btn.dataset.view));
     });
 
-    const canViewCadastros = hasPermission('cadastros.view');
     document.querySelectorAll('.cad-tab[data-tipo]').forEach((btn) => {
-      const allowed = canViewCadastros && canAccessCadastroTab(btn.dataset.tipo);
+      const allowed = canAccessCadastroTab(btn.dataset.tipo);
       btn.classList.toggle('hidden', !allowed);
       btn.disabled = !allowed;
     });
 
-    let cadastroTabChanged = false;
-    if (canViewCadastros && !canAccessCadastroTab(state.cadastroTipo)) {
+    if (!canAccessCadastroTab(state.cadastroTipo)) {
       const firstVisibleTab = [...document.querySelectorAll('.cad-tab[data-tipo]')].find((btn) => !btn.classList.contains('hidden'));
-      if (firstVisibleTab) {
-        state.cadastroTipo = firstVisibleTab.dataset.tipo || 'fornecedores';
-        setActiveButton('.cad-tab', firstVisibleTab);
-        cadastroTabChanged = true;
-      }
+      state.cadastroTipo = firstVisibleTab?.dataset?.tipo || 'fornecedores';
+      setActiveButton('.cad-tab', firstVisibleTab || document.querySelector('.cad-tab[data-tipo="fornecedores"]'));
+      renderCadastroForm();
+      loadCadastro().catch(() => {});
     }
 
-    const canManageCadastros = canViewCadastros && hasPermission('cadastros.manage') && (state.cadastroTipo !== 'usuarios' || hasPermission('users.manage'));
+    const canManageCadastros = hasPermission('cadastros.manage') && (state.cadastroTipo !== 'usuarios' || hasPermission('users.manage'));
     const saveCadastroBtn = byId('saveCadastro');
     const novoCadastroBtn = byId('btnNovoCadastro');
     if (saveCadastroBtn) saveCadastroBtn.classList.toggle('hidden', !canManageCadastros);
@@ -684,10 +645,6 @@
     syncFormPermission(byId('agendamentoForm'), canCreateAgendamento);
     const agendamentoSubmit = byId('agendamentoForm')?.querySelector('button[type="submit"]');
     if (agendamentoSubmit) agendamentoSubmit.classList.toggle('hidden', !canCreateAgendamento);
-
-    if (cadastroTabChanged && byId('cadastros')?.classList.contains('active')) {
-      renderCadastroForm();
-    }
 
     const actionPermissions = {
       btnAprovar: 'agendamentos.approve',
@@ -725,7 +682,7 @@
   }
 
   function logout() {
-    safeStorageRemove("token");
+    localStorage.removeItem("token");
     state.token = "";
     state.currentUser = null;
     updateNav();
@@ -737,6 +694,7 @@
     if (logged) syncCurrentUserFromToken();
     byId("publicNav")?.classList.toggle("hidden", logged);
     byId("privateNav")?.classList.toggle("hidden", !logged);
+    applyRoleAccess();
     if (logged) {
       const activeView = document.querySelector('.view.active')?.id || '';
       if (activeView && !canAccessView(activeView)) showView(firstAllowedPrivateView());
@@ -1926,6 +1884,7 @@
     state.cadastroEditId = record?.id || null;
     byId("cadastroMsg").textContent = state.cadastroEditId ? `Modo edição: ID ${state.cadastroEditId}` : "Modo novo cadastro";
     applyInputMasks(byId("cadastroForm"));
+    applyRoleAccess();
   }
 
   function getCadastroPayload() {
@@ -1973,10 +1932,9 @@
     if (!hasPermission('cadastros.view')) return;
     if (state.cadastroTipo === "usuarios" && !hasPermission('users.manage')) {
       byId("cadastroMsg").textContent = "Apenas administradores podem acessar o cadastro de usuários.";
-      const firstAllowedTab = [...document.querySelectorAll('.cad-tab[data-tipo]')].find((btn) => btn.dataset.tipo !== 'usuarios' && !btn.classList.contains('hidden'));
-      state.cadastroTipo = firstAllowedTab?.dataset.tipo || "fornecedores";
-      if (firstAllowedTab) setActiveButton('.cad-tab', firstAllowedTab);
+      state.cadastroTipo = "fornecedores";
       renderCadastroForm();
+      applyRoleAccess();
     }
     const config = CADASTRO_CONFIG[state.cadastroTipo];
     const items = await api(config.endpoint);
@@ -2242,8 +2200,6 @@ Deseja liberar manualmente a descarga deste veículo?`);
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.setAttribute("type", "button");
       btn.addEventListener("click", (e) => {
-        const href = btn.getAttribute("href");
-        if (href && !href.startsWith("#")) return;
         e.preventDefault();
         e.stopPropagation();
         showView(btn.dataset.view);
@@ -2278,7 +2234,7 @@ Deseja liberar manualmente a descarga deste veículo?`);
         const payload = Object.fromEntries(new FormData(e.target).entries());
         const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
         state.token = data.token;
-        safeStorageSet("token", data.token);
+        localStorage.setItem("token", data.token);
         state.currentUser = data.user || null;
         syncCurrentUserFromToken();
         updateNav();
@@ -2608,16 +2564,10 @@ Deseja liberar manualmente a descarga deste veículo?`);
       const input = byId("consultaForm")?.querySelector('input[name="token"]');
       if (input) input.value = token;
       byId("consultaForm")?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
-    } else if (view === "login") {
-      showView("login");
-    } else if (view === "motorista") {
-      showView("motorista");
     } else if (view === "consulta") {
       showView("consulta");
     } else if (view === "fornecedor") {
       showView("fornecedor");
-    } else if (view === "public-home") {
-      showView("public-home");
     }
   });
 })();

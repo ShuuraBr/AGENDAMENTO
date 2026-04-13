@@ -38,7 +38,7 @@ async function createPrismaClient() {
   return client;
 }
 
-export function isPrismaEnginePanic(error) {
+function isPrismaEnginePanic(error) {
   const message = String(error?.message || error || '');
   return message.includes('PANIC: timer has gone away')
     || message.includes('PrismaClientRustPanicError')
