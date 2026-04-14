@@ -22,7 +22,9 @@
     currentUser: null,
     auditoria: [],
     avaliacaoToken: "",
-    missingRelatorioAlertKeys: new Set()
+    missingRelatorioAlertKeys: new Set(),
+    manualAuthorizationSeenKey: "",
+    manualAuthorizationPollStarted: false
   };
 
   const PROFILE_PERMISSIONS = {
@@ -516,11 +518,11 @@
     const form = byId("checkinForm");
     const tokenInput = form?.querySelector('[name="token"]');
     const modoInput = form?.querySelector('[name="modo"]');
-    if (tokenInput) tokenInput.value = token;
+    if (tokenInput) tokenInput.value = rawToken || token;
     if (modoInput) modoInput.value = view === "checkout" ? "checkout" : "checkin";
     showView("checkin");
     if (autoValidate && token) {
-      validateCheckin(token).catch(() => {});
+      validateCheckin(rawToken || token).catch(() => {});
     }
     return true;
   }
@@ -744,12 +746,55 @@
     const data = ct.includes("application/json") ? await res.json() : await res.text();
     if (res.status === 401) logout();
     if (!res.ok) {
-      const err = new Error(data?.message || data || "Erro na requisição");
+      const upstreamHtmlError = typeof data === "string" && /<title>\s*503/i.test(data);
+      const err = new Error(
+        upstreamHtmlError
+          ? "O servidor retornou 503 ao validar a operação. Reinicie a aplicação e tente novamente."
+          : (data?.message || data || "Erro na requisição")
+      );
       err.status = res.status;
       err.data = data;
       throw err;
     }
     return data;
+  }
+
+  function buildMultipartFormData(payload = {}, fileField = 'imagensAvaria') {
+    const form = new FormData();
+    const files = Array.isArray(payload?.__files) ? payload.__files : [];
+    Object.entries(payload || {}).forEach(([key, value]) => {
+      if (key === '__files' || value == null) return;
+      if (Array.isArray(value)) {
+        value.forEach((item) => form.append(key, item));
+        return;
+      }
+      form.append(key, String(value));
+    });
+    files.forEach((file) => {
+      if (file instanceof File) form.append(fileField, file, file.name || 'imagem-avaria.jpg');
+    });
+    return form;
+  }
+
+  async function getCurrentAgendamentoSnapshot() {
+    const id = currentId();
+    if (!id) throw new Error('Informe o ID do agendamento.');
+    return api(`/api/agendamentos/${id}`);
+  }
+
+  function deriveHourFromJanelaLabel(label = '') {
+    const match = String(label || '').match(/(\d{2}:\d{2})/);
+    return match ? match[1] : '';
+  }
+
+  function buildApprovalPayload(item = {}) {
+    const janelaSelect = byId('internalJanelaSelect');
+    const janelaId = String(janelaSelect?.value || item?.janela?.id || item?.janelaId || '').trim();
+    const janelaLabel = janelaSelect?.selectedOptions?.[0]?.textContent || item?.janela?.codigo || item?.janela || '';
+    const dataAgendada = normalizeDateToIso(item?.dataAgendada || '');
+    const horaAgendada = formatHour(item?.horaAgendada || deriveHourFromJanelaLabel(janelaLabel) || '');
+    const docaId = String(item?.doca?.id || item?.docaId || '').trim() || String((state.docaOptions || []).find((doca) => String(doca?.codigo || '').toUpperCase() === 'A DEFINIR')?.id || '').trim();
+    return { janelaId, dataAgendada, horaAgendada, docaId };
   }
 
   function setActiveButton(selector, activeButton) {
@@ -853,6 +898,97 @@
       confirmBtn.onclick = () => cleanup(true);
       cancelBtn.onclick = () => cleanup(false);
       host.querySelectorAll('[data-modal-close]').forEach((el) => { el.onclick = () => cleanup(false); });
+    });
+  }
+
+  async function showCheckoutCompletionForm({ title = 'Finalizar descarga', contextLabel = '' } = {}) {
+    const host = ensureModalHost();
+    const titleEl = byId('appModalTitle');
+    const bodyEl = byId('appModalBody');
+    const confirmBtn = byId('appModalConfirm');
+    const cancelBtn = byId('appModalCancel');
+    const card = host?.querySelector('.app-modal-card');
+    if (!titleEl || !bodyEl || !confirmBtn || !cancelBtn || !card) return null;
+    titleEl.textContent = title;
+    bodyEl.classList.add('app-modal-body-html');
+    bodyEl.innerHTML = `
+      <form id="checkoutCompletionForm" class="form-grid">
+        ${contextLabel ? `<div class="warning-box" style="margin:0 0 12px 0">${escapeHtml(contextLabel)}</div>` : ''}
+        <label>Como foi a descarga?
+          <select name="comoFoiDescarga">
+            <option value="EXCELENTE">Excelente</option>
+            <option value="BOA" selected>Boa</option>
+            <option value="REGULAR">Regular</option>
+            <option value="RUIM">Ruim</option>
+          </select>
+        </label>
+        <label>Houve avaria?
+          <select name="houveAvaria">
+            <option value="NAO" selected>Não</option>
+            <option value="SIM">Sim</option>
+          </select>
+        </label>
+        <div data-avaria-block class="hidden" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;grid-column:1/-1">
+          <label>Item avariado<input name="itemAvaria" placeholder="Informe o item" /></label>
+          <label>Quantidade avariada<input name="quantidadeAvaria" type="number" min="1" step="1" placeholder="0" /></label>
+          <label style="grid-column:1/-1">Observação da avaria<textarea name="observacaoAvaria" placeholder="Descreva a avaria"></textarea></label>
+        </div>
+        <label style="grid-column:1/-1">Observação do assistente<textarea name="observacaoAssistente" placeholder="Campo opcional"></textarea></label>
+        <label style="grid-column:1/-1">Imagens da ocorrência / avaria
+          <input name="imagensAvaria" type="file" accept="image/*" capture="environment" multiple />
+          <small class="muted">Você pode anexar imagens do dispositivo ou tirar foto no celular.</small>
+        </label>
+        <p data-checkout-form-msg class="msg" style="grid-column:1/-1;margin:0"></p>
+      </form>
+    `;
+    confirmBtn.textContent = 'Concluir';
+    cancelBtn.textContent = 'Cancelar';
+    cancelBtn.classList.remove('hidden');
+    card.classList.toggle('app-modal-card-wide', true);
+    host.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+
+    return new Promise((resolve) => {
+      const form = bodyEl.querySelector('#checkoutCompletionForm');
+      const avariaSelect = form?.querySelector('[name="houveAvaria"]');
+      const avariaBlock = form?.querySelector('[data-avaria-block]');
+      const fileInput = form?.querySelector('[name="imagensAvaria"]');
+      const msgEl = form?.querySelector('[data-checkout-form-msg]');
+      const toggleAvaria = () => {
+        const show = String(avariaSelect?.value || 'NAO').toUpperCase() === 'SIM';
+        avariaBlock?.classList.toggle('hidden', !show);
+      };
+      toggleAvaria();
+      if (avariaSelect) avariaSelect.onchange = toggleAvaria;
+
+      const cleanup = (result) => {
+        host.classList.add('hidden');
+        document.body.classList.remove('modal-open');
+        confirmBtn.onclick = null;
+        cancelBtn.onclick = null;
+        if (avariaSelect) avariaSelect.onchange = null;
+        card.classList.remove('app-modal-card-wide');
+        host.querySelectorAll('[data-modal-close]').forEach((el) => { el.onclick = null; });
+        resolve(result);
+      };
+
+      confirmBtn.onclick = () => {
+        const payload = Object.fromEntries(new FormData(form).entries());
+        payload.houveAvaria = String(payload.houveAvaria || 'NAO').toUpperCase() === 'SIM';
+        payload.quantidadeAvaria = Number(payload.quantidadeAvaria || 0) || 0;
+        payload.itemAvaria = String(payload.itemAvaria || '').trim();
+        payload.observacaoAvaria = String(payload.observacaoAvaria || '').trim();
+        payload.observacaoAssistente = String(payload.observacaoAssistente || '').trim();
+        payload.__files = Array.from(fileInput?.files || []);
+        if (payload.houveAvaria && (!payload.itemAvaria || !payload.observacaoAvaria || !(payload.quantidadeAvaria > 0))) {
+          if (msgEl) msgEl.textContent = 'Preencha item, quantidade e observação da avaria para concluir.';
+          return;
+        }
+        if (msgEl) msgEl.textContent = '';
+        cleanup(payload);
+      };
+      cancelBtn.onclick = () => cleanup(null);
+      host.querySelectorAll('[data-modal-close]').forEach((el) => { el.onclick = () => cleanup(null); });
     });
   }
 
@@ -1002,9 +1138,12 @@
             const codes = await state.barcodeDetector.detect(video);
             if (codes[0]?.rawValue) {
               const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
-              const normalizedToken = normalizeOperationToken(codes[0].rawValue);
-              if (tokenInput) tokenInput.value = normalizedToken;
-              await validateCheckin(normalizedToken);
+              const rawValue = String(codes[0].rawValue || '');
+              const parsed = parseOperationReference(rawValue);
+              if (tokenInput) tokenInput.value = rawValue || parsed.token;
+              const modoInput = byId('checkinForm')?.querySelector('[name="modo"]');
+              if (modoInput) modoInput.value = /[?&]view=checkout\b/i.test(rawValue) || /^OUT-/i.test(parsed.token) ? 'checkout' : 'checkin';
+              await validateCheckin(rawValue || parsed.token);
               state.scanning = false;
               return;
             }
@@ -2143,27 +2282,97 @@
       const result = await fn();
       if (result === undefined || result === false) return;
       byId("operacaoMsg").textContent = success;
-      await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
+      await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions(), checkPendingManualAuthorizationRequests()]);
     } catch (err) {
       byId("operacaoMsg").textContent = err.message;
     }
   }
 
+  async function showManualAuthorizationModal(entry) {
+    const item = entry?.agendamento || {};
+    const detalhes = entry?.detalhes || {};
+    const notas = Array.isArray(item.notasFiscais) ? item.notasFiscais : [];
+    const html = `
+      <div class="grid2">
+        <div><span class="field-label">Protocolo</span><strong>${escapeHtml(item.protocolo || '-')}</strong></div>
+        <div><span class="field-label">Status</span><strong>${escapeHtml(item.status || '-')}</strong></div>
+        <div><span class="field-label">Fornecedor</span><strong>${escapeHtml(item.fornecedor || '-')}</strong></div>
+        <div><span class="field-label">Transportadora</span><strong>${escapeHtml(item.transportadora || '-')}</strong></div>
+        <div><span class="field-label">Motorista</span><strong>${escapeHtml(item.motorista || '-')}</strong></div>
+        <div><span class="field-label">Placa</span><strong>${escapeHtml(item.placa || '-')}</strong></div>
+        <div><span class="field-label">Data agendada</span><strong>${escapeHtml(formatDateBR(item.dataAgendada) || '-')}</strong></div>
+        <div><span class="field-label">Hora agendada</span><strong>${escapeHtml(formatHour(item.horaAgendada) || '-')}</strong></div>
+        <div><span class="field-label">Doca</span><strong>${escapeHtml(item.doca?.codigo || item.doca || '-')}</strong></div>
+        <div><span class="field-label">Janela</span><strong>${escapeHtml(item.janela?.codigo || item.janela || '-')}</strong></div>
+        <div><span class="field-label">Qtd. notas</span><strong>${escapeHtml(String(item.quantidadeNotas || notas.length || 0))}</strong></div>
+        <div><span class="field-label">Qtd. volumes</span><strong>${escapeHtml(String(item.quantidadeVolumes || 0))}</strong></div>
+        <div><span class="field-label">Peso total</span><strong>${escapeHtml(String(item.pesoTotalKg || 0))} kg</strong></div>
+        <div><span class="field-label">Diferença detectada</span><strong>${escapeHtml(String(detalhes.diffMinutes ?? '-'))} min</strong></div>
+        <div><span class="field-label">Tolerância</span><strong>${escapeHtml(String(detalhes.toleranceMinutes ?? '-'))} min</strong></div>
+        <div style="grid-column:1/-1"><span class="field-label">NFs</span><strong>${escapeHtml(notas.map((nota) => nota?.numeroNf || '-').join(', ') || '-')}</strong></div>
+      </div>
+      <p class="warning-box" style="margin-top:12px">Foi solicitada uma autorização manual para prosseguir com o check-in antecipado.</p>
+    `;
+    const approved = await showHtmlModal({
+      title: 'Autorizar check-in manual',
+      html,
+      confirmText: 'Autorizar',
+      cancelText: 'Agora não',
+      wide: true
+    });
+    if (!approved) return false;
+    await api(`/api/agendamentos/${encodeURIComponent(item.id)}/autorizar-checkin-manual`, { method: 'POST', body: JSON.stringify({ motivo: 'Autorizado via modal do gestor/admin.' }) });
+    return true;
+  }
+
+  async function checkPendingManualAuthorizationRequests() {
+    try {
+      if (!state.token || isTokenExpired(state.token) || !hasPermission('agendamentos.checkin')) return;
+      const items = await api('/api/agendamentos/autorizacoes-pendentes');
+      const first = Array.isArray(items) ? items[0] : null;
+      if (!first?.requestId || first.requestId === state.manualAuthorizationSeenKey) return;
+      state.manualAuthorizationSeenKey = first.requestId;
+      const authorized = await showManualAuthorizationModal(first);
+      if (authorized) {
+        await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
+      }
+    } catch (_) {}
+  }
+
+  function startManualAuthorizationPolling() {
+    if (state.manualAuthorizationPollStarted) return;
+    state.manualAuthorizationPollStarted = true;
+    setInterval(() => { checkPendingManualAuthorizationRequests().catch(() => {}); }, 15000);
+  }
+
   async function validateCheckin(token) {
     try {
-      const reference = parseOperationReference(token);
+      const rawTokenValue = String(token || '').trim();
+      const reference = parseOperationReference(rawTokenValue);
       const currentParams = new URLSearchParams(window.location.search || '');
       const normalizedToken = reference.token;
       const lookupId = reference.id || String(currentParams.get('id') || '').replace(/\D/g, '').trim();
       const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
-      if (tokenInput) tokenInput.value = normalizedToken;
+      if (tokenInput) tokenInput.value = rawTokenValue || normalizedToken;
       if (!normalizedToken) throw new Error('Informe o token da operação.');
       const modo = byId("checkinForm")?.querySelector("[name=modo]")?.value || "checkin";
       const endpoint = modo === "checkout" ? `/api/public/checkout/${encodeURIComponent(normalizedToken)}` : `/api/public/checkin/${encodeURIComponent(normalizedToken)}`;
-      const requestBody = { token: normalizedToken, lookupId, rawToken: String(token || '') };
+      let extraPayload = {};
+      if (modo === 'checkout') {
+        const formPayload = await showCheckoutCompletionForm({
+          title: 'Finalizar operação e registrar check-out',
+          contextLabel: lookupId ? `Agendamento ID ${lookupId}` : `Token ${normalizedToken}`
+        });
+        if (!formPayload) return;
+        extraPayload = formPayload;
+      }
+      const requestBody = { token: normalizedToken, lookupId, rawToken: rawTokenValue || normalizedToken, ...extraPayload };
+      const requestPayload = Array.isArray(requestBody.__files) && requestBody.__files.length
+        ? buildMultipartFormData(requestBody)
+        : JSON.stringify(requestBody);
       let data;
       try {
-        data = await api(endpoint, { method: "POST", body: JSON.stringify(requestBody) });
+        data = await api(endpoint, { method: "POST", body: requestPayload });
       } catch (err) {
         const message = String(err.message || '');
         const requiresManualAuthorization = !!err?.data?.requiresManualAuthorization;
@@ -2173,7 +2382,11 @@
 
 Deseja autorizar manualmente este check-in?`);
           if (!liberar) throw err;
-          data = await api(endpoint, { method: "POST", body: JSON.stringify({ ...requestBody, overrideManualAuthorization: true, overrideDateMismatch: true, overrideTimeMismatch: true }) });
+          const overrideBody = { ...requestBody, overrideManualAuthorization: true, overrideDateMismatch: true, overrideTimeMismatch: true };
+          const overridePayload = Array.isArray(overrideBody.__files) && overrideBody.__files.length
+            ? buildMultipartFormData(overrideBody)
+            : JSON.stringify(overrideBody);
+          data = await api(endpoint, { method: "POST", body: overridePayload });
         } else {
           throw err;
         }
@@ -2285,6 +2498,8 @@ Deseja autorizar manualmente este check-in?`);
           }
         }
         byId("loginMsg").textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
+        startManualAuthorizationPolling();
+        checkPendingManualAuthorizationRequests().catch(() => {});
       } catch (err) {
         byId("loginMsg").textContent = err.message || "Falha no login.";
       }
@@ -2382,9 +2597,13 @@ Deseja autorizar manualmente este check-in?`);
       }
     });
     byId("btnAprovar")?.addEventListener("click", async () => handleOp(async () => {
-      const body = { janelaId: byId("internalJanelaSelect")?.value };
+      const snapshot = await getCurrentAgendamentoSnapshot();
+      const body = buildApprovalPayload(snapshot || {});
+      if (!body.docaId) throw new Error('Defina a doca antes de aprovar o agendamento.');
+      if (!body.dataAgendada) throw new Error('Data agendada não encontrada para este agendamento.');
+      if (!body.horaAgendada) throw new Error('Hora agendada não encontrada para este agendamento.');
       const awareness = await confirmAwarenessForExistingAgendamento(currentId(), body);
-      if (awareness.analysis?.requiresAwareness && !awareness.confirmed) return;
+      if (awareness.analysis?.requiresAwareness && !awareness.confirmed) return false;
       if (awareness.confirmed) body.confirmarCienciaVencimento = true;
       return postStatus("aprovar", body);
     }, "Agendamento aprovado."));
@@ -2398,7 +2617,12 @@ Deseja autorizar manualmente este check-in?`);
     }, "Agendamento reagendado."));
     byId("btnCancelar")?.addEventListener("click", async () => handleOp(() => postStatus("cancelar", { motivo: "Cancelado via painel" }), "Agendamento cancelado."));
     byId("btnIniciar")?.addEventListener("click", async () => handleOp(() => postStatus("iniciar"), "Descarga iniciada."));
-    byId("btnFinalizar")?.addEventListener("click", async () => handleOp(() => postStatus("finalizar"), "Agendamento finalizado."));
+    byId("btnFinalizar")?.addEventListener("click", async () => handleOp(async () => {
+      const payload = await showCheckoutCompletionForm({ title: 'Finalizar descarga', contextLabel: `Agendamento ID ${currentId()}` });
+      if (!payload) return false;
+      const body = Array.isArray(payload.__files) && payload.__files.length ? buildMultipartFormData(payload) : JSON.stringify(payload);
+      return api(`/api/agendamentos/${currentId()}/finalizar`, { method: 'POST', body });
+    }, "Agendamento finalizado."));
     byId("btnNoShow")?.addEventListener("click", async () => handleOp(() => postStatus("no-show"), "Agendamento marcado como no-show."));
     byId("btnVoucher")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/voucher`, "_blank"); } catch (err) { alert(err.message); } });
     byId("btnQr")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/qrcode.svg`, "_blank"); } catch (err) { alert(err.message); } });
@@ -2483,8 +2707,10 @@ Deseja autorizar manualmente este check-in?`);
 
     byId("checkinForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await validateCheckin(normalizeOperationToken(new FormData(e.target).get("token")));
+      await validateCheckin(String(new FormData(e.target).get("token") || '').trim());
     });
+
+    startManualAuthorizationPolling();
 
     byId("avaliacaoForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
