@@ -507,6 +507,18 @@
     return parseOperationReference(rawValue).token;
   }
 
+  function inferOperationMode(rawValue, fallback = "checkin") {
+    const raw = String(rawValue || '').trim();
+    if (!raw) return fallback;
+    if (/[?&]view=checkout\b/i.test(raw) || /\/(?:checkout)\//i.test(raw) || /(?:^|[^A-Z])OUT-[A-Z0-9]+-[A-Z0-9]+/i.test(raw)) {
+      return 'checkout';
+    }
+    if (/[?&]view=checkin\b/i.test(raw) || /\/(?:checkin)\//i.test(raw) || /(?:^|[^A-Z])CHK-[A-Z0-9]+-[A-Z0-9]+/i.test(raw)) {
+      return 'checkin';
+    }
+    return fallback;
+  }
+
   function applyCheckinRouteContext({ autoValidate = false } = {}) {
     const params = new URLSearchParams(location.search);
     const view = params.get("view");
@@ -1001,10 +1013,14 @@
           if (state.barcodeDetector) {
             const codes = await state.barcodeDetector.detect(video);
             if (codes[0]?.rawValue) {
-              const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
-              const normalizedToken = normalizeOperationToken(codes[0].rawValue);
-              if (tokenInput) tokenInput.value = normalizedToken;
-              await validateCheckin(normalizedToken);
+              const rawValue = String(codes[0].rawValue || '');
+              const parsed = parseOperationReference(rawValue);
+              const form = byId('checkinForm');
+              const tokenInput = form?.querySelector('[name="token"]');
+              const modoInput = form?.querySelector('[name="modo"]');
+              if (tokenInput) tokenInput.value = parsed.token || rawValue;
+              if (modoInput) modoInput.value = inferOperationMode(rawValue, modoInput.value || 'checkin');
+              await validateCheckin(rawValue);
               state.scanning = false;
               return;
             }
@@ -2151,16 +2167,21 @@
 
   async function validateCheckin(token) {
     try {
-      const reference = parseOperationReference(token);
+      const rawValue = String(token || '');
+      const reference = parseOperationReference(rawValue);
       const currentParams = new URLSearchParams(window.location.search || '');
       const normalizedToken = reference.token;
       const lookupId = reference.id || String(currentParams.get('id') || '').replace(/\D/g, '').trim();
-      const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
+      const form = byId('checkinForm');
+      const tokenInput = form?.querySelector('[name="token"]');
+      const modoInput = form?.querySelector('[name="modo"]');
       if (tokenInput) tokenInput.value = normalizedToken;
       if (!normalizedToken) throw new Error('Informe o token da operação.');
-      const modo = byId("checkinForm")?.querySelector("[name=modo]")?.value || "checkin";
+      const detectedMode = inferOperationMode(rawValue, normalizedToken.startsWith('OUT-') ? 'checkout' : 'checkin');
+      if (modoInput) modoInput.value = detectedMode;
+      const modo = modoInput?.value || detectedMode || 'checkin';
       const endpoint = modo === "checkout" ? `/api/public/checkout/${encodeURIComponent(normalizedToken)}` : `/api/public/checkin/${encodeURIComponent(normalizedToken)}`;
-      const requestBody = { token: normalizedToken, lookupId, rawToken: String(token || '') };
+      const requestBody = { token: normalizedToken, lookupId, rawToken: rawValue };
       let data;
       try {
         data = await api(endpoint, { method: "POST", body: JSON.stringify(requestBody) });
@@ -2483,7 +2504,7 @@ Deseja autorizar manualmente este check-in?`);
 
     byId("checkinForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await validateCheckin(normalizeOperationToken(new FormData(e.target).get("token")));
+      await validateCheckin(new FormData(e.target).get("token"));
     });
 
     byId("avaliacaoForm")?.addEventListener("submit", async (e) => {
