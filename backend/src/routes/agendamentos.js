@@ -64,10 +64,13 @@ function getBaseUrl(req) {
 
 function buildPublicLinks(req, item) {
   const base = getBaseUrl(req);
+  const voucher = canShareVoucher(item)
+    ? `${base}/api/public/voucher/${encodeURIComponent(item.publicTokenFornecedor)}`
+    : "";
   return {
     consulta: `${base}/?view=consulta&token=${encodeURIComponent(item.publicTokenFornecedor)}`,
     motorista: `${base}/?view=motorista&token=${encodeURIComponent(item.publicTokenMotorista)}`,
-    voucher: `${base}/api/public/voucher/${encodeURIComponent(item.publicTokenFornecedor)}`,
+    voucher,
     checkin: `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`,
     checkout: `${base}/?view=checkout&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkoutToken || "")}`
   };
@@ -369,6 +372,13 @@ async function notificationSummary(agendamentoId) {
 
 const EMPTY_NOTIFICATIONS = { voucherMotorista: false, voucherTransportadoraFornecedor: false, confirmacaoTransportadoraFornecedor: false };
 
+const VOUCHER_ALLOWED_STATUSES = new Set(["APROVADO", "CHEGOU", "EM_DESCARGA", "FINALIZADO"]);
+
+function canShareVoucher(itemOrStatus) {
+  const status = typeof itemOrStatus === "string" ? itemOrStatus : itemOrStatus?.status;
+  return VOUCHER_ALLOWED_STATUSES.has(String(status || "").trim().toUpperCase());
+}
+
 async function enrichResponseItem(item) {
   if (!item) return item;
   try { return await enrichAgendamentoWithMonitoring(item); } catch { return item; }
@@ -453,7 +463,46 @@ async function createAgendamentoInDatabase(payload) {
   return full(item);
 }
 
+async function sendScheduleCreatedNotice(item, req, actor = req.user) {
+  if (!item?.emailTransportadora) {
+    return { sent: false, reason: "Não há e-mail da transportadora/fornecedor cadastrado." };
+  }
+
+  const links = buildPublicLinks(req, item);
+  const textoDoca = item.doca?.codigo || item.doca || "A DEFINIR";
+  const scheduleIntro = buildScheduleIntro(item);
+  const sent = await sendMail({
+    to: item.emailTransportadora,
+    subject: `Solicitação de agendamento recebida ${item.protocolo}`,
+    text: `${scheduleIntro}
+Protocolo: ${item.protocolo}
+Status atual: ${item.status || "PENDENTE_APROVACAO"}
+Doca: ${textoDoca}
+Token de consulta da transportadora: ${item.publicTokenFornecedor}
+Consulta do agendamento: ${links.consulta}
+
+O voucher operacional e o QR Code do motorista serão enviados somente após a aprovação do agendamento.`,
+    html: `<p>${scheduleIntro}</p><p><strong>Protocolo:</strong> ${item.protocolo}</p><p><strong>Status atual:</strong> ${item.status || "PENDENTE_APROVACAO"}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><strong>Token de consulta da transportadora:</strong> ${item.publicTokenFornecedor}</p><p><a href="${links.consulta}">Consultar agendamento</a></p><p>O voucher operacional e o QR Code do motorista serão enviados somente após a aprovação do agendamento.</p>`
+  });
+
+  await auditLog({
+    usuarioId: actor?.sub || actor?.id || null,
+    usuarioNome: actor?.nome || actor?.name || null,
+    perfil: actor?.perfil || null,
+    acao: "ENVIAR_AVISO_CRIACAO",
+    entidade: "AGENDAMENTO",
+    entidadeId: item.id,
+    detalhes: { to: item.emailTransportadora, sent: !!sent?.sent, consulta: links.consulta },
+    ip: req.ip
+  });
+
+  return { ...sent, to: item.emailTransportadora, consulta: links.consulta, tokenConsulta: item.publicTokenFornecedor };
+}
+
 async function sendApprovalNotifications(item, req) {
+  if (!canShareVoucher(item)) {
+    throw new Error("Voucher e QR Code só podem ser enviados após a aprovação do agendamento.");
+  }
   const links = buildPublicLinks(req, item);
   const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
   const results = [];
@@ -766,8 +815,8 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
     try {
       const fullItem = await full(item.id);
       await sendFinanceAwarenessIfNeeded({ agendamento: fullItem || item, payload, actor: req.user });
-      const notificacoes = await sendApprovalNotifications(fullItem || item, req);
-      return res.status(201).json(await enrichResponseItem({ ...(fullItem || item), notificacoesEnviadas: notificacoes.results }));
+      const notificacaoCriacao = await sendScheduleCreatedNotice(fullItem || item, req, req.user);
+      return res.status(201).json(await enrichResponseItem({ ...(fullItem || item), notificacaoCriacao }));
     } catch {
       return res.status(201).json(await enrichResponseItem(item));
     }
@@ -937,11 +986,12 @@ router.post("/:id(\\d+)/aprovar", requirePermission("agendamentos.approve"), asy
     const updated = await transition(req.params.id, "APROVADO", data, req);
     const item = await full(updated.id);
     await sendFinanceAwarenessIfNeeded({ agendamento: item, payload: { ...merged, confirmarCienciaVencimento: req.body?.confirmarCienciaVencimento }, actor: req.user });
+    const notificacoes = await sendApprovalNotifications(item, req);
     res.json(await enrichResponseItem({
       ...item,
-      notificacoesEnviadas: [],
-      envioAutomatico: false,
-      message: "Agendamento aprovado. O e-mail com voucher só é enviado ao salvar ou ao clicar em 'Enviar informações'."
+      notificacoesEnviadas: notificacoes.results,
+      envioAutomatico: true,
+      message: "Agendamento aprovado e voucher enviado aos destinatários cadastrados."
     }));
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -1132,6 +1182,7 @@ router.post("/:id(\\d+)/enviar-confirmacao", requirePermission("agendamentos.not
     const ag = await full(req.params.id);
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
     if (!ag.emailTransportadora) return res.status(400).json({ message: "Não há e-mail da transportadora/fornecedor cadastrado." });
+    if (!canShareVoucher(ag)) return res.status(400).json({ message: "O voucher só pode ser enviado após a aprovação do agendamento." });
 
     const links = buildPublicLinks(req, ag);
     const pdf = await generateVoucherPdf(ag, { baseUrl: getBaseUrl(req) });

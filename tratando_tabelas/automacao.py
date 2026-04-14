@@ -165,4 +165,8 @@ else:
     print("Tratamento finalizado com sucesso!")
     print(resultado.stdout)
 
-
+print("Iniciando próxima automação")
+pyautogui.hotkey("alt","f")
+pyautogui.hotkey("ctrl","m")
+pyautogui.write("convoc")
+pyautogui.press("enter")

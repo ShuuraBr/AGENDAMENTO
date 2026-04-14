@@ -125,6 +125,25 @@ df_final = df_final.applymap(
     lambda x: x.strip().replace("\n", "").replace("\r", "") if isinstance(x, str) else x
 )
 
+# ===========================
+# CONVERSÃO DE DATAS
+# ===========================
+
+colunas_data = [
+    "Data emissão",
+    "Data de Entrada",
+    "Data 1º vencimento"
+]
+
+for col in df_final.columns:
+    if col.strip() in colunas_data:
+        df_final[col] = pd.to_datetime(
+            df_final[col],
+            errors="coerce",
+            dayfirst=True
+        )
+
+
 # Garante limpeza da coluna Status
 df_final["Status"] = df_final["Status"].str.strip()
 

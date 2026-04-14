@@ -26,6 +26,12 @@ import { sendMail } from "../utils/email.js";
 const router = express.Router();
 const ACTIVE_STATUSES = ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"];
 const MANUAL_AUTH_PROFILES = ["ADMIN", "OPERADOR", "GESTOR", "PORTARIA"];
+const VOUCHER_ALLOWED_STATUSES = new Set(["APROVADO", "CHEGOU", "EM_DESCARGA", "FINALIZADO"]);
+
+function canShareVoucher(itemOrStatus) {
+  const status = typeof itemOrStatus === "string" ? itemOrStatus : itemOrStatus?.status;
+  return VOUCHER_ALLOWED_STATUSES.has(String(status || "").trim().toUpperCase());
+}
 
 function validateNfBatch(notas = []) {
   for (const nota of notas) validateNf(nota || {});
@@ -62,12 +68,52 @@ function getBaseUrl(req) {
   return process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : `${req.protocol}://${req.get("host")}`;
 }
 
+function normalizePublicOperationToken(rawValue = "") {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return "";
+  const decoded = (() => {
+    try { return decodeURIComponent(raw); } catch { return raw; }
+  })();
+  try {
+    const url = decoded.startsWith("http://") || decoded.startsWith("https://")
+      ? new URL(decoded)
+      : new URL(decoded, "http://localhost");
+    const token = url.searchParams.get("token");
+    if (token) return String(token).trim();
+  } catch {}
+  const match = decoded.match(/(?:CHK|OUT|FOR|MOT)-[A-Z0-9]+-[A-Z0-9]+/i);
+  if (match?.[0]) return String(match[0]).trim().toUpperCase();
+  return decoded.replace(/[\s\n\r]+/g, "").trim();
+}
+
+function parseEmailList(...values) {
+  const emails = values
+    .flatMap((value) => String(value || "").split(/[;,]/))
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  return [...new Set(emails)];
+}
+
+function gestorAuthorizationRecipients() {
+  return parseEmailList(
+    process.env.GESTOR_CHECKIN_EMAILS,
+    process.env.EMAILS_GESTORES_CHECKIN,
+    process.env.GESTOR_LOGISTICA_EMAIL,
+    process.env.GESTOR_LOGISTICA_EMAILS,
+    process.env.GESTOR_EMAILS,
+    process.env.EMAIL_GESTOR
+  );
+}
+
 function buildLinks(req, item) {
   const base = getBaseUrl(req);
+  const voucher = canShareVoucher(item)
+    ? `${base}/api/public/voucher/${encodeURIComponent(item.publicTokenFornecedor)}`
+    : "";
   return {
     consulta: `${base}/?view=consulta&token=${encodeURIComponent(item.publicTokenFornecedor)}`,
     motorista: `${base}/?view=motorista&token=${encodeURIComponent(item.publicTokenMotorista)}`,
-    voucher: `${base}/api/public/voucher/${encodeURIComponent(item.publicTokenFornecedor)}`,
+    voucher,
     checkin: `${base}/?view=checkin&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkinToken)}`,
     checkout: `${base}/?view=checkout&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkoutToken || "")}`
   };
@@ -118,15 +164,17 @@ function getToleranceMinutes() {
 function buildCheckinWindow(item) {
   const data = String(item?.dataAgendada || "").trim();
   const hora = String(item?.horaAgendada || "").trim();
-  if (!data || !hora) return { scheduledAt: null, diffMinutes: null, toleranceMinutes: getToleranceMinutes(), dateMismatch: false, timeMismatch: false };
+  if (!data || !hora) return { scheduledAt: null, diffMinutes: null, toleranceMinutes: getToleranceMinutes(), dateMismatch: false, timeMismatch: false, tooEarly: false, tooLate: false };
   const scheduledAt = formatDateTime(`${data}T${hora}:00`);
-  if (!scheduledAt) return { scheduledAt: null, diffMinutes: null, toleranceMinutes: getToleranceMinutes(), dateMismatch: false, timeMismatch: false };
+  if (!scheduledAt) return { scheduledAt: null, diffMinutes: null, toleranceMinutes: getToleranceMinutes(), dateMismatch: false, timeMismatch: false, tooEarly: false, tooLate: false };
   const now = new Date();
   const toleranceMinutes = getToleranceMinutes();
   const diffMinutes = Math.round((now.getTime() - scheduledAt.getTime()) / 60000);
   const dateMismatch = formatDate(now) !== data;
-  const timeMismatch = Math.abs(diffMinutes) > toleranceMinutes;
-  return { scheduledAt, diffMinutes, toleranceMinutes, dateMismatch, timeMismatch };
+  const tooEarly = diffMinutes < (toleranceMinutes * -1);
+  const tooLate = diffMinutes > toleranceMinutes;
+  const timeMismatch = tooEarly || tooLate;
+  return { scheduledAt, diffMinutes, toleranceMinutes, dateMismatch, timeMismatch, tooEarly, tooLate };
 }
 
 function buildCheckinMismatchMessage(item, windowInfo) {
@@ -156,13 +204,14 @@ async function getOrCreateDocaPadrao() {
 }
 
 async function resolveByToken(token) {
+  const normalizedToken = normalizePublicOperationToken(token);
   try {
     return await prisma.agendamento.findFirst({
-      where: { OR: [{ publicTokenFornecedor: token }, { publicTokenMotorista: token }, { checkinToken: token }, { checkoutToken: token }] },
+      where: { OR: [{ publicTokenFornecedor: normalizedToken }, { publicTokenMotorista: normalizedToken }, { checkinToken: normalizedToken }, { checkoutToken: normalizedToken }] },
       include: { notasFiscais: true, doca: true, janela: true, documentos: true }
     });
   } catch {
-    return findAgendamentoByTokenFile(token);
+    return findAgendamentoByTokenFile(normalizedToken);
   }
 }
 
@@ -176,6 +225,71 @@ async function logPublicAction({ actor = null, action, item, req, details = null
     detalhes,
     ip: req.ip
   });
+}
+
+async function sendScheduleCreatedNotice(item, req) {
+  if (!item?.emailTransportadora) {
+    return { sent: false, reason: "Não há e-mail da transportadora/fornecedor cadastrado." };
+  }
+
+  const links = buildLinks(req, item);
+  const textoDoca = item.doca?.codigo || item.doca || "A DEFINIR";
+  return sendMail({
+    to: item.emailTransportadora,
+    subject: `Solicitação de agendamento recebida ${item.protocolo}`,
+    text: `Solicitação registrada para ${item.dataAgendada || "-"} às ${item.horaAgendada || "-"}.
+Protocolo: ${item.protocolo}
+Status atual: ${item.status || "PENDENTE_APROVACAO"}
+Doca: ${textoDoca}
+Token de consulta da transportadora: ${item.publicTokenFornecedor}
+Consulta do agendamento: ${links.consulta}
+
+O voucher operacional e o QR Code do motorista serão enviados somente após a aprovação do agendamento.`,
+    html: `<p>Solicitação registrada para <strong>${item.dataAgendada || "-"}</strong> às <strong>${item.horaAgendada || "-"}</strong>.</p><p><strong>Protocolo:</strong> ${item.protocolo}<br><strong>Status atual:</strong> ${item.status || "PENDENTE_APROVACAO"}<br><strong>Doca:</strong> ${textoDoca}<br><strong>Token de consulta da transportadora:</strong> ${item.publicTokenFornecedor}</p><p><a href="${links.consulta}">Consultar agendamento</a></p><p>O voucher operacional e o QR Code do motorista serão enviados somente após a aprovação do agendamento.</p>`
+  }).then((result) => ({ ...result, to: item.emailTransportadora, consulta: links.consulta, tokenConsulta: item.publicTokenFornecedor }));
+}
+
+function buildManualAuthorizationMail(item, req, windowInfo) {
+  const baseUrl = getBaseUrl(req);
+  const links = buildLinks(req, item);
+  const diff = Number(windowInfo?.diffMinutes || 0);
+  const antecedencia = diff < 0 ? Math.abs(diff) : 0;
+  const profileHint = "ADMIN, GESTOR, OPERADOR ou PORTARIA";
+  return {
+    subject: `Autorização manual de check-in antecipado - ${item.protocolo}`,
+    text: [
+      "Foi bloqueada uma tentativa de check-in antecipado acima da tolerância permitida.",
+      "",
+      `Protocolo: ${item.protocolo}`,
+      `Fornecedor: ${item.fornecedor || "-"}`,
+      `Transportadora: ${item.transportadora || "-"}`,
+      `Motorista: ${item.motorista || "-"}`,
+      `Placa: ${item.placa || "-"}`,
+      `Data agendada: ${item.dataAgendada || "-"}`,
+      `Hora agendada: ${item.horaAgendada || "-"}`,
+      `Antecedência detectada: ${antecedencia} minuto(s)`,
+      `Tolerância permitida: ${windowInfo?.toleranceMinutes ?? 0} minuto(s)`,
+      `Token de check-in: ${item.checkinToken || "-"}`,
+      `Token de consulta: ${item.publicTokenFornecedor || "-"}`,
+      `Consulta do agendamento: ${links.consulta}`,
+      `Tela de check-in: ${baseUrl}/?view=checkin&token=${encodeURIComponent(item.checkinToken || "")}`,
+      "",
+      `Para autorizar manualmente, acesse o sistema com perfil ${profileHint} e valide o check-in com override manual.`
+    ].join("\n"),
+    html: `<div style="font-family:Arial,sans-serif"><h2>Autorização manual de check-in antecipado</h2><p>Foi bloqueada uma tentativa de <strong>check-in antecipado</strong> acima da tolerância permitida.</p><p><strong>Protocolo:</strong> ${item.protocolo}<br><strong>Fornecedor:</strong> ${item.fornecedor || "-"}<br><strong>Transportadora:</strong> ${item.transportadora || "-"}<br><strong>Motorista:</strong> ${item.motorista || "-"}<br><strong>Placa:</strong> ${item.placa || "-"}<br><strong>Data agendada:</strong> ${item.dataAgendada || "-"}<br><strong>Hora agendada:</strong> ${item.horaAgendada || "-"}<br><strong>Antecedência detectada:</strong> ${antecedencia} minuto(s)<br><strong>Tolerância permitida:</strong> ${windowInfo?.toleranceMinutes ?? 0} minuto(s)<br><strong>Token de check-in:</strong> ${item.checkinToken || "-"}<br><strong>Token de consulta:</strong> ${item.publicTokenFornecedor || "-"}</p><p><a href="${links.consulta}">Consultar agendamento</a></p><p>Para autorizar manualmente, acesse o sistema com perfil <strong>${profileHint}</strong> e valide o check-in com override manual.</p></div>`
+  };
+}
+
+async function notifyGestorAboutEarlyCheckin(item, req, windowInfo) {
+  const recipients = gestorAuthorizationRecipients();
+  if (!recipients.length) return { sent: false, reason: "E-mails do gestor não configurados.", to: null };
+  const mail = buildManualAuthorizationMail(item, req, windowInfo);
+  return sendMail({
+    to: recipients.join(", "),
+    subject: mail.subject,
+    text: mail.text,
+    html: mail.html
+  }).then((result) => ({ ...result, to: recipients.join(", ") }));
 }
 
 router.get("/disponibilidade", async (req, res) => {
@@ -370,6 +484,7 @@ router.post("/solicitacao", async (req, res) => {
     try {
       const full = await createPublicAgendamentoInDatabase({ agendamentoPayload, notas, cpfMotorista });
       const links = buildLinks(req, full);
+      const notificacaoCriacao = await sendScheduleCreatedNotice(full, req);
       return res.status(201).json({
         ok: true,
         id: full.id,
@@ -381,7 +496,8 @@ router.post("/solicitacao", async (req, res) => {
         voucher: links.voucher,
         tokenMotorista: full.publicTokenMotorista,
         tokenConsulta: full.publicTokenFornecedor,
-        tokenCheckout: full.checkoutToken
+        tokenCheckout: full.checkoutToken,
+        notificacaoCriacao
       });
     } catch {
       const record = createAgendamentoFile({
@@ -398,6 +514,7 @@ router.post("/solicitacao", async (req, res) => {
         janela: janela.codigo
       });
       const links = buildLinks(req, record);
+      const notificacaoCriacao = await sendScheduleCreatedNotice(record, req);
       return res.status(201).json({
         ok: true,
         id: record.id,
@@ -410,6 +527,7 @@ router.post("/solicitacao", async (req, res) => {
         tokenMotorista: record.publicTokenMotorista,
         tokenConsulta: record.publicTokenFornecedor,
         tokenCheckout: record.checkoutToken,
+        notificacaoCriacao,
         origem: "arquivo"
       });
     }
@@ -455,6 +573,7 @@ router.get("/fornecedor/:token", async (req, res) => {
 router.get("/voucher/:token", async (req, res) => {
   const item = await resolveByToken(req.params.token);
   if (!item) return res.status(404).json({ message: "Token inválido." });
+  if (!canShareVoucher(item)) return res.status(403).json({ message: "O voucher só fica disponível após a aprovação do agendamento." });
   const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename=voucher-${item.protocolo}.pdf`);
@@ -506,16 +625,47 @@ router.post("/checkin/:token", async (req, res) => {
 
   const windowInfo = buildCheckinWindow(item);
   const requiresManualAuthorization = !!(windowInfo.dateMismatch || windowInfo.timeMismatch);
+  const requiresGestorAuthorization = !!windowInfo.tooEarly;
   const overrideRequested = !!(req.body?.overrideDateMismatch || req.body?.overrideTimeMismatch || req.body?.overrideManualAuthorization);
 
   if (requiresManualAuthorization && !overrideRequested) {
+    const gestorNotification = requiresGestorAuthorization
+      ? await notifyGestorAboutEarlyCheckin(item, req, windowInfo)
+      : { sent: false, reason: "Notificação ao gestor não necessária.", to: null };
+
+    await logPublicAction({
+      actor,
+      action: requiresGestorAuthorization ? "SOLICITAR_AUTORIZACAO_CHECKIN_ANTECIPADO" : "BLOQUEAR_CHECKIN_FORA_JANELA",
+      item,
+      req,
+      details: {
+        origem: "qr-code",
+        dateMismatch: windowInfo.dateMismatch,
+        timeMismatch: windowInfo.timeMismatch,
+        tooEarly: windowInfo.tooEarly,
+        tooLate: windowInfo.tooLate,
+        toleranceMinutes: windowInfo.toleranceMinutes,
+        diffMinutes: windowInfo.diffMinutes,
+        gestorNotification
+      }
+    });
+
+    const baseMessage = buildCheckinMismatchMessage(item, windowInfo);
+    const managerMessage = requiresGestorAuthorization
+      ? `${baseMessage} O gestor foi notificado para autorização manual.`
+      : baseMessage;
+
     return res.status(409).json({
-      message: buildCheckinMismatchMessage(item, windowInfo),
+      message: managerMessage,
       requiresManualAuthorization: true,
+      requiresGestorAuthorization,
       dateMismatch: windowInfo.dateMismatch,
       timeMismatch: windowInfo.timeMismatch,
+      tooEarly: windowInfo.tooEarly,
+      tooLate: windowInfo.tooLate,
       toleranceMinutes: windowInfo.toleranceMinutes,
-      diffMinutes: windowInfo.diffMinutes
+      diffMinutes: windowInfo.diffMinutes,
+      gestorNotification
     });
   }
 

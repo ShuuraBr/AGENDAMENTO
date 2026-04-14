@@ -471,16 +471,21 @@
   function normalizeOperationToken(rawValue) {
     const raw = String(rawValue || "").trim();
     if (!raw) return "";
+    const decoded = (() => {
+      try { return decodeURIComponent(raw); } catch { return raw; }
+    })();
     try {
-      const url = raw.startsWith("http://") || raw.startsWith("https://") ? new URL(raw) : new URL(raw, window.location.origin);
+      const url = decoded.startsWith("http://") || decoded.startsWith("https://") ? new URL(decoded) : new URL(decoded, window.location.origin);
       const token = url.searchParams.get("token");
-      if (token) return token;
+      if (token) return String(token).trim();
     } catch {}
-    const match = raw.match(/(?:^|[?&])token=([^&#]+)/i);
+    const match = decoded.match(/(?:^|[?&])token=([^&#]+)/i);
     if (match?.[1]) {
-      try { return decodeURIComponent(match[1]); } catch { return match[1]; }
+      try { return decodeURIComponent(match[1]).trim(); } catch { return String(match[1]).trim(); }
     }
-    return raw;
+    const tokenMatch = decoded.match(/(?:CHK|OUT|FOR|MOT)-[A-Z0-9]+-[A-Z0-9]+/i);
+    if (tokenMatch?.[0]) return String(tokenMatch[0]).trim().toUpperCase();
+    return decoded.replace(/[\s\n\r]+/g, "").trim();
   }
 
   function applyCheckinRouteContext({ autoValidate = false } = {}) {
@@ -2138,10 +2143,12 @@
         data = await api(endpoint, { method: "POST", body: JSON.stringify({}) });
       } catch (err) {
         const message = String(err.message || '');
-        if (modo === 'checkin' && (/fora da janela/i.test(message) || /divergente/i.test(message))) {
+        const requiresManualAuthorization = !!err?.data?.requiresManualAuthorization;
+        const canManualOverride = ['ADMIN', 'GESTOR', 'OPERADOR', 'PORTARIA'].includes(currentProfile());
+        if (modo === 'checkin' && requiresManualAuthorization && canManualOverride) {
           const liberar = window.confirm(`${message}
 
-Deseja liberar manualmente a descarga deste veículo?`);
+Deseja autorizar manualmente este check-in?`);
           if (!liberar) throw err;
           data = await api(endpoint, { method: "POST", body: JSON.stringify({ overrideManualAuthorization: true, overrideDateMismatch: true, overrideTimeMismatch: true }) });
         } else {
@@ -2403,7 +2410,8 @@ Deseja liberar manualmente a descarga deste veículo?`);
         updateTotalsFromNotas();
         payload.quantidadeNotas = Number(payload.quantidadeNotas || payload.notas.length);
         const data = await api("/api/public/solicitacao", { method: "POST", body: JSON.stringify(payload) });
-        byId("fornecedorMsg").innerHTML = `Solicitação enviada. Protocolo: <strong>${data.protocolo}</strong>. Horário: <strong>${data.horaAgendada}</strong>. Doca: <strong>${data.doca}</strong>.<br><a href="${data.linkFornecedor}">Consulta da transportadora/fornecedor</a> • <a href="${data.linkMotorista}">Acompanhamento do motorista</a> • <a href="${data.voucher}" target="_blank" rel="noreferrer">Voucher PDF</a><br>Token do motorista: <strong>${data.tokenMotorista}</strong>`;
+        const voucherLink = data.voucher ? ` • <a href="${data.voucher}" target="_blank" rel="noreferrer">Voucher PDF</a>` : "";
+        byId("fornecedorMsg").innerHTML = `Solicitação enviada. Protocolo: <strong>${data.protocolo}</strong>. Horário: <strong>${data.horaAgendada}</strong>. Doca: <strong>${data.doca}</strong>.<br><a href="${data.linkFornecedor}">Consulta da transportadora/fornecedor</a> • <a href="${data.linkMotorista}">Acompanhamento do motorista</a>${voucherLink}<br>Token do motorista: <strong>${data.tokenMotorista}</strong>`;
         e.target.reset();
         stopCameraScan();
         state.nfRows = 1;
