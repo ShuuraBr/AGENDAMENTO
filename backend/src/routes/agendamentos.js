@@ -30,6 +30,7 @@ const storage = multer.diskStorage({
   filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, "-")}`)
 });
 const upload = multer({ storage });
+const uploadAvaria = upload.fields([{ name: "imagensAvaria", maxCount: 10 }]);
 
 
 function parseAuditDetalhes(raw) {
@@ -208,6 +209,186 @@ function buildScheduleIntro(item) {
   return `O agendamento foi efetuado para o dia ${formatDateBR(item?.dataAgendada)}, às ${formatHourLabel(item?.horaAgendada)}. Solicitamos chegada com 10 minutos de antecedência.`;
 }
 
+function normalizeScheduleDateValue(value) {
+  if (!value) return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${String(value.getUTCFullYear())}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${String(value.getUTCDate()).padStart(2, '0')}`;
+  }
+  const raw = String(value).trim();
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T].*)?$/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  const native = new Date(raw);
+  if (!Number.isNaN(native.getTime())) {
+    return `${String(native.getUTCFullYear())}-${String(native.getUTCMonth() + 1).padStart(2, '0')}-${String(native.getUTCDate()).padStart(2, '0')}`;
+  }
+  return raw;
+}
+
+function normalizeScheduleTimeValue(value) {
+  if (!value) return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}`;
+  }
+  const raw = String(value).trim();
+  const match = raw.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
+  if (match) return `${match[1]}:${match[2]}`;
+  const native = new Date(raw);
+  if (!Number.isNaN(native.getTime())) {
+    return `${String(native.getUTCHours()).padStart(2, '0')}:${String(native.getUTCMinutes()).padStart(2, '0')}`;
+  }
+  return raw;
+}
+
+function deriveHourFromJanela(item = {}) {
+  const janelaCodigo = String(item?.janela?.codigo || item?.janela || item?.janelaCodigo || '').trim();
+  const match = janelaCodigo.match(/(\d{2}:\d{2})/);
+  return match?.[1] || '';
+}
+
+function normalizeScheduleItem(item = {}, fallback = null) {
+  const dataAgendada = normalizeScheduleDateValue(item?.dataAgendada) || normalizeScheduleDateValue(fallback?.dataAgendada);
+  const horaAgendada = normalizeScheduleTimeValue(item?.horaAgendada)
+    || normalizeScheduleTimeValue(fallback?.horaAgendada)
+    || deriveHourFromJanela(item)
+    || deriveHourFromJanela(fallback || {});
+  return { ...fallback, ...item, dataAgendada, horaAgendada };
+}
+
+function parseBooleanLike(value) {
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return ['1', 'true', 'sim', 's', 'yes', 'y', 'on'].includes(normalized);
+}
+
+function normalizeFinalizacaoRecebimento(body = {}) {
+  const payload = {
+    comoFoiDescarga: String(body?.comoFoiDescarga || body?.descargaConcluida || '').trim() || 'Concluída',
+    houveAvaria: parseBooleanLike(body?.houveAvaria ?? body?.teveOcorrencia),
+    itemAvaria: String(body?.itemAvaria || '').trim(),
+    quantidadeAvaria: String(body?.quantidadeAvaria || '').trim(),
+    observacaoAvaria: String(body?.observacaoAvaria || body?.descricaoOcorrencia || '').trim(),
+    observacaoAssistente: String(body?.observacaoAssistente || '').trim(),
+    motoristaTranquilo: String(body?.motoristaTranquilo || '').trim(),
+    cargaBatida: String(body?.cargaBatida || '').trim()
+  };
+  if (payload.houveAvaria && (!payload.itemAvaria || !payload.quantidadeAvaria || !payload.observacaoAvaria)) {
+    throw new Error('Preencha item, quantidade e observação da avaria antes de finalizar o agendamento.');
+  }
+  return payload;
+}
+
+function mergeOperationalObservations(existing = '', payload = {}) {
+  const parts = [];
+  if (payload?.comoFoiDescarga) parts.push(`Descarga: ${payload.comoFoiDescarga}`);
+  if (payload?.observacaoAssistente) parts.push(`Assistente: ${payload.observacaoAssistente}`);
+  if (payload?.houveAvaria) parts.push(`Avaria: item ${payload.itemAvaria || '-'}, qtd ${payload.quantidadeAvaria || '-'}, obs ${payload.observacaoAvaria || '-'}`);
+  return [String(existing || '').trim(), parts.join(' | ')].filter(Boolean).join(' | ');
+}
+
+function uploadedAvariaFilesFromReq(req) {
+  const items = req?.files?.imagensAvaria;
+  return Array.isArray(items) ? items.filter(Boolean) : [];
+}
+
+function buildAvariaAttachments(files = []) {
+  return (Array.isArray(files) ? files : []).map((file) => ({ filename: file.originalname, path: file.path, contentType: file.mimetype || undefined }));
+}
+
+function buildNotasResumo(notas = []) {
+  return (Array.isArray(notas) ? notas : []).map((nota) => ({
+    numeroNf: String(nota?.numeroNf || '-'),
+    serie: String(nota?.serie || '-'),
+    volumes: Number(nota?.volumes || 0),
+    peso: Number(nota?.peso || 0),
+    itens: Number(nota?.quantidadeItens || nota?.qtdItens || nota?.itens || 0)
+  }));
+}
+
+function renderNotasResumoHtml(notas = []) {
+  const rows = buildNotasResumo(notas).map((nota) => `
+    <tr>
+      <td style="padding:8px;border:1px solid #e2e8f0">${nota.numeroNf}</td>
+      <td style="padding:8px;border:1px solid #e2e8f0">${nota.serie}</td>
+      <td style="padding:8px;border:1px solid #e2e8f0;text-align:right">${nota.volumes}</td>
+      <td style="padding:8px;border:1px solid #e2e8f0;text-align:right">${nota.peso}</td>
+      <td style="padding:8px;border:1px solid #e2e8f0;text-align:right">${nota.itens}</td>
+    </tr>
+  `).join('');
+  if (!rows) return '<p><strong>NFs:</strong> não informadas.</p>';
+  return `<table style="border-collapse:collapse;width:100%;margin-top:12px"><thead><tr><th style="padding:8px;border:1px solid #e2e8f0">NF</th><th style="padding:8px;border:1px solid #e2e8f0">Série</th><th style="padding:8px;border:1px solid #e2e8f0">Volumes</th><th style="padding:8px;border:1px solid #e2e8f0">Peso</th><th style="padding:8px;border:1px solid #e2e8f0">Itens</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function controladoriaRecipients() {
+  return parseEmailList(
+    process.env.CONTROLADORIA_EMAIL,
+    process.env.CONTROLADORIA_EMAILS,
+    process.env.EMAIL_CONTROLADORIA,
+    process.env.EMAILS_CONTROLADORIA,
+    process.env.CONTROLADORIA_OCORRENCIAS_EMAIL,
+    process.env.CONTROLADORIA_OCORRENCIAS_EMAILS,
+    process.env.CONTROLADORIA_OCORRENCIA_EMAIL,
+    process.env.CONTROLADORIA_OCORRENCIA_EMAILS,
+    process.env.CONTROLADORIA_AVARIA_EMAIL,
+    process.env.CONTROLADORIA_AVARIA_EMAILS,
+    process.env.OCORRENCIAS_CONTROLADORIA_EMAIL,
+    process.env.OCORRENCIAS_CONTROLADORIA_EMAILS,
+    process.env.OCORRENCIA_CONTROLADORIA_EMAIL,
+    process.env.OCORRENCIA_CONTROLADORIA_EMAILS,
+    process.env.RECEBIMENTO_OCORRENCIAS_EMAIL,
+    process.env.RECEBIMENTO_OCORRENCIAS_EMAILS,
+    process.env.OCORRENCIAS_RECEBIMENTO_EMAIL,
+    process.env.OCORRENCIAS_RECEBIMENTO_EMAILS,
+    process.env.OCORRENCIAS_EMAIL,
+    process.env.OCORRENCIAS_EMAILS,
+    process.env.OCORRENCIA_EMAIL,
+    process.env.OCORRENCIA_EMAILS,
+    process.env.AVARIA_EMAIL,
+    process.env.AVARIA_EMAILS,
+    process.env.AVARIAS_EMAIL,
+    process.env.AVARIAS_EMAILS
+  );
+}
+
+async function notifyControladoriaAvaria({ agendamento, payload, actor = null, files = [] } = {}) {
+  if (!payload?.houveAvaria) return { sent: false, to: null, reason: 'Sem avaria informada.' };
+  const recipients = controladoriaRecipients();
+  if (!recipients.length) return { sent: false, to: null, reason: 'E-mails da controladoria não configurados.' };
+  const item = normalizeScheduleItem(agendamento);
+  const notasHtml = renderNotasResumoHtml(item?.notasFiscais || []);
+  const notasText = buildNotasResumo(item?.notasFiscais || []).map((nota) => `NF ${nota.numeroNf} | Série ${nota.serie} | Vol ${nota.volumes} | Peso ${nota.peso} | Itens ${nota.itens}`).join('\n') || 'NFs não informadas.';
+  const actorLabel = String(actor?.nome || actor?.name || actor?.email || actor?.sub || 'Não identificado').trim();
+  const attachments = buildAvariaAttachments(files);
+  const sent = await sendMail({
+    to: recipients.join(', '),
+    subject: `Avaria registrada no recebimento - ${item.protocolo || item.id || 'sem protocolo'}`,
+    text: [
+      'Foi registrada uma avaria no recebimento.',
+      '',
+      `Protocolo: ${item.protocolo || '-'}`,
+      `Fornecedor: ${item.fornecedor || '-'}`,
+      `Transportadora: ${item.transportadora || '-'}`,
+      `Motorista: ${item.motorista || '-'}`,
+      `Placa: ${item.placa || '-'}`,
+      `Data agendada: ${item.dataAgendada || '-'}`,
+      `Hora agendada: ${item.horaAgendada || '-'}`,
+      `Como foi a descarga: ${payload.comoFoiDescarga || '-'}`,
+      `Item avariado: ${payload.itemAvaria || '-'}`,
+      `Quantidade: ${payload.quantidadeAvaria || '-'}`,
+      `Observação da avaria: ${payload.observacaoAvaria || '-'}`,
+      `Observação do assistente: ${payload.observacaoAssistente || '-'}`,
+      `Operador responsável: ${actorLabel}`,
+      '',
+      'Notas fiscais:',
+      notasText
+    ].join('\n'),
+    html: `<div style="font-family:Arial,sans-serif"><h2>Avaria registrada no recebimento</h2><p><strong>Protocolo:</strong> ${item.protocolo || '-'}<br><strong>Fornecedor:</strong> ${item.fornecedor || '-'}<br><strong>Transportadora:</strong> ${item.transportadora || '-'}<br><strong>Motorista:</strong> ${item.motorista || '-'}<br><strong>Placa:</strong> ${item.placa || '-'}<br><strong>Data agendada:</strong> ${item.dataAgendada || '-'}<br><strong>Hora agendada:</strong> ${item.horaAgendada || '-'}<br><strong>Como foi a descarga:</strong> ${payload.comoFoiDescarga || '-'}<br><strong>Item avariado:</strong> ${payload.itemAvaria || '-'}<br><strong>Quantidade:</strong> ${payload.quantidadeAvaria || '-'}<br><strong>Observação da avaria:</strong> ${payload.observacaoAvaria || '-'}<br><strong>Observação do assistente:</strong> ${payload.observacaoAssistente || '-'}<br><strong>Operador responsável:</strong> ${actorLabel}</p>${notasHtml}</div>`,
+    attachments: attachments.length ? attachments : undefined
+  });
+  return { ...sent, to: recipients.join(', '), attachments: attachments.map((item) => item.filename) };
+}
+
 const MANDATORY_VOUCHER_NOTICE_TEXT = 'Obrigatório: Compareça com 10 minutos de antecedência e apresente este voucher na portaria ou no recebimento. O motorista deve estar utilizando EPI (botina, cinta lombar, luvas e, se necessário, capacete) e acompanhado de um auxiliar para descarregar.';
 const MANDATORY_VOUCHER_NOTICE_HTML = '<strong>Obrigatório:</strong> Compareça com 10 minutos de antecedência e apresente este voucher na portaria ou no recebimento. O motorista deve estar utilizando EPI (botina, cinta lombar, luvas e, se necessário, capacete) e acompanhado de um auxiliar para descarregar.';
 
@@ -347,8 +528,9 @@ async function sendFiscalMissingPrelaunchEmail({ fornecedor = '', nota = {}, act
 }
 
 async function dispatchDriverFeedbackSurvey(item, req, actor = req.user) {
+  const normalized = normalizeScheduleItem(item);
   const result = await sendDriverFeedbackRequestEmail({
-    agendamento: item,
+    agendamento: normalized,
     baseUrl: getBaseUrl(req)
   });
 
@@ -357,12 +539,14 @@ async function dispatchDriverFeedbackSurvey(item, req, actor = req.user) {
     perfil: actor?.perfil || null,
     acao: 'ENVIAR_AVALIACAO',
     entidade: 'AGENDAMENTO',
-    entidadeId: item.id,
+    entidadeId: normalized.id,
     detalhes: {
       sent: !!result?.sent,
       to: result?.to || null,
       feedbackLink: result?.feedbackLink || null,
-      reason: result?.reason || null
+      reason: result?.reason || null,
+      dataAgendada: normalized.dataAgendada || null,
+      horaAgendada: normalized.horaAgendada || null
     },
     ip: req.ip
   });

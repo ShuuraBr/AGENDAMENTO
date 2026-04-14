@@ -744,7 +744,9 @@
     const data = ct.includes("application/json") ? await res.json() : await res.text();
     if (res.status === 401) logout();
     if (!res.ok) {
-      const err = new Error(data?.message || data || "Erro na requisição");
+      const html503 = !ct.includes('application/json') && res.status >= 500 && /503|service unavailable/i.test(String(data || ''));
+      const message = html503 ? 'O servidor retornou 503 ao processar a operação.' : (data?.message || data || 'Erro na requisição');
+      const err = new Error(message);
       err.status = res.status;
       err.data = data;
       throw err;
@@ -853,6 +855,129 @@
       confirmBtn.onclick = () => cleanup(true);
       cancelBtn.onclick = () => cleanup(false);
       host.querySelectorAll('[data-modal-close]').forEach((el) => { el.onclick = () => cleanup(false); });
+    });
+  }
+
+  function buildMultipartFormData(payload = {}) {
+    const form = new FormData();
+    Object.entries(payload || {}).forEach(([key, value]) => {
+      if (value == null) return;
+      if (value instanceof File) {
+        form.append(key, value);
+        return;
+      }
+      if (value instanceof FileList || Array.isArray(value)) {
+        Array.from(value).forEach((item) => {
+          if (item instanceof File) form.append(key, item);
+          else if (item != null) form.append(key, String(item));
+        });
+        return;
+      }
+      form.append(key, String(value));
+    });
+    return form;
+  }
+
+  async function showCheckoutCompletionForm({ title = 'Concluir operação', contextLabel = 'Finalize o recebimento.' } = {}) {
+    const host = ensureModalHost();
+    const titleEl = byId('appModalTitle');
+    const bodyEl = byId('appModalBody');
+    const confirmBtn = byId('appModalConfirm');
+    const cancelBtn = byId('appModalCancel');
+    const card = host?.querySelector('.app-modal-card');
+    if (!titleEl || !bodyEl || !confirmBtn || !cancelBtn || !card) return null;
+    titleEl.textContent = title;
+    card.classList.add('app-modal-card-wide');
+    bodyEl.classList.add('app-modal-body-html');
+    bodyEl.innerHTML = `
+      <form id="checkoutCompletionForm" class="grid2" style="gap:12px;">
+        <div class="grid-full"><p>${escapeHtml(contextLabel)}</p></div>
+        <label>Como foi a descarga?
+          <select name="comoFoiDescarga">
+            <option value="Concluída sem ocorrência">Concluída sem ocorrência</option>
+            <option value="Concluída com ressalvas">Concluída com ressalvas</option>
+            <option value="Parcial">Parcial</option>
+          </select>
+        </label>
+        <label>Observação do assistente
+          <textarea name="observacaoAssistente" rows="3" placeholder="Descreva o que ocorreu na descarga."></textarea>
+        </label>
+        <label>Houve avaria?
+          <select name="houveAvaria" id="checkoutAvariaSelect">
+            <option value="nao">Não</option>
+            <option value="sim">Sim</option>
+          </select>
+        </label>
+        <label>Motorista tranquilo?
+          <select name="motoristaTranquilo">
+            <option value="">Selecione</option>
+            <option value="SIM">Sim</option>
+            <option value="NAO">Não</option>
+          </select>
+        </label>
+        <label>Carga batida?
+          <select name="cargaBatida">
+            <option value="">Selecione</option>
+            <option value="SIM">Sim</option>
+            <option value="NAO">Não</option>
+          </select>
+        </label>
+        <div class="grid-full hidden" id="checkoutAvariaFields">
+          <div class="grid2" style="gap:12px;">
+            <label>Item avariado<input name="itemAvaria" placeholder="Informe o item" /></label>
+            <label>Quantidade avariada<input name="quantidadeAvaria" type="number" min="1" step="1" placeholder="0" /></label>
+            <label class="grid-full">Observação da avaria<textarea name="observacaoAvaria" rows="3" placeholder="Descreva a avaria."></textarea></label>
+            <label class="grid-full">Imagens da avaria
+              <input name="imagensAvaria" type="file" accept="image/*" capture="environment" multiple />
+            </label>
+          </div>
+        </div>
+      </form>
+    `;
+    confirmBtn.textContent = 'Concluir';
+    cancelBtn.textContent = 'Cancelar';
+    cancelBtn.classList.remove('hidden');
+    host.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    const avariaSelect = byId('checkoutAvariaSelect');
+    const avariaFields = byId('checkoutAvariaFields');
+    const toggle = () => avariaFields?.classList.toggle('hidden', String(avariaSelect?.value || 'nao') !== 'sim');
+    avariaSelect?.addEventListener('change', toggle);
+    toggle();
+    return new Promise((resolve) => {
+      const cleanup = (result) => {
+        host.classList.add('hidden');
+        document.body.classList.remove('modal-open');
+        confirmBtn.onclick = null;
+        cancelBtn.onclick = null;
+        card.classList.remove('app-modal-card-wide');
+        host.querySelectorAll('[data-modal-close]').forEach((el) => { el.onclick = null; });
+        resolve(result);
+      };
+      confirmBtn.onclick = () => {
+        const form = byId('checkoutCompletionForm');
+        if (!form) return cleanup(null);
+        const fd = new FormData(form);
+        if (String(fd.get('houveAvaria') || 'nao') === 'sim') {
+          if (!String(fd.get('itemAvaria') || '').trim() || !String(fd.get('quantidadeAvaria') || '').trim() || !String(fd.get('observacaoAvaria') || '').trim()) {
+            window.alert('Preencha item, quantidade e observação da avaria.');
+            return;
+          }
+        }
+        cleanup({
+          comoFoiDescarga: fd.get('comoFoiDescarga') || '',
+          observacaoAssistente: fd.get('observacaoAssistente') || '',
+          houveAvaria: String(fd.get('houveAvaria') || 'nao') === 'sim',
+          itemAvaria: fd.get('itemAvaria') || '',
+          quantidadeAvaria: fd.get('quantidadeAvaria') || '',
+          observacaoAvaria: fd.get('observacaoAvaria') || '',
+          motoristaTranquilo: fd.get('motoristaTranquilo') || '',
+          cargaBatida: fd.get('cargaBatida') || '',
+          imagensAvaria: form.querySelector('[name="imagensAvaria"]')?.files || []
+        });
+      };
+      cancelBtn.onclick = () => cleanup(null);
+      host.querySelectorAll('[data-modal-close]').forEach((el) => { el.onclick = () => cleanup(null); });
     });
   }
 
@@ -1002,9 +1127,12 @@
             const codes = await state.barcodeDetector.detect(video);
             if (codes[0]?.rawValue) {
               const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
-              const normalizedToken = normalizeOperationToken(codes[0].rawValue);
-              if (tokenInput) tokenInput.value = normalizedToken;
-              await validateCheckin(normalizedToken);
+              const modoInput = byId('checkinForm')?.querySelector('[name="modo"]');
+              const rawValue = String(codes[0].rawValue || '');
+              const parsed = parseOperationReference(rawValue);
+              if (tokenInput) tokenInput.value = rawValue || parsed.token;
+              if (modoInput) modoInput.value = /[?&]view=checkout/i.test(rawValue) || /^OUT-/i.test(parsed.token || '') ? 'checkout' : 'checkin';
+              await validateCheckin(rawValue || parsed.token);
               state.scanning = false;
               return;
             }
@@ -2154,26 +2282,35 @@
       const reference = parseOperationReference(token);
       const currentParams = new URLSearchParams(window.location.search || '');
       const normalizedToken = reference.token;
+      const rawToken = String(token || '').trim();
       const lookupId = reference.id || String(currentParams.get('id') || '').replace(/\D/g, '').trim();
       const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
-      if (tokenInput) tokenInput.value = normalizedToken;
+      if (tokenInput) tokenInput.value = rawToken || normalizedToken;
       if (!normalizedToken) throw new Error('Informe o token da operação.');
       const modo = byId("checkinForm")?.querySelector("[name=modo]")?.value || "checkin";
       const endpoint = modo === "checkout" ? `/api/public/checkout/${encodeURIComponent(normalizedToken)}` : `/api/public/checkin/${encodeURIComponent(normalizedToken)}`;
-      const requestBody = { token: normalizedToken, lookupId, rawToken: String(token || '') };
+      const requestBody = { token: normalizedToken, lookupId, rawToken: rawToken || normalizedToken };
       let data;
       try {
-        data = await api(endpoint, { method: "POST", body: JSON.stringify(requestBody) });
+        let requestOptions = { method: "POST", body: JSON.stringify(requestBody) };
+        if (modo === 'checkout') {
+          const completion = await showCheckoutCompletionForm({ title: 'Concluir check-out', contextLabel: 'Informe como foi a descarga antes de concluir o check-out.' });
+          if (!completion) return;
+          const payload = { ...requestBody, ...completion, teveOcorrencia: completion.houveAvaria, descricaoOcorrencia: completion.observacaoAvaria, descargaConcluida: completion.comoFoiDescarga };
+          if (completion.imagensAvaria?.length) requestOptions = { method: 'POST', body: buildMultipartFormData(payload) };
+          else requestOptions = { method: 'POST', body: JSON.stringify(payload) };
+        }
+        data = await api(endpoint, requestOptions);
       } catch (err) {
         const message = String(err.message || '');
         const requiresManualAuthorization = !!err?.data?.requiresManualAuthorization;
         const canManualOverride = ['ADMIN', 'GESTOR', 'OPERADOR', 'PORTARIA'].includes(currentProfile());
         if (modo === 'checkin' && requiresManualAuthorization && canManualOverride) {
-          const liberar = window.confirm(`${message}
-
-Deseja autorizar manualmente este check-in?`);
+          const liberar = await showAppModal({ title: 'Autorização manual', message, confirmText: 'Autorizar', cancelText: 'Cancelar', tone: 'warning' });
           if (!liberar) throw err;
           data = await api(endpoint, { method: "POST", body: JSON.stringify({ ...requestBody, overrideManualAuthorization: true, overrideDateMismatch: true, overrideTimeMismatch: true }) });
+        } else if (modo === 'checkout' && err?.data?.requiresStartUnload) {
+          throw new Error(err?.data?.message || 'O check-out só pode ser executado após o início da descarga.');
         } else {
           throw err;
         }
@@ -2207,6 +2344,8 @@ Deseja autorizar manualmente este check-in?`);
         <div><span class="field-label">Motorista</span><strong>${escapeHtml(data.motorista || '-')}</strong></div>
         <div><span class="field-label">CPF</span><strong>${escapeHtml(data.cpfMotorista || '-')}</strong></div>
         <div><span class="field-label">Placa</span><strong>${escapeHtml(data.placa || '-')}</strong></div>
+        <div><span class="field-label">Data agendada</span><strong>${escapeHtml(formatDateBR(data.dataAgendada || '-') || '-')}</strong></div>
+        <div><span class="field-label">Hora agendada</span><strong>${escapeHtml(data.horaAgendada || '-')}</strong></div>
       `;
     }
     if (form) {
@@ -2398,7 +2537,15 @@ Deseja autorizar manualmente este check-in?`);
     }, "Agendamento reagendado."));
     byId("btnCancelar")?.addEventListener("click", async () => handleOp(() => postStatus("cancelar", { motivo: "Cancelado via painel" }), "Agendamento cancelado."));
     byId("btnIniciar")?.addEventListener("click", async () => handleOp(() => postStatus("iniciar"), "Descarga iniciada."));
-    byId("btnFinalizar")?.addEventListener("click", async () => handleOp(() => postStatus("finalizar"), "Agendamento finalizado."));
+    byId("btnFinalizar")?.addEventListener("click", async () => handleOp(async () => {
+      const completion = await showCheckoutCompletionForm({ title: 'Finalizar agendamento', contextLabel: 'Preencha as informações do recebimento antes de finalizar.' });
+      if (!completion) return false;
+      const payload = { ...completion, teveOcorrencia: completion.houveAvaria, descricaoOcorrencia: completion.observacaoAvaria, descargaConcluida: completion.comoFoiDescarga };
+      if (completion.imagensAvaria?.length) {
+        return api(`/api/agendamentos/${currentId()}/finalizar`, { method: 'POST', body: buildMultipartFormData(payload) });
+      }
+      return api(`/api/agendamentos/${currentId()}/finalizar`, { method: 'POST', body: JSON.stringify(payload) });
+    }, "Agendamento finalizado."));
     byId("btnNoShow")?.addEventListener("click", async () => handleOp(() => postStatus("no-show"), "Agendamento marcado como no-show."));
     byId("btnVoucher")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/voucher`, "_blank"); } catch (err) { alert(err.message); } });
     byId("btnQr")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/qrcode.svg`, "_blank"); } catch (err) { alert(err.message); } });
@@ -2483,7 +2630,7 @@ Deseja autorizar manualmente este check-in?`);
 
     byId("checkinForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await validateCheckin(normalizeOperationToken(new FormData(e.target).get("token")));
+      await validateCheckin(String(new FormData(e.target).get("token") || ''));
     });
 
     byId("avaliacaoForm")?.addEventListener("submit", async (e) => {
