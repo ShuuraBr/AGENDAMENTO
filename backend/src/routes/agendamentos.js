@@ -131,47 +131,6 @@ function parseJanelaCodigo(codigo = '') {
   return match ? { horaInicio: match[1], horaFim: match[2] || '' } : { horaInicio: '', horaFim: '' };
 }
 
-function normalizeScheduleDateValue(value) {
-  if (!value) return '';
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const year = String(value.getUTCFullYear());
-    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(value.getUTCDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-  const raw = String(value).trim();
-  const iso = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (iso) return iso[1];
-  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
-  const native = new Date(raw);
-  if (!Number.isNaN(native.getTime())) {
-    const year = String(native.getUTCFullYear());
-    const month = String(native.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(native.getUTCDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-  return raw;
-}
-
-function normalizeScheduleTimeValue(value) {
-  if (!value) return '';
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const hh = String(value.getUTCHours()).padStart(2, '0');
-    const mm = String(value.getUTCMinutes()).padStart(2, '0');
-    return `${hh}:${mm}`;
-  }
-  const raw = String(value).trim();
-  const match = raw.match(/^(\d{2}:\d{2})(?::\d{2})?$/);
-  if (match) return match[1];
-  const native = new Date(raw);
-  if (!Number.isNaN(native.getTime())) {
-    const hh = String(native.getUTCHours()).padStart(2, '0');
-    const mm = String(native.getUTCMinutes()).padStart(2, '0');
-    return `${hh}:${mm}`;
-  }
-  return raw;
-}
 
 function resolveScheduleValues(item = {}, fallback = {}) {
   const dataAgendada = normalizeScheduleDateValue(item?.dataAgendada || fallback?.dataAgendada || '');
@@ -181,40 +140,7 @@ function resolveScheduleValues(item = {}, fallback = {}) {
   return { dataAgendada, horaAgendada };
 }
 
-function normalizeScheduleItem(item = {}, fallback = {}) {
-  const resolved = resolveScheduleValues(item, fallback);
-  return {
-    ...fallback,
-    ...item,
-    dataAgendada: resolved.dataAgendada,
-    horaAgendada: resolved.horaAgendada || item?.horaAgendada || fallback?.horaAgendada || ''
-  };
-}
 
-function parseBooleanLike(value) {
-  if (typeof value === 'boolean') return value;
-  const normalized = String(value || '').trim().toLowerCase();
-  return ['1', 'true', 'sim', 's', 'yes', 'y', 'on'].includes(normalized);
-}
-
-function normalizeFinalizacaoRecebimento(body = {}) {
-  const payload = {
-    comoFoiDescarga: String(body?.comoFoiDescarga || body?.descargaConcluida || 'BOA').trim().toUpperCase() || 'BOA',
-    houveAvaria: parseBooleanLike(body?.houveAvaria ?? body?.teveOcorrencia),
-    itemAvaria: String(body?.itemAvaria || body?.item || '').trim(),
-    observacaoAvaria: String(body?.observacaoAvaria || body?.descricaoOcorrencia || '').trim(),
-    quantidadeAvaria: Number(body?.quantidadeAvaria || body?.quantidade || 0) || 0,
-    observacaoAssistente: String(body?.observacaoAssistente || '').trim()
-  };
-
-  if (payload.houveAvaria) {
-    if (!payload.itemAvaria) throw new Error('Informe o item avariado para concluir a finalização.');
-    if (!payload.observacaoAvaria) throw new Error('Descreva a avaria para concluir a finalização.');
-    if (!(payload.quantidadeAvaria > 0)) throw new Error('Informe a quantidade avariada para concluir a finalização.');
-  }
-
-  return payload;
-}
 
 function buildRecebimentoObservacao(payload = {}) {
   const parts = [`Descarga: ${payload.comoFoiDescarga || 'BOA'}`];
@@ -230,70 +156,6 @@ function buildRecebimentoObservacao(payload = {}) {
   return `[FINALIZAÇÃO] ${parts.join(' | ')}`;
 }
 
-function mergeOperationalObservations(existing = '', payload = {}) {
-  const parts = [String(existing || '').trim(), buildRecebimentoObservacao(payload)].filter(Boolean);
-  return parts.join(' | ');
-}
-
-function controladoriaRecipients() {
-  const raw = [
-    process.env.CONTROLADORIA_EMAIL,
-    process.env.CONTROLADORIA_EMAILS,
-    process.env.EMAIL_CONTROLADORIA,
-    process.env.EMAILS_CONTROLADORIA,
-    process.env.CONTROLADORIA_OCORRENCIAS_EMAIL,
-    process.env.CONTROLADORIA_OCORRENCIAS_EMAILS,
-    process.env.OCORRENCIAS_CONTROLADORIA_EMAIL,
-    process.env.OCORRENCIAS_CONTROLADORIA_EMAILS,
-    process.env.RECEBIMENTO_OCORRENCIAS_EMAIL,
-    process.env.RECEBIMENTO_OCORRENCIAS_EMAILS,
-    process.env.OCORRENCIAS_RECEBIMENTO_EMAIL,
-    process.env.OCORRENCIAS_RECEBIMENTO_EMAILS,
-    process.env.OCORRENCIAS_EMAIL,
-    process.env.OCORRENCIAS_EMAILS
-  ].filter(Boolean).join(',');
-  return [...new Set(raw.split(/[;,]/).map((item) => String(item || '').trim()).filter(Boolean))];
-}
-
-async function notifyControladoriaAvaria({ agendamento = {}, payload = {}, req, actor = null, files = [] } = {}) {
-  const recipients = controladoriaRecipients();
-  if (!payload?.houveAvaria || !recipients.length) {
-    return { sent: false, to: recipients.join(', ') || null, reason: payload?.houveAvaria ? 'Destinatário da controladoria não configurado.' : 'Sem avaria informada.' };
-  }
-
-  const item = normalizeScheduleItem(agendamento);
-  const operador = String(actor?.nome || actor?.name || actor?.email || actor?.sub || 'Não identificado').trim();
-  const notasResumo = buildNotasResumo(item?.notasFiscais || []);
-  const anexos = buildAvariaAttachments(files);
-  const subject = `Avaria no recebimento - ${item.protocolo || 'sem protocolo'}`;
-  const text = [
-    'Foi registrada uma avaria no encerramento da descarga.',
-    '',
-    `Protocolo: ${item.protocolo || '-'}`,
-    `Fornecedor: ${item.fornecedor || '-'}`,
-    `Transportadora: ${item.transportadora || '-'}`,
-    `Motorista: ${item.motorista || '-'}`,
-    `Data agendada: ${formatDateBR(item.dataAgendada)}`,
-    `Hora agendada: ${formatHourLabel(item.horaAgendada)}`,
-    `Como foi a descarga: ${payload.comoFoiDescarga || '-'}`,
-    `Item avariado: ${payload.itemAvaria || '-'}`,
-    `Quantidade avariada: ${payload.quantidadeAvaria || 0}`,
-    `Observação da avaria: ${payload.observacaoAvaria || '-'}`,
-    `Observação do assistente: ${payload.observacaoAssistente || '-'}`,
-    `NFs relacionadas: ${notasResumo.length ? notasResumo.join('; ') : '-'}`,
-    `Imagens anexadas: ${anexos.length ? anexos.map((file) => file.filename).join(', ') : 'Nenhuma'}`,
-    `Operador responsável: ${operador}`
-  ].join('\n');
-
-  const html = `<div style="font-family:Arial,sans-serif"><h2>Avaria registrada no recebimento</h2><p><strong>Protocolo:</strong> ${item.protocolo || '-'}<br><strong>Fornecedor:</strong> ${item.fornecedor || '-'}<br><strong>Transportadora:</strong> ${item.transportadora || '-'}<br><strong>Motorista:</strong> ${item.motorista || '-'}<br><strong>Data agendada:</strong> ${formatDateBR(item.dataAgendada)}<br><strong>Hora agendada:</strong> ${formatHourLabel(item.horaAgendada)}<br><strong>Como foi a descarga:</strong> ${payload.comoFoiDescarga || '-'}<br><strong>Item avariado:</strong> ${payload.itemAvaria || '-'}<br><strong>Quantidade avariada:</strong> ${payload.quantidadeAvaria || 0}<br><strong>Observação da avaria:</strong> ${payload.observacaoAvaria || '-'}<br><strong>Observação do assistente:</strong> ${payload.observacaoAssistente || '-'}<br><strong>Imagens anexadas:</strong> ${anexos.length ? anexos.map((file) => file.filename).join(', ') : 'Nenhuma'}<br><strong>Operador responsável:</strong> ${operador}</p>${renderNotasResumoHtml(item?.notasFiscais || [])}</div>`;
-
-  const result = await safeAwait(
-    () => sendMail({ to: recipients.join(', '), subject, text, html, attachments: anexos }),
-    { sent: false, reason: 'Falha ao enviar e-mail para a controladoria.' },
-    'notify_controladoria_avaria_interno'
-  );
-  return { ...result, to: recipients.join(', '), attachments: anexos.map((file) => file.filename) };
-}
 
 
 function daysUntilDate(value) {
@@ -442,16 +304,16 @@ function parseBooleanLike(value) {
 
 function normalizeFinalizacaoRecebimento(body = {}) {
   const payload = {
-    comoFoiDescarga: String(body?.comoFoiDescarga || body?.descargaConcluida || '').trim() || 'Concluída',
+    comoFoiDescarga: String(body?.comoFoiDescarga || body?.descargaConcluida || 'BOA').trim().toUpperCase() || 'BOA',
     houveAvaria: parseBooleanLike(body?.houveAvaria ?? body?.teveOcorrencia),
-    itemAvaria: String(body?.itemAvaria || '').trim(),
-    quantidadeAvaria: String(body?.quantidadeAvaria || '').trim(),
+    itemAvaria: String(body?.itemAvaria || body?.item || '').trim(),
+    quantidadeAvaria: Number(body?.quantidadeAvaria || body?.quantidade || 0) || 0,
     observacaoAvaria: String(body?.observacaoAvaria || body?.descricaoOcorrencia || '').trim(),
     observacaoAssistente: String(body?.observacaoAssistente || '').trim(),
     motoristaTranquilo: String(body?.motoristaTranquilo || '').trim(),
     cargaBatida: String(body?.cargaBatida || '').trim()
   };
-  if (payload.houveAvaria && (!payload.itemAvaria || !payload.quantidadeAvaria || !payload.observacaoAvaria)) {
+  if (payload.houveAvaria && (!payload.itemAvaria || !(payload.quantidadeAvaria > 0) || !payload.observacaoAvaria)) {
     throw new Error('Preencha item, quantidade e observação da avaria antes de finalizar o agendamento.');
   }
   return payload;
@@ -461,17 +323,26 @@ function mergeOperationalObservations(existing = '', payload = {}) {
   const parts = [];
   if (payload?.comoFoiDescarga) parts.push(`Descarga: ${payload.comoFoiDescarga}`);
   if (payload?.observacaoAssistente) parts.push(`Assistente: ${payload.observacaoAssistente}`);
+  if (payload?.motoristaTranquilo) parts.push(`Motorista tranquilo: ${payload.motoristaTranquilo}`);
+  if (payload?.cargaBatida) parts.push(`Carga batida: ${payload.cargaBatida}`);
   if (payload?.houveAvaria) parts.push(`Avaria: item ${payload.itemAvaria || '-'}, qtd ${payload.quantidadeAvaria || '-'}, obs ${payload.observacaoAvaria || '-'}`);
   return [String(existing || '').trim(), parts.join(' | ')].filter(Boolean).join(' | ');
 }
 
 function uploadedAvariaFilesFromReq(req) {
-  const items = req?.files?.imagensAvaria;
-  return Array.isArray(items) ? items.filter(Boolean) : [];
+  const raw = req?.files;
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  if (Array.isArray(raw.imagensAvaria)) return raw.imagensAvaria.filter(Boolean);
+  return [];
 }
 
 function buildAvariaAttachments(files = []) {
-  return (Array.isArray(files) ? files : []).map((file) => ({ filename: file.originalname, path: file.path, contentType: file.mimetype || undefined }));
+  return (Array.isArray(files) ? files : []).map((file) => ({
+    filename: file.originalname || path.basename(file.path || ''),
+    path: file.path,
+    contentType: file.mimetype || undefined
+  })).filter((item) => item.path);
 }
 
 function buildNotasResumo(notas = []) {
@@ -618,33 +489,6 @@ function occurrenceRecipients() {
   );
 }
 
-function uploadedAvariaFilesFromReq(req) {
-  const raw = req?.files;
-  if (!raw) return [];
-  if (Array.isArray(raw)) return raw;
-  if (Array.isArray(raw.imagensAvaria)) return raw.imagensAvaria;
-  return [];
-}
-
-function buildAvariaAttachments(files = []) {
-  return (Array.isArray(files) ? files : []).map((file) => ({
-    filename: file.originalname || path.basename(file.path || ''),
-    path: file.path,
-    contentType: file.mimetype || undefined
-  })).filter((item) => item.path);
-}
-
-function buildNotasResumo(notas = []) {
-  return (Array.isArray(notas) ? notas : [])
-    .map((nota) => `NF ${nota?.numeroNf || '-'}${nota?.serie ? ` / Série ${nota.serie}` : ''}`)
-    .filter(Boolean);
-}
-
-function renderNotasResumoHtml(notas = []) {
-  const items = buildNotasResumo(notas);
-  if (!items.length) return '<p><strong>NFs:</strong> -</p>';
-  return `<p><strong>NFs:</strong></p><ul>${items.map((item) => `<li>${item}</li>`).join('')}</ul>`;
-}
 
 function renderNotasTableHtml(notas = []) {
   const rows = (Array.isArray(notas) ? notas : []).map((nota) => `
