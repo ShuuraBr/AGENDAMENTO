@@ -118,6 +118,118 @@ function formatHourLabel(value) {
   return raw || '-';
 }
 
+function parseJanelaCodigo(codigo = '') {
+  const match = String(codigo || '').match(/(\d{2}:\d{2})(?:\s*[-–]\s*(\d{2}:\d{2}))?/);
+  return match ? { horaInicio: match[1], horaFim: match[2] || '' } : { horaInicio: '', horaFim: '' };
+}
+
+function resolveScheduleValues(item = {}, fallback = {}) {
+  const dataAgendada = String(item?.dataAgendada || fallback?.dataAgendada || '').trim();
+  const janelaCodigo = item?.janela?.codigo || fallback?.janela?.codigo || item?.janela || fallback?.janela || '';
+  const derivedHour = parseJanelaCodigo(janelaCodigo).horaInicio;
+  const horaAgendada = String(item?.horaAgendada || fallback?.horaAgendada || derivedHour || '').trim();
+  return { dataAgendada, horaAgendada };
+}
+
+function normalizeScheduleItem(item = {}, fallback = {}) {
+  const resolved = resolveScheduleValues(item, fallback);
+  return {
+    ...fallback,
+    ...item,
+    dataAgendada: resolved.dataAgendada,
+    horaAgendada: resolved.horaAgendada || item?.horaAgendada || fallback?.horaAgendada || ''
+  };
+}
+
+function parseBooleanLike(value) {
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value || '').trim().toLowerCase();
+  return ['1', 'true', 'sim', 's', 'yes', 'y', 'on'].includes(normalized);
+}
+
+function normalizeFinalizacaoRecebimento(body = {}) {
+  const payload = {
+    comoFoiDescarga: String(body?.comoFoiDescarga || body?.descargaConcluida || 'BOA').trim().toUpperCase() || 'BOA',
+    houveAvaria: parseBooleanLike(body?.houveAvaria ?? body?.teveOcorrencia),
+    itemAvaria: String(body?.itemAvaria || body?.item || '').trim(),
+    observacaoAvaria: String(body?.observacaoAvaria || body?.descricaoOcorrencia || '').trim(),
+    quantidadeAvaria: Number(body?.quantidadeAvaria || body?.quantidade || 0) || 0,
+    observacaoAssistente: String(body?.observacaoAssistente || '').trim()
+  };
+
+  if (payload.houveAvaria) {
+    if (!payload.itemAvaria) throw new Error('Informe o item avariado para concluir a finalização.');
+    if (!payload.observacaoAvaria) throw new Error('Descreva a avaria para concluir a finalização.');
+    if (!(payload.quantidadeAvaria > 0)) throw new Error('Informe a quantidade avariada para concluir a finalização.');
+  }
+
+  return payload;
+}
+
+function buildRecebimentoObservacao(payload = {}) {
+  const parts = [`Descarga: ${payload.comoFoiDescarga || 'BOA'}`];
+  if (payload.houveAvaria) {
+    parts.push(`Avaria: SIM`);
+    parts.push(`Item: ${payload.itemAvaria}`);
+    parts.push(`Quantidade: ${payload.quantidadeAvaria}`);
+    parts.push(`Detalhe: ${payload.observacaoAvaria}`);
+  } else {
+    parts.push('Avaria: NÃO');
+  }
+  if (payload.observacaoAssistente) parts.push(`Obs. assistente: ${payload.observacaoAssistente}`);
+  return `[FINALIZAÇÃO] ${parts.join(' | ')}`;
+}
+
+function mergeOperationalObservations(existing = '', payload = {}) {
+  const parts = [String(existing || '').trim(), buildRecebimentoObservacao(payload)].filter(Boolean);
+  return parts.join(' | ');
+}
+
+function controladoriaRecipients() {
+  const raw = [
+    process.env.CONTROLADORIA_EMAIL,
+    process.env.EMAIL_CONTROLADORIA,
+    process.env.CONTROLADORIA_OCORRENCIAS_EMAIL,
+    process.env.OCORRENCIAS_CONTROLADORIA_EMAIL,
+    process.env.RECEBIMENTO_OCORRENCIAS_EMAIL,
+    process.env.OCORRENCIAS_RECEBIMENTO_EMAIL,
+    process.env.OCORRENCIAS_EMAIL
+  ].filter(Boolean).join(',');
+  return raw.split(/[;,]/).map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+async function notifyControladoriaAvaria({ agendamento = {}, payload = {}, req, actor = null } = {}) {
+  const recipients = controladoriaRecipients();
+  if (!payload?.houveAvaria || !recipients.length) {
+    return { sent: false, to: recipients.join(', ') || null, reason: payload?.houveAvaria ? 'Destinatário da controladoria não configurado.' : 'Sem avaria informada.' };
+  }
+
+  const item = normalizeScheduleItem(agendamento);
+  const operador = String(actor?.nome || actor?.name || actor?.email || actor?.sub || 'Não identificado').trim();
+  const subject = `Avaria no recebimento - ${item.protocolo || 'sem protocolo'}`;
+  const text = [
+    'Foi registrada uma avaria no encerramento da descarga.',
+    '',
+    `Protocolo: ${item.protocolo || '-'}`,
+    `Fornecedor: ${item.fornecedor || '-'}`,
+    `Transportadora: ${item.transportadora || '-'}`,
+    `Motorista: ${item.motorista || '-'}`,
+    `Data agendada: ${formatDateBR(item.dataAgendada)}`,
+    `Hora agendada: ${formatHourLabel(item.horaAgendada)}`,
+    `Como foi a descarga: ${payload.comoFoiDescarga || '-'}`,
+    `Item avariado: ${payload.itemAvaria || '-'}`,
+    `Quantidade avariada: ${payload.quantidadeAvaria || 0}`,
+    `Observação da avaria: ${payload.observacaoAvaria || '-'}`,
+    `Observação do assistente: ${payload.observacaoAssistente || '-'}`,
+    `Operador responsável: ${operador}`
+  ].join('\n');
+
+  const html = `<div style="font-family:Arial,sans-serif"><h2>Avaria registrada no recebimento</h2><p><strong>Protocolo:</strong> ${item.protocolo || '-'}<br><strong>Fornecedor:</strong> ${item.fornecedor || '-'}<br><strong>Transportadora:</strong> ${item.transportadora || '-'}<br><strong>Motorista:</strong> ${item.motorista || '-'}<br><strong>Data agendada:</strong> ${formatDateBR(item.dataAgendada)}<br><strong>Hora agendada:</strong> ${formatHourLabel(item.horaAgendada)}<br><strong>Como foi a descarga:</strong> ${payload.comoFoiDescarga || '-'}<br><strong>Item avariado:</strong> ${payload.itemAvaria || '-'}<br><strong>Quantidade avariada:</strong> ${payload.quantidadeAvaria || 0}<br><strong>Observação da avaria:</strong> ${payload.observacaoAvaria || '-'}<br><strong>Observação do assistente:</strong> ${payload.observacaoAssistente || '-'}<br><strong>Operador responsável:</strong> ${operador}</p></div>`;
+
+  const result = await sendMail({ to: recipients.join(', '), subject, text, html });
+  return { ...result, to: recipients.join(', ') };
+}
+
 function daysUntilDate(value) {
   const raw = String(value || '').trim();
   if (!raw) return null;
@@ -205,7 +317,8 @@ async function loadAgendamentosForConsulta({ numeroNf = '', dataAgendada = '' } 
 
 
 function buildScheduleIntro(item) {
-  return `O agendamento foi efetuado para o dia ${formatDateBR(item?.dataAgendada)}, às ${formatHourLabel(item?.horaAgendada)}. Solicitamos chegada com 10 minutos de antecedência.`;
+  const normalized = normalizeScheduleItem(item);
+  return `O agendamento foi efetuado para o dia ${formatDateBR(normalized?.dataAgendada)}, às ${formatHourLabel(normalized?.horaAgendada)}. Solicitamos chegada com 10 minutos de antecedência.`;
 }
 
 const MANDATORY_VOUCHER_NOTICE_TEXT = 'Obrigatório: Compareça com 10 minutos de antecedência e apresente este voucher na portaria ou no recebimento. O motorista deve estar utilizando EPI (botina, cinta lombar, luvas e, se necessário, capacete) e acompanhado de um auxiliar para descarregar.';
@@ -505,9 +618,9 @@ async function sendScheduleCreatedNotice(item, req, actor = req.user) {
 
   const links = buildPublicLinks(req, item);
   const textoDoca = item.doca?.codigo || item.doca || "A DEFINIR";
-  const scheduleIntro = buildScheduleIntro(item);
+  const scheduleIntro = buildScheduleIntro(normalizedItem);
   const sent = await sendMail({
-    to: item.emailTransportadora,
+    to: normalizedItem.emailTransportadora,
     subject: `Solicitação de agendamento recebida ${item.protocolo}`,
     text: `${scheduleIntro}
 Protocolo: ${item.protocolo}
@@ -517,7 +630,7 @@ Token de consulta da transportadora: ${item.publicTokenFornecedor}
 Consulta do agendamento: ${links.consulta}
 
 O voucher operacional e o QR Code do motorista serão enviados somente após a aprovação do agendamento.`,
-    html: `<p>${scheduleIntro}</p><p><strong>Protocolo:</strong> ${item.protocolo}</p><p><strong>Status atual:</strong> ${item.status || "PENDENTE_APROVACAO"}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><strong>Token de consulta da transportadora:</strong> ${item.publicTokenFornecedor}</p><p><a href="${links.consulta}">Consultar agendamento</a></p><p>O voucher operacional e o QR Code do motorista serão enviados somente após a aprovação do agendamento.</p>`
+    html: `<p>${scheduleIntro}</p><p><strong>Protocolo:</strong> ${normalizedItem.protocolo}</p><p><strong>Status atual:</strong> ${item.status || "PENDENTE_APROVACAO"}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><strong>Token de consulta da transportadora:</strong> ${item.publicTokenFornecedor}</p><p><a href="${links.consulta}">Consultar agendamento</a></p><p>O voucher operacional e o QR Code do motorista serão enviados somente após a aprovação do agendamento.</p>`
   });
 
   await auditLog({
@@ -527,31 +640,32 @@ O voucher operacional e o QR Code do motorista serão enviados somente após a a
     acao: "ENVIAR_AVISO_CRIACAO",
     entidade: "AGENDAMENTO",
     entidadeId: item.id,
-    detalhes: { to: item.emailTransportadora, sent: !!sent?.sent, consulta: links.consulta },
+    detalhes: { to: normalizedItem.emailTransportadora, sent: !!sent?.sent, consulta: links.consulta },
     ip: req.ip
   });
 
-  return { ...sent, to: item.emailTransportadora, consulta: links.consulta, tokenConsulta: item.publicTokenFornecedor };
+  return { ...sent, to: normalizedItem.emailTransportadora, consulta: links.consulta, tokenConsulta: item.publicTokenFornecedor };
 }
 
 async function sendApprovalNotifications(item, req) {
-  if (!canShareVoucher(item)) {
+  const normalizedItem = normalizeScheduleItem(item);
+  if (!canShareVoucher(normalizedItem)) {
     throw new Error("Voucher e QR Code só podem ser enviados após a aprovação do agendamento.");
   }
-  const links = buildPublicLinks(req, item);
-  const pdf = await generateVoucherPdf(item, { baseUrl: getBaseUrl(req) });
+  const links = buildPublicLinks(req, normalizedItem);
+  const pdf = await generateVoucherPdf(normalizedItem, { baseUrl: getBaseUrl(req) });
   const results = [];
   const targets = [];
-  const scheduleIntro = buildScheduleIntro(item);
+  const scheduleIntro = buildScheduleIntro(normalizedItem);
 
   const commonText = [
     scheduleIntro,
-    `Data: ${formatDateBR(item?.dataAgendada)}`,
-    `Hora: ${formatHourLabel(item?.horaAgendada)}`,
-    `Protocolo: ${item.protocolo}`,
+    `Data: ${formatDateBR(normalizedItem?.dataAgendada)}`,
+    `Hora: ${formatHourLabel(normalizedItem?.horaAgendada)}`,
+    `Protocolo: ${normalizedItem.protocolo}`,
     `Consulta do fornecedor/transportadora: ${links.consulta}`,
     `Acompanhamento do motorista: ${links.motorista}`,
-    `Token do motorista: ${item.publicTokenMotorista}`,
+    `Token do motorista: ${normalizedItem.publicTokenMotorista}`,
     `Voucher PDF: ${links.voucher}`,
     `Check-in: ${links.checkin}`,
     `Check-out: ${links.checkout}`,
@@ -561,12 +675,12 @@ async function sendApprovalNotifications(item, req) {
 
   const commonHtml = `
     <p>${scheduleIntro}</p>
-    <p><strong>Protocolo:</strong> ${item.protocolo}</p>
-    <p><strong>Data:</strong> ${formatDateBR(item?.dataAgendada)}</p>
-    <p><strong>Hora:</strong> ${formatHourLabel(item?.horaAgendada)}</p>
+    <p><strong>Protocolo:</strong> ${normalizedItem.protocolo}</p>
+    <p><strong>Data:</strong> ${formatDateBR(normalizedItem?.dataAgendada)}</p>
+    <p><strong>Hora:</strong> ${formatHourLabel(normalizedItem?.horaAgendada)}</p>
     <p><a href="${links.consulta}">Consulta da transportadora/fornecedor</a></p>
     <p><a href="${links.motorista}">Acompanhamento do motorista</a></p>
-    <p><strong>Token do motorista:</strong> ${item.publicTokenMotorista}</p>
+    <p><strong>Token do motorista:</strong> ${normalizedItem.publicTokenMotorista}</p>
     <p><a href="${links.voucher}">Voucher em PDF</a></p>
     <p><a href="${links.checkin}">Check-in</a></p>
     <p><a href="${links.checkout}">Check-out</a></p>
@@ -575,31 +689,31 @@ async function sendApprovalNotifications(item, req) {
 
   if (item.emailMotorista) {
     const sent = await sendMail({
-      to: item.emailMotorista,
-      subject: `Voucher do agendamento ${item.protocolo}`,
+      to: normalizedItem.emailMotorista,
+      subject: `Voucher do agendamento ${normalizedItem.protocolo}`,
       text: commonText,
       html: `<p>Olá, motorista.</p>${commonHtml}`,
       attachments: [{ filename: `voucher-${item.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
     });
-    results.push({ tipo: "motorista", to: item.emailMotorista, ...sent });
+    results.push({ tipo: "motorista", to: normalizedItem.emailMotorista, ...sent });
     if (sent.sent) targets.push("motorista");
   }
 
-  if (item.emailTransportadora) {
+  if (normalizedItem.emailTransportadora) {
     const sent = await sendMail({
-      to: item.emailTransportadora,
-      subject: `Confirmação do agendamento ${item.protocolo}`,
+      to: normalizedItem.emailTransportadora,
+      subject: `Confirmação do agendamento ${normalizedItem.protocolo}`,
       text: commonText,
       html: `<p>Olá, transportadora/fornecedor.</p>${commonHtml}`,
       attachments: [{ filename: `voucher-${item.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
     });
-    results.push({ tipo: "transportadora/fornecedor", to: item.emailTransportadora, ...sent });
+    results.push({ tipo: "transportadora/fornecedor", to: normalizedItem.emailTransportadora, ...sent });
     if (sent.sent) targets.push("transportadora/fornecedor");
   }
 
-  if (item.telefoneMotorista) {
-    const sentWhats = await sendWhatsApp({ to: item.telefoneMotorista, message: commonText });
-    results.push({ tipo: "whatsapp-motorista", to: item.telefoneMotorista, ...sentWhats });
+  if (normalizedItem.telefoneMotorista) {
+    const sentWhats = await sendWhatsApp({ to: normalizedItem.telefoneMotorista, message: commonText });
+    results.push({ tipo: "whatsapp-motorista", to: normalizedItem.telefoneMotorista, ...sentWhats });
   }
 
   if (targets.length) {
@@ -1021,7 +1135,20 @@ router.post("/:id(\\d+)/aprovar", requirePermission("agendamentos.approve"), asy
     await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada, ignoreAgendamentoId: found.id });
 
     const updated = await transition(req.params.id, "APROVADO", data, req);
-    const item = await full(updated.id);
+    let item = await full(updated.id);
+    const resolvedSchedule = resolveScheduleValues(item, merged);
+    const missingSchedulePatch = {};
+    if (!String(item?.dataAgendada || '').trim() && resolvedSchedule.dataAgendada) missingSchedulePatch.dataAgendada = resolvedSchedule.dataAgendada;
+    if (!String(item?.horaAgendada || '').trim() && resolvedSchedule.horaAgendada) missingSchedulePatch.horaAgendada = resolvedSchedule.horaAgendada;
+    if (Object.keys(missingSchedulePatch).length) {
+      try {
+        await prisma.agendamento.update({ where: { id: Number(updated.id) }, data: missingSchedulePatch });
+      } catch {
+        updateAgendamentoFile(updated.id, missingSchedulePatch);
+      }
+      item = await full(updated.id);
+    }
+    item = normalizeScheduleItem(item, merged);
     await sendFinanceAwarenessIfNeeded({ agendamento: item, payload: { ...merged, confirmarCienciaVencimento: req.body?.confirmarCienciaVencimento }, actor: req.user });
     const notificacoes = await sendApprovalNotifications(item, req);
     res.json(await enrichResponseItem({
@@ -1112,11 +1239,18 @@ router.post("/:id(\\d+)/finalizar", requirePermission("agendamentos.finish"), as
       return res.json({ ...found, message: "Agendamento já estava finalizado." });
     }
 
-    const updated = await transition(req.params.id, "FINALIZADO", { fimDescargaEm: new Date() }, req);
-    const item = await full(updated.id);
-    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "FINALIZAR_DESCARGA", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: { origem: 'painel-interno' }, ip: req.ip });
+    const recebimento = normalizeFinalizacaoRecebimento(req.body || {});
+    const patch = {
+      fimDescargaEm: new Date(),
+      observacoes: mergeOperationalObservations(found.observacoes, recebimento)
+    };
+
+    const updated = await transition(req.params.id, "FINALIZADO", patch, req);
+    const item = normalizeScheduleItem(await full(updated.id), found);
+    const ocorrenciaRecebimento = await notifyControladoriaAvaria({ agendamento: item, payload: recebimento, req, actor: req.user });
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "FINALIZAR_DESCARGA", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: { origem: 'painel-interno', recebimento, ocorrenciaRecebimento }, ip: req.ip });
     const avaliacao = await dispatchDriverFeedbackSurvey(item, req, req.user);
-    res.json({ ...item, avaliacao });
+    res.json({ ...item, avaliacao, recebimento, ocorrenciaRecebimento });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
