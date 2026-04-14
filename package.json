@@ -5,29 +5,20 @@
   "scripts": {
     "start": "node backend/src/server.js",
     "dev": "node backend/src/server.js",
-    "prisma:generate": "node ./scripts/prisma-generate-safe.mjs",
-    "prisma:generate:force": "node ./node_modules/prisma/build/index.js generate --schema=backend/prisma/schema.prisma",
-    "prisma:env:check": "node ./scripts/check-prisma-env.mjs",
-    "prisma:push": "node ./node_modules/prisma/build/index.js db push --schema=backend/prisma/schema.prisma",
-    "prisma:seed": "node backend/prisma/seed.js",
-    "build": "npm run prisma:generate:safe",
-    "postinstall": "npm run prisma:generate:safe",
-    "prisma:generate:safe": "node ./scripts/prisma-generate-safe.mjs backend/prisma/schema.prisma",
-    "prisma:env:check": "node ./scripts/check-prisma-env.mjs"
+    "build": "node -e \"console.log('Build sem Prisma')\"",
+    "postinstall": "node -e \"console.log('Postinstall sem Prisma')\""
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "1.4.5-lts.2",
+    "mysql2": "^3.11.3",
     "nodemailer": "^6.9.15",
     "pdfkit": "^0.15.0",
-    "prisma": "^5.22.0",
     "qrcode": "^1.5.4",
-    "mysql2": "^3.11.3",
     "zod": "^3.23.8"
   }
 }

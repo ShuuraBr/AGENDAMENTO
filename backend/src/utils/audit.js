@@ -1,5 +1,5 @@
 import { readAuditLogs, writeAuditLogs } from "./file-store.js";
-import { executeMysql, isDirectMysqlEnabled } from "./mysql-direct.js";
+import { getPrismaClient, isPrismaDisabled } from "./prisma.js";
 import { logOnce } from "./log-once.js";
 
 function normalizePayload({ usuarioId, usuarioNome, perfil, acao, entidade, entidadeId, detalhes, ip }) {
@@ -19,12 +19,22 @@ function normalizePayload({ usuarioId, usuarioNome, perfil, acao, entidade, enti
 export async function auditLog({ usuarioId, usuarioNome, perfil, acao, entidade, entidadeId, detalhes, ip }) {
   const entry = normalizePayload({ usuarioId, usuarioNome, perfil, acao, entidade, entidadeId, detalhes, ip });
 
-  if (isDirectMysqlEnabled()) {
+  if (!isPrismaDisabled()) {
     try {
-      await executeMysql(
-        'INSERT INTO `LogAuditoria` (`usuarioId`, `perfil`, `acao`, `entidade`, `entidadeId`, `detalhes`, `ip`, `createdAt`) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
-        [entry.usuarioId, entry.perfil, entry.acao, entry.entidade, entry.entidadeId, entry.detalhes, entry.ip]
-      );
+      const client = await getPrismaClient();
+      await client.logAuditoria.create({
+        data: {
+          usuarioId: entry.usuarioId,
+          usuarioNome: entry.usuarioNome,
+          perfil: entry.perfil,
+          acao: entry.acao,
+          entidade: entry.entidade,
+          entidadeId: entry.entidadeId,
+          detalhes: entry.detalhes,
+          ip: entry.ip,
+          createdAt: entry.createdAt
+        }
+      });
       return;
     } catch (err) {
       logOnce('audit-direct-mysql', 'Auditoria operando em arquivo:', err?.message || err);
