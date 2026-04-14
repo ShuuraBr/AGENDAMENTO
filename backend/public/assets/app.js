@@ -516,11 +516,11 @@
     const form = byId("checkinForm");
     const tokenInput = form?.querySelector('[name="token"]');
     const modoInput = form?.querySelector('[name="modo"]');
-    if (tokenInput) tokenInput.value = token;
+    if (tokenInput) tokenInput.value = rawToken || token;
     if (modoInput) modoInput.value = view === "checkout" ? "checkout" : "checkin";
     showView("checkin");
     if (autoValidate && token) {
-      validateCheckin(token).catch(() => {});
+      validateCheckin(rawToken || token).catch(() => {});
     }
     return true;
   }
@@ -856,6 +856,91 @@
     });
   }
 
+  async function showCheckoutCompletionForm({ title = 'Finalizar descarga', contextLabel = '' } = {}) {
+    const host = ensureModalHost();
+    const titleEl = byId('appModalTitle');
+    const bodyEl = byId('appModalBody');
+    const confirmBtn = byId('appModalConfirm');
+    const cancelBtn = byId('appModalCancel');
+    const card = host?.querySelector('.app-modal-card');
+    if (!titleEl || !bodyEl || !confirmBtn || !cancelBtn || !card) return null;
+    titleEl.textContent = title;
+    bodyEl.classList.add('app-modal-body-html');
+    bodyEl.innerHTML = `
+      <form id="checkoutCompletionForm" class="form-grid">
+        ${contextLabel ? `<div class="warning-box" style="margin:0 0 12px 0">${escapeHtml(contextLabel)}</div>` : ''}
+        <label>Como foi a descarga?
+          <select name="comoFoiDescarga">
+            <option value="EXCELENTE">Excelente</option>
+            <option value="BOA" selected>Boa</option>
+            <option value="REGULAR">Regular</option>
+            <option value="RUIM">Ruim</option>
+          </select>
+        </label>
+        <label>Houve avaria?
+          <select name="houveAvaria">
+            <option value="NAO" selected>Não</option>
+            <option value="SIM">Sim</option>
+          </select>
+        </label>
+        <div data-avaria-block class="hidden" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;grid-column:1/-1">
+          <label>Item avariado<input name="itemAvaria" placeholder="Informe o item" /></label>
+          <label>Quantidade avariada<input name="quantidadeAvaria" type="number" min="1" step="1" placeholder="0" /></label>
+          <label style="grid-column:1/-1">Observação da avaria<textarea name="observacaoAvaria" placeholder="Descreva a avaria"></textarea></label>
+        </div>
+        <label style="grid-column:1/-1">Observação do assistente<textarea name="observacaoAssistente" placeholder="Campo opcional"></textarea></label>
+        <p data-checkout-form-msg class="msg" style="grid-column:1/-1;margin:0"></p>
+      </form>
+    `;
+    confirmBtn.textContent = 'Concluir';
+    cancelBtn.textContent = 'Cancelar';
+    cancelBtn.classList.remove('hidden');
+    card.classList.toggle('app-modal-card-wide', true);
+    host.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+
+    return new Promise((resolve) => {
+      const form = bodyEl.querySelector('#checkoutCompletionForm');
+      const avariaSelect = form?.querySelector('[name="houveAvaria"]');
+      const avariaBlock = form?.querySelector('[data-avaria-block]');
+      const msgEl = form?.querySelector('[data-checkout-form-msg]');
+      const toggleAvaria = () => {
+        const show = String(avariaSelect?.value || 'NAO').toUpperCase() === 'SIM';
+        avariaBlock?.classList.toggle('hidden', !show);
+      };
+      toggleAvaria();
+      if (avariaSelect) avariaSelect.onchange = toggleAvaria;
+
+      const cleanup = (result) => {
+        host.classList.add('hidden');
+        document.body.classList.remove('modal-open');
+        confirmBtn.onclick = null;
+        cancelBtn.onclick = null;
+        if (avariaSelect) avariaSelect.onchange = null;
+        card.classList.remove('app-modal-card-wide');
+        host.querySelectorAll('[data-modal-close]').forEach((el) => { el.onclick = null; });
+        resolve(result);
+      };
+
+      confirmBtn.onclick = () => {
+        const payload = Object.fromEntries(new FormData(form).entries());
+        payload.houveAvaria = String(payload.houveAvaria || 'NAO').toUpperCase() === 'SIM';
+        payload.quantidadeAvaria = Number(payload.quantidadeAvaria || 0) || 0;
+        payload.itemAvaria = String(payload.itemAvaria || '').trim();
+        payload.observacaoAvaria = String(payload.observacaoAvaria || '').trim();
+        payload.observacaoAssistente = String(payload.observacaoAssistente || '').trim();
+        if (payload.houveAvaria && (!payload.itemAvaria || !payload.observacaoAvaria || !(payload.quantidadeAvaria > 0))) {
+          if (msgEl) msgEl.textContent = 'Preencha item, quantidade e observação da avaria para concluir.';
+          return;
+        }
+        if (msgEl) msgEl.textContent = '';
+        cleanup(payload);
+      };
+      cancelBtn.onclick = () => cleanup(null);
+      host.querySelectorAll('[data-modal-close]').forEach((el) => { el.onclick = () => cleanup(null); });
+    });
+  }
+
   function tableFromObjects(items) {
     if (!items?.length) return "<p>Nenhum registro.</p>";
     const cols = Object.keys(items[0]).filter((k) => typeof items[0][k] !== "object");
@@ -1002,9 +1087,12 @@
             const codes = await state.barcodeDetector.detect(video);
             if (codes[0]?.rawValue) {
               const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
-              const normalizedToken = normalizeOperationToken(codes[0].rawValue);
-              if (tokenInput) tokenInput.value = normalizedToken;
-              await validateCheckin(normalizedToken);
+              const rawValue = String(codes[0].rawValue || '');
+              const parsed = parseOperationReference(rawValue);
+              if (tokenInput) tokenInput.value = rawValue || parsed.token;
+              const modoInput = byId('checkinForm')?.querySelector('[name="modo"]');
+              if (modoInput) modoInput.value = /[?&]view=checkout/i.test(rawValue) || /^OUT-/i.test(parsed.token) ? 'checkout' : 'checkin';
+              await validateCheckin(rawValue || parsed.token);
               state.scanning = false;
               return;
             }
@@ -2151,16 +2239,26 @@
 
   async function validateCheckin(token) {
     try {
-      const reference = parseOperationReference(token);
+      const rawTokenValue = String(token || '').trim();
+      const reference = parseOperationReference(rawTokenValue);
       const currentParams = new URLSearchParams(window.location.search || '');
       const normalizedToken = reference.token;
       const lookupId = reference.id || String(currentParams.get('id') || '').replace(/\D/g, '').trim();
       const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
-      if (tokenInput) tokenInput.value = normalizedToken;
+      if (tokenInput) tokenInput.value = rawTokenValue || normalizedToken;
       if (!normalizedToken) throw new Error('Informe o token da operação.');
       const modo = byId("checkinForm")?.querySelector("[name=modo]")?.value || "checkin";
       const endpoint = modo === "checkout" ? `/api/public/checkout/${encodeURIComponent(normalizedToken)}` : `/api/public/checkin/${encodeURIComponent(normalizedToken)}`;
-      const requestBody = { token: normalizedToken, lookupId, rawToken: String(token || '') };
+      let extraPayload = {};
+      if (modo === 'checkout') {
+        const formPayload = await showCheckoutCompletionForm({
+          title: 'Finalizar operação e registrar check-out',
+          contextLabel: lookupId ? `Agendamento ID ${lookupId}` : `Token ${normalizedToken}`
+        });
+        if (!formPayload) return;
+        extraPayload = formPayload;
+      }
+      const requestBody = { token: normalizedToken, lookupId, rawToken: rawTokenValue || normalizedToken, ...extraPayload };
       let data;
       try {
         data = await api(endpoint, { method: "POST", body: JSON.stringify(requestBody) });
@@ -2398,7 +2496,11 @@ Deseja autorizar manualmente este check-in?`);
     }, "Agendamento reagendado."));
     byId("btnCancelar")?.addEventListener("click", async () => handleOp(() => postStatus("cancelar", { motivo: "Cancelado via painel" }), "Agendamento cancelado."));
     byId("btnIniciar")?.addEventListener("click", async () => handleOp(() => postStatus("iniciar"), "Descarga iniciada."));
-    byId("btnFinalizar")?.addEventListener("click", async () => handleOp(() => postStatus("finalizar"), "Agendamento finalizado."));
+    byId("btnFinalizar")?.addEventListener("click", async () => handleOp(async () => {
+      const payload = await showCheckoutCompletionForm({ title: 'Finalizar descarga', contextLabel: `Agendamento ID ${currentId()}` });
+      if (!payload) return false;
+      return postStatus("finalizar", payload);
+    }, "Agendamento finalizado."));
     byId("btnNoShow")?.addEventListener("click", async () => handleOp(() => postStatus("no-show"), "Agendamento marcado como no-show."));
     byId("btnVoucher")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/voucher`, "_blank"); } catch (err) { alert(err.message); } });
     byId("btnQr")?.addEventListener("click", () => { try { window.open(`/api/agendamentos/${currentId()}/qrcode.svg`, "_blank"); } catch (err) { alert(err.message); } });
@@ -2483,7 +2585,7 @@ Deseja autorizar manualmente este check-in?`);
 
     byId("checkinForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await validateCheckin(normalizeOperationToken(new FormData(e.target).get("token")));
+      await validateCheckin(String(new FormData(e.target).get("token") || '').trim());
     });
 
     byId("avaliacaoForm")?.addEventListener("submit", async (e) => {
