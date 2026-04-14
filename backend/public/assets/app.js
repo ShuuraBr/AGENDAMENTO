@@ -468,39 +468,46 @@
     }).join("");
   }
 
+  function sanitizeOperationReference(value) {
+    return String(value || '')
+      .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u2060\uFEFF\uFFFE\uFFFF]+/g, '')
+      .trim();
+  }
+
   function parseOperationReference(rawValue) {
-    const raw = String(rawValue || "").replace(/[​-‍﻿]/g, '').trim();
-    if (!raw) return { token: "", id: "" };
+    const raw = sanitizeOperationReference(rawValue);
+    if (!raw) return { token: "", id: "", raw: "" };
     const decoded = (() => {
-      try { return decodeURIComponent(raw); } catch { return raw; }
+      try { return sanitizeOperationReference(decodeURIComponent(raw)); } catch { return raw; }
     })();
     let token = "";
     let id = "";
     try {
       const url = decoded.startsWith("http://") || decoded.startsWith("https://") ? new URL(decoded) : new URL(decoded, window.location.origin);
-      token = String(url.searchParams.get("token") || "").trim();
-      id = String(url.searchParams.get("id") || "").trim();
+      token = sanitizeOperationReference(url.searchParams.get("token") || "");
+      id = sanitizeOperationReference(url.searchParams.get("id") || "");
       if (!token) {
         const pathToken = url.pathname.match(/\/(?:checkin|checkout)\/([^/?#]+)/i);
-        if (pathToken?.[1]) token = String(pathToken[1]).trim();
+        if (pathToken?.[1]) token = sanitizeOperationReference(pathToken[1]);
       }
     } catch {}
     if (!token) {
       const match = decoded.match(/(?:^|[?&])token=([^&#]+)/i);
       if (match?.[1]) {
-        try { token = decodeURIComponent(match[1]).trim(); } catch { token = String(match[1]).trim(); }
+        try { token = sanitizeOperationReference(decodeURIComponent(match[1])); } catch { token = sanitizeOperationReference(match[1]); }
       }
     }
     if (!id) {
       const idMatch = decoded.match(/(?:^|[?&])id=(\d+)/i);
-      if (idMatch?.[1]) id = String(idMatch[1]).trim();
+      if (idMatch?.[1]) id = sanitizeOperationReference(idMatch[1]);
     }
     if (!token) {
-      const tokenMatch = decoded.match(/(?:CHK|OUT|FOR|MOT)-[A-Z0-9]+-[A-Z0-9]+/i);
-      if (tokenMatch?.[0]) token = String(tokenMatch[0]).trim().toUpperCase();
+      const compact = decoded.replace(/[^A-Za-z0-9-]+/g, '-');
+      const tokenMatch = compact.match(/(?:CHK|OUT|FOR|MOT)-[A-Z0-9]+-[A-Z0-9]+/i);
+      if (tokenMatch?.[0]) token = sanitizeOperationReference(tokenMatch[0]).toUpperCase();
     }
-    token = String(token || decoded).replace(/[\s\n\r"'`]+/g, "").trim();
-    return { token, id: String(id || '').replace(/\D/g, '').trim() };
+    token = sanitizeOperationReference(token || decoded).replace(/[^A-Za-z0-9-]/g, '').trim();
+    return { token, id: String(id || '').replace(/\D/g, '').trim(), raw: decoded };
   }
 
   function normalizeOperationToken(rawValue) {
@@ -512,15 +519,15 @@
     const view = params.get("view");
     const rawToken = params.get("token") || "";
     if (!["checkin", "checkout"].includes(view) || !rawToken) return false;
-    const token = normalizeOperationToken(rawToken);
+    const parsed = parseOperationReference(rawToken);
     const form = byId("checkinForm");
     const tokenInput = form?.querySelector('[name="token"]');
     const modoInput = form?.querySelector('[name="modo"]');
-    if (tokenInput) tokenInput.value = token;
+    if (tokenInput) tokenInput.value = rawToken;
     if (modoInput) modoInput.value = view === "checkout" ? "checkout" : "checkin";
     showView("checkin");
-    if (autoValidate && token) {
-      validateCheckin(token).catch(() => {});
+    if (autoValidate && parsed.token) {
+      validateCheckin(rawToken).catch(() => {});
     }
     return true;
   }
@@ -1002,9 +1009,13 @@
             const codes = await state.barcodeDetector.detect(video);
             if (codes[0]?.rawValue) {
               const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
-              const normalizedToken = normalizeOperationToken(codes[0].rawValue);
-              if (tokenInput) tokenInput.value = normalizedToken;
-              await validateCheckin(normalizedToken);
+              const rawReference = String(codes[0].rawValue || '');
+              const parsedReference = parseOperationReference(rawReference);
+              const modoInput = byId('checkinForm')?.querySelector('[name="modo"]');
+              if (tokenInput) tokenInput.value = rawReference;
+              if (modoInput && /[?&]view=checkout\b/i.test(rawReference)) modoInput.value = 'checkout';
+              else if (modoInput && /[?&]view=checkin\b/i.test(rawReference)) modoInput.value = 'checkin';
+              await validateCheckin(parsedReference.raw || rawReference);
               state.scanning = false;
               return;
             }
@@ -2154,13 +2165,14 @@
       const reference = parseOperationReference(token);
       const currentParams = new URLSearchParams(window.location.search || '');
       const normalizedToken = reference.token;
+      const rawReference = reference.raw || String(token || '');
       const lookupId = reference.id || String(currentParams.get('id') || '').replace(/\D/g, '').trim();
       const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
-      if (tokenInput) tokenInput.value = normalizedToken;
+      if (tokenInput) tokenInput.value = rawReference || normalizedToken;
       if (!normalizedToken) throw new Error('Informe o token da operação.');
       const modo = byId("checkinForm")?.querySelector("[name=modo]")?.value || "checkin";
       const endpoint = modo === "checkout" ? `/api/public/checkout/${encodeURIComponent(normalizedToken)}` : `/api/public/checkin/${encodeURIComponent(normalizedToken)}`;
-      const requestBody = { token: normalizedToken, lookupId, rawToken: String(token || '') };
+      const requestBody = { token: normalizedToken, lookupId, rawToken: rawReference };
       let data;
       try {
         data = await api(endpoint, { method: "POST", body: JSON.stringify(requestBody) });
@@ -2483,7 +2495,7 @@ Deseja autorizar manualmente este check-in?`);
 
     byId("checkinForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await validateCheckin(normalizeOperationToken(new FormData(e.target).get("token")));
+      await validateCheckin(new FormData(e.target).get("token"));
     });
 
     byId("avaliacaoForm")?.addEventListener("submit", async (e) => {
