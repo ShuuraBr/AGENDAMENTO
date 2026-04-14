@@ -15,6 +15,7 @@ const monitorStateFile = path.join(backendRoot, 'data', 'financeiro-monitorament
 const TABLE_NAME = 'RelatorioTerceirizado';
 const NEAR_DUE_DAYS = 5;
 const AWARENESS_GAP_DAYS = 3;
+const MONTHLY_DIGEST_AUTOMATIC_DAY_LIMIT = Math.max(1, Number(process.env.MONTHLY_DIGEST_AUTOMATIC_DAY_LIMIT || 3));
 
 function ensureDir(filePath) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -189,7 +190,7 @@ function buildMonthlyDigestHtmlReport({ rows = [], monthKey = '', triggeredBy = 
       <div style="max-width:1180px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;overflow:hidden">
         <div style="padding:24px 28px;background:linear-gradient(135deg,#0f172a 0%,#1e293b 65%,#334155 100%);color:#ffffff">
           <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85;margin-bottom:8px">Relatório visual financeiro</div>
-          <div style="font-size:28px;font-weight:700;line-height:1.2">Resumo mensal de NFs com vencimento próximo</div>
+          <div style="font-size:28px;font-weight:700;line-height:1.2">Resumo mensal de NFs com vencimento no mês atual</div>
           <div style="margin-top:10px;font-size:14px;opacity:.9">Mês de referência: ${escapeHtml(monthKey)} · Gerado em ${escapeHtml(generatedAtBr)} · Disparo: ${escapeHtml(normalizeText(triggeredBy) || 'sistema')}</div>
         </div>
 
@@ -218,7 +219,7 @@ function buildMonthlyDigestHtmlReport({ rows = [], monthKey = '', triggeredBy = 
 
         <div style="padding:0 28px 22px">
           <div style="display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:8px 14px;font-size:12px;color:#475569">
-            Legenda: <span style="color:#991b1b;font-weight:700">Urgente</span> até 1 dia · <span style="color:#92400e;font-weight:700">Atenção</span> entre 2 e 3 dias · <span style="color:#1d4ed8;font-weight:700">Monitorar</span> acima de 3 dias
+            Legenda: a classificação visual continua destacando urgência, atenção e monitoramento dentro do mês atual
           </div>
         </div>
 
@@ -501,9 +502,14 @@ export async function sendMonthlyNearDueDigestIfNeeded({ triggeredBy = '', force
 
   const now = new Date();
   const monthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  const currentDay = now.getUTCDate();
+  if (!forceSend && currentDay > MONTHLY_DIGEST_AUTOMATIC_DAY_LIMIT) {
+    return { sent: false, reason: `Resumo mensal automático disponível apenas no início do mês (até o dia ${MONTHLY_DIGEST_AUTOMATIC_DAY_LIMIT}).` };
+  }
+
   const rows = await getRelatorioRowsSnapshot();
-  const nearDue = rows
-    .filter((row) => row.alertaVencimentoProximo && String(row.dataPrimeiroVencimento || '').startsWith(monthKey))
+  const dueThisMonth = rows
+    .filter((row) => String(row.dataPrimeiroVencimento || '').startsWith(monthKey))
     .sort((a, b) => {
       const dueA = String(a.dataPrimeiroVencimento || '9999-99-99');
       const dueB = String(b.dataPrimeiroVencimento || '9999-99-99');
@@ -513,9 +519,9 @@ export async function sendMonthlyNearDueDigestIfNeeded({ triggeredBy = '', force
       return normalizeDigits(a.numeroNf).localeCompare(normalizeDigits(b.numeroNf));
     });
 
-  if (!nearDue.length) return { sent: false, reason: 'Nenhuma NF com vencimento próximo no mês atual.' };
+  if (!dueThisMonth.length) return { sent: false, reason: 'Nenhuma NF com vencimento no mês atual.' };
 
-  const signature = crypto.createHash('sha256').update(JSON.stringify(nearDue.map((item) => ({ fornecedor: item.fornecedor, numeroNf: item.numeroNf, serie: item.serie, dataPrimeiroVencimento: item.dataPrimeiroVencimento, agendamentoId: item.agendamentoId })))).digest('hex');
+  const signature = crypto.createHash('sha256').update(JSON.stringify(dueThisMonth.map((item) => ({ fornecedor: item.fornecedor, numeroNf: item.numeroNf, serie: item.serie, dataPrimeiroVencimento: item.dataPrimeiroVencimento, agendamentoId: item.agendamentoId })))).digest('hex');
   const state = readMonitorState();
   const digestState = state.monthlyDigest || {};
 
@@ -523,17 +529,17 @@ export async function sendMonthlyNearDueDigestIfNeeded({ triggeredBy = '', force
     return { sent: false, reason: 'Resumo mensal já enviado para este cenário.' };
   }
 
-  const qtdFornecedores = new Set(nearDue.map((item) => normalizeText(item.fornecedor).toLowerCase()).filter(Boolean)).size;
-  const subject = `Resumo financeiro mensal: NFs com vencimento próximo (${monthKey})`;
+  const qtdFornecedores = new Set(dueThisMonth.map((item) => normalizeText(item.fornecedor).toLowerCase()).filter(Boolean)).size;
+  const subject = `Resumo financeiro mensal: NFs com vencimento no mês atual (${monthKey})`;
   const text = [
-    'Resumo mensal de notas com 1º vencimento próximo.',
+    'Resumo mensal de notas com 1º vencimento no mês atual.',
     '',
     `Mês de referência: ${monthKey}`,
     `Disparo: ${normalizeText(triggeredBy) || 'sistema'}`,
-    `Total de NFs: ${nearDue.length}`,
+    `Total de NFs: ${dueThisMonth.length}`,
     `Total de fornecedores: ${qtdFornecedores}`,
     '',
-    ...nearDue.map((item) => [
+    ...dueThisMonth.map((item) => [
       `Fornecedor: ${item.fornecedor || '-'}`,
       `NF: ${item.numeroNf || '-'}${item.serie ? ` / Série ${item.serie}` : ''}`,
       `Status NF: ${item.statusRelatorio || '-'}`,
@@ -546,7 +552,7 @@ export async function sendMonthlyNearDueDigestIfNeeded({ triggeredBy = '', force
     'O detalhamento visual também segue no corpo do e-mail.'
   ].join('\n');
   const html = buildMonthlyDigestHtmlReport({
-    rows: nearDue,
+    rows: dueThisMonth,
     monthKey,
     triggeredBy,
     qtdFornecedores
@@ -564,7 +570,7 @@ export async function sendMonthlyNearDueDigestIfNeeded({ triggeredBy = '', force
     });
   }
 
-  return { ...sent, totalNotas: nearDue.length, totalFornecedores: qtdFornecedores, formato: 'html_visual' };
+  return { ...sent, totalNotas: dueThisMonth.length, totalFornecedores: qtdFornecedores, formato: 'html_visual' };
 }
 
 export async function searchByNumeroNf(numeroNf = '') {

@@ -68,22 +68,45 @@ function getBaseUrl(req) {
   return process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : `${req.protocol}://${req.get("host")}`;
 }
 
-function normalizePublicOperationToken(rawValue = "") {
-  const raw = String(rawValue || "").trim();
-  if (!raw) return "";
+function parsePublicOperationReference(rawValue = "") {
+  const raw = String(rawValue || "").replace(/[​-‍﻿]/g, '').trim();
+  if (!raw) return { token: "", id: "" };
   const decoded = (() => {
     try { return decodeURIComponent(raw); } catch { return raw; }
   })();
+  let token = "";
+  let id = "";
   try {
     const url = decoded.startsWith("http://") || decoded.startsWith("https://")
       ? new URL(decoded)
       : new URL(decoded, "http://localhost");
-    const token = url.searchParams.get("token");
-    if (token) return String(token).trim();
+    token = String(url.searchParams.get("token") || "").trim();
+    id = String(url.searchParams.get("id") || "").trim();
+    if (!token) {
+      const pathToken = url.pathname.match(/\/(?:checkin|checkout|consulta|fornecedor|motorista|voucher)\/([^/?#]+)/i);
+      if (pathToken?.[1]) token = String(pathToken[1]).trim();
+    }
   } catch {}
-  const match = decoded.match(/(?:CHK|OUT|FOR|MOT)-[A-Z0-9]+-[A-Z0-9]+/i);
-  if (match?.[0]) return String(match[0]).trim().toUpperCase();
-  return decoded.replace(/[\s\n\r]+/g, "").trim();
+  if (!token) {
+    const queryToken = decoded.match(/(?:^|[?&])token=([^&#]+)/i);
+    if (queryToken?.[1]) {
+      try { token = decodeURIComponent(queryToken[1]).trim(); } catch { token = String(queryToken[1]).trim(); }
+    }
+  }
+  if (!id) {
+    const idMatch = decoded.match(/(?:^|[?&])id=(\d+)/i);
+    if (idMatch?.[1]) id = String(idMatch[1]).trim();
+  }
+  if (!token) {
+    const match = decoded.match(/(?:CHK|OUT|FOR|MOT)-[A-Z0-9]+-[A-Z0-9]+/i);
+    if (match?.[0]) token = String(match[0]).trim().toUpperCase();
+  }
+  token = String(token || decoded).replace(/[\s\n\r"'`]+/g, "").trim();
+  return { token, id: String(id || '').replace(/\D/g, '').trim() };
+}
+
+function normalizePublicOperationToken(rawValue = "") {
+  return parsePublicOperationReference(rawValue).token;
 }
 
 function parseEmailList(...values) {
@@ -203,15 +226,50 @@ async function getOrCreateDocaPadrao() {
   }
 }
 
+function buildTokenCandidates(...values) {
+  const items = values
+    .flatMap((value) => {
+      const parsed = parsePublicOperationReference(value);
+      return [parsed.token, String(value || '')];
+    })
+    .map((value) => String(value || '').replace(/[​-‍﻿\s"'`]+/g, '').trim())
+    .filter(Boolean);
+  return [...new Set(items.flatMap((value) => [value, value.toUpperCase(), value.toLowerCase()]))];
+}
+
 async function resolveByToken(token) {
-  const normalizedToken = normalizePublicOperationToken(token);
+  const candidates = buildTokenCandidates(token);
+  if (!candidates.length) return null;
   try {
     return await prisma.agendamento.findFirst({
-      where: { OR: [{ publicTokenFornecedor: normalizedToken }, { publicTokenMotorista: normalizedToken }, { checkinToken: normalizedToken }, { checkoutToken: normalizedToken }] },
+      where: {
+        OR: candidates.flatMap((candidate) => ([
+          { publicTokenFornecedor: candidate },
+          { publicTokenMotorista: candidate },
+          { checkinToken: candidate },
+          { checkoutToken: candidate }
+        ]))
+      },
       include: { notasFiscais: true, doca: true, janela: true, documentos: true }
     });
   } catch {
-    return findAgendamentoByTokenFile(normalizedToken);
+    for (const candidate of candidates) {
+      const found = findAgendamentoByTokenFile(candidate);
+      if (found) return found;
+    }
+    return null;
+  }
+}
+
+async function resolveOperationItem(rawToken, lookupId = "") {
+  const foundByToken = await resolveByToken(rawToken);
+  if (foundByToken) return foundByToken;
+  const numericId = Number(String(lookupId || '').replace(/\D/g, '').trim());
+  if (!Number.isFinite(numericId) || numericId <= 0) return null;
+  try {
+    return await prisma.agendamento.findUnique({ where: { id: numericId }, include: { notasFiscais: true, doca: true, janela: true, documentos: true } });
+  } catch {
+    return readAgendamentos().find((item) => Number(item?.id || 0) === numericId) || null;
   }
 }
 
@@ -619,7 +677,9 @@ router.post("/avaliacao/:token", async (req, res) => {
 
 router.post("/checkin/:token", async (req, res) => {
   const actor = getOptionalActor(req);
-  const item = await resolveByToken(req.params.token);
+  const operationRef = parsePublicOperationReference(req.body?.rawToken || req.body?.token || req.query?.token || req.params.token);
+  const lookupId = String(req.body?.lookupId || req.query?.id || operationRef.id || '').trim();
+  const item = await resolveOperationItem(operationRef.token || req.params.token, lookupId);
   if (!item) return res.status(404).json({ message: "Token de check-in inválido." });
   if (!["APROVADO", "CHEGOU"].includes(item.status)) return res.status(400).json({ message: "Check-in só permitido para agendamentos aprovados." });
 
@@ -706,7 +766,9 @@ router.post("/checkin/:token", async (req, res) => {
 
 router.post('/checkout/:token', async (req, res) => {
   const actor = getOptionalActor(req);
-  const item = await resolveByToken(req.params.token);
+  const operationRef = parsePublicOperationReference(req.body?.rawToken || req.body?.token || req.query?.token || req.params.token);
+  const lookupId = String(req.body?.lookupId || req.query?.id || operationRef.id || '').trim();
+  const item = await resolveOperationItem(operationRef.token || req.params.token, lookupId);
   if (!item) return res.status(404).json({ message: 'Token de check-out inválido.' });
   if (!['CHEGOU', 'EM_DESCARGA'].includes(item.status)) return res.status(400).json({ message: 'Check-out só permitido após a chegada.' });
 

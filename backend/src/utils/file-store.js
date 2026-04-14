@@ -129,7 +129,15 @@ export function findAgendamentoFile(id) {
 }
 
 export function findAgendamentoByTokenFile(token) {
-  return readAgendamentos().find((item) => [item.publicTokenFornecedor, item.publicTokenMotorista, item.checkinToken, item.checkoutToken].includes(token)) || null;
+  const normalizedToken = String(token || '').replace(/[​-‍﻿\s]+/g, '').trim();
+  if (!normalizedToken) return null;
+  const candidates = [...new Set([normalizedToken, normalizedToken.toUpperCase(), normalizedToken.toLowerCase()])];
+  return readAgendamentos().find((item) => {
+    const itemTokens = [item.publicTokenFornecedor, item.publicTokenMotorista, item.checkinToken, item.checkoutToken]
+      .map((value) => String(value || '').replace(/[​-‍﻿\s]+/g, '').trim())
+      .filter(Boolean);
+    return itemTokens.some((itemToken) => candidates.includes(itemToken) || candidates.includes(itemToken.toUpperCase()) || candidates.includes(itemToken.toLowerCase()));
+  }) || null;
 }
 
 export function addDocumentoFile(data) {

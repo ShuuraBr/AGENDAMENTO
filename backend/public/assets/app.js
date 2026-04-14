@@ -468,24 +468,43 @@
     }).join("");
   }
 
-  function normalizeOperationToken(rawValue) {
-    const raw = String(rawValue || "").trim();
-    if (!raw) return "";
+  function parseOperationReference(rawValue) {
+    const raw = String(rawValue || "").replace(/[​-‍﻿]/g, '').trim();
+    if (!raw) return { token: "", id: "" };
     const decoded = (() => {
       try { return decodeURIComponent(raw); } catch { return raw; }
     })();
+    let token = "";
+    let id = "";
     try {
       const url = decoded.startsWith("http://") || decoded.startsWith("https://") ? new URL(decoded) : new URL(decoded, window.location.origin);
-      const token = url.searchParams.get("token");
-      if (token) return String(token).trim();
+      token = String(url.searchParams.get("token") || "").trim();
+      id = String(url.searchParams.get("id") || "").trim();
+      if (!token) {
+        const pathToken = url.pathname.match(/\/(?:checkin|checkout)\/([^/?#]+)/i);
+        if (pathToken?.[1]) token = String(pathToken[1]).trim();
+      }
     } catch {}
-    const match = decoded.match(/(?:^|[?&])token=([^&#]+)/i);
-    if (match?.[1]) {
-      try { return decodeURIComponent(match[1]).trim(); } catch { return String(match[1]).trim(); }
+    if (!token) {
+      const match = decoded.match(/(?:^|[?&])token=([^&#]+)/i);
+      if (match?.[1]) {
+        try { token = decodeURIComponent(match[1]).trim(); } catch { token = String(match[1]).trim(); }
+      }
     }
-    const tokenMatch = decoded.match(/(?:CHK|OUT|FOR|MOT)-[A-Z0-9]+-[A-Z0-9]+/i);
-    if (tokenMatch?.[0]) return String(tokenMatch[0]).trim().toUpperCase();
-    return decoded.replace(/[\s\n\r]+/g, "").trim();
+    if (!id) {
+      const idMatch = decoded.match(/(?:^|[?&])id=(\d+)/i);
+      if (idMatch?.[1]) id = String(idMatch[1]).trim();
+    }
+    if (!token) {
+      const tokenMatch = decoded.match(/(?:CHK|OUT|FOR|MOT)-[A-Z0-9]+-[A-Z0-9]+/i);
+      if (tokenMatch?.[0]) token = String(tokenMatch[0]).trim().toUpperCase();
+    }
+    token = String(token || decoded).replace(/[\s\n\r"'`]+/g, "").trim();
+    return { token, id: String(id || '').replace(/\D/g, '').trim() };
+  }
+
+  function normalizeOperationToken(rawValue) {
+    return parseOperationReference(rawValue).token;
   }
 
   function applyCheckinRouteContext({ autoValidate = false } = {}) {
@@ -2132,15 +2151,19 @@
 
   async function validateCheckin(token) {
     try {
-      const normalizedToken = normalizeOperationToken(token);
+      const reference = parseOperationReference(token);
+      const currentParams = new URLSearchParams(window.location.search || '');
+      const normalizedToken = reference.token;
+      const lookupId = reference.id || String(currentParams.get('id') || '').replace(/\D/g, '').trim();
       const tokenInput = byId('checkinForm')?.querySelector('[name="token"]');
       if (tokenInput) tokenInput.value = normalizedToken;
       if (!normalizedToken) throw new Error('Informe o token da operação.');
       const modo = byId("checkinForm")?.querySelector("[name=modo]")?.value || "checkin";
       const endpoint = modo === "checkout" ? `/api/public/checkout/${encodeURIComponent(normalizedToken)}` : `/api/public/checkin/${encodeURIComponent(normalizedToken)}`;
+      const requestBody = { token: normalizedToken, lookupId, rawToken: String(token || '') };
       let data;
       try {
-        data = await api(endpoint, { method: "POST", body: JSON.stringify({}) });
+        data = await api(endpoint, { method: "POST", body: JSON.stringify(requestBody) });
       } catch (err) {
         const message = String(err.message || '');
         const requiresManualAuthorization = !!err?.data?.requiresManualAuthorization;
@@ -2150,7 +2173,7 @@
 
 Deseja autorizar manualmente este check-in?`);
           if (!liberar) throw err;
-          data = await api(endpoint, { method: "POST", body: JSON.stringify({ overrideManualAuthorization: true, overrideDateMismatch: true, overrideTimeMismatch: true }) });
+          data = await api(endpoint, { method: "POST", body: JSON.stringify({ ...requestBody, overrideManualAuthorization: true, overrideDateMismatch: true, overrideTimeMismatch: true }) });
         } else {
           throw err;
         }

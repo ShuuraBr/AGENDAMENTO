@@ -78,9 +78,44 @@ function buildPublicLinks(req, item) {
 
 function formatDateBR(value) {
   if (!value) return "-";
-  const [year, month, day] = String(value).split("-");
-  if (!year || !month || !day) return String(value);
-  return `${day}/${month}/${year}`;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const year = String(value.getUTCFullYear());
+    const month = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(value.getUTCDate()).padStart(2, "0");
+    return `${day}/${month}/${year}`;
+  }
+  const raw = String(value).trim();
+  const compact = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T].*)?$/);
+  if (compact) return `${compact[3]}/${compact[2]}/${compact[1]}`;
+  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (br) return `${br[1]}/${br[2]}/${br[3]}`;
+  const native = new Date(raw);
+  if (!Number.isNaN(native.getTime())) {
+    const year = String(native.getUTCFullYear());
+    const month = String(native.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(native.getUTCDate()).padStart(2, "0");
+    return `${day}/${month}/${year}`;
+  }
+  return raw || "-";
+}
+
+function formatHourLabel(value) {
+  if (!value) return "-";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const hh = String(value.getUTCHours()).padStart(2, '0');
+    const mm = String(value.getUTCMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+  const raw = String(value).trim();
+  const match = raw.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
+  if (match) return `${match[1]}:${match[2]}`;
+  const native = new Date(raw);
+  if (!Number.isNaN(native.getTime())) {
+    const hh = String(native.getUTCHours()).padStart(2, '0');
+    const mm = String(native.getUTCMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+  return raw || '-';
 }
 
 function daysUntilDate(value) {
@@ -170,7 +205,7 @@ async function loadAgendamentosForConsulta({ numeroNf = '', dataAgendada = '' } 
 
 
 function buildScheduleIntro(item) {
-  return `O agendamento foi efetuado para o dia ${formatDateBR(item.dataAgendada)}, às ${item.horaAgendada || "-"}. Solicitamos chegada com 10 minutos de antecedência.`;
+  return `O agendamento foi efetuado para o dia ${formatDateBR(item?.dataAgendada)}, às ${formatHourLabel(item?.horaAgendada)}. Solicitamos chegada com 10 minutos de antecedência.`;
 }
 
 const MANDATORY_VOUCHER_NOTICE_TEXT = 'Obrigatório: Compareça com 10 minutos de antecedência e apresente este voucher na portaria ou no recebimento. O motorista deve estar utilizando EPI (botina, cinta lombar, luvas e, se necessário, capacete) e acompanhado de um auxiliar para descarregar.';
@@ -511,6 +546,8 @@ async function sendApprovalNotifications(item, req) {
 
   const commonText = [
     scheduleIntro,
+    `Data: ${formatDateBR(item?.dataAgendada)}`,
+    `Hora: ${formatHourLabel(item?.horaAgendada)}`,
     `Protocolo: ${item.protocolo}`,
     `Consulta do fornecedor/transportadora: ${links.consulta}`,
     `Acompanhamento do motorista: ${links.motorista}`,
@@ -525,8 +562,8 @@ async function sendApprovalNotifications(item, req) {
   const commonHtml = `
     <p>${scheduleIntro}</p>
     <p><strong>Protocolo:</strong> ${item.protocolo}</p>
-    <p><strong>Data:</strong> ${formatDateBR(item.dataAgendada)}</p>
-    <p><strong>Hora:</strong> ${item.horaAgendada || "-"}</p>
+    <p><strong>Data:</strong> ${formatDateBR(item?.dataAgendada)}</p>
+    <p><strong>Hora:</strong> ${formatHourLabel(item?.horaAgendada)}</p>
     <p><a href="${links.consulta}">Consulta da transportadora/fornecedor</a></p>
     <p><a href="${links.motorista}">Acompanhamento do motorista</a></p>
     <p><strong>Token do motorista:</strong> ${item.publicTokenMotorista}</p>
