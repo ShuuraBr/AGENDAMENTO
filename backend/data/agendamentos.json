@@ -119,25 +119,39 @@
   },
   {
     "id": 1,
-    "protocolo": "AGD-EXEMPLO-1",
-    "checkinToken": "CHK-EXEMPLO-1",
-    "fornecedor": "Fornecedor Exemplo LTDA",
-    "transportadora": "Transportadora Exemplo",
-    "motorista": "Motorista Exemplo",
-    "placa": "ABC1D23",
+    "protocolo": "AGD-1776180801693",
+    "checkinToken": "CHK-AGD1776180801693-H9D4UY",
+    "fornecedor": "10.718 - STELLA IMPORTACAO E EXPORTACAO DE LUMINARIAS LTDA",
+    "transportadora": "Teste",
+    "motorista": "Teste",
+    "placa": "Teste",
     "doca": "DOCA-01",
     "janela": "08:00-09:00",
     "dataAgendada": "2026-03-27",
     "horaAgendada": "08:00",
-    "quantidadeNotas": 2,
-    "quantidadeVolumes": 14,
+    "quantidadeNotas": 1,
+    "quantidadeVolumes": 0,
     "status": "APROVADO",
-    "observacoes": "Carga agendada para teste",
+    "observacoes": "teste",
     "createdAt": "2026-03-27T00:00:00.000Z",
     "updatedAt": "2026-03-27T00:00:00.000Z",
-    "notasFiscais": [],
+    "notasFiscais": [
+      {
+        "numeroNf": "290.244",
+        "volumes": 0,
+        "peso": 7.25,
+        "valorNf": 0,
+        "observacao": ""
+      }
+    ],
     "documentos": [],
-    "pesoTotalKg": 0,
-    "valorTotalNf": 0
+    "pesoTotalKg": 7.25,
+    "valorTotalNf": 0,
+    "cpfMotorista": "111.111.111-11",
+    "docaId": null,
+    "janelaId": 1,
+    "checkoutToken": "OUT-AGD1776180801693-PJODDJ",
+    "publicTokenMotorista": "MOT-AGD1776180801693-15ORBU",
+    "publicTokenFornecedor": "FOR-AGD1776180801693-ISHXEY"
   }
 ]
