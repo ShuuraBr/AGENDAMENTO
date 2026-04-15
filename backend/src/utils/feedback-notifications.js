@@ -73,13 +73,19 @@ function normalizeDateValue(value, fallback = '') {
   return raw;
 }
 
+
+function pickFeedbackDateCandidate(source = {}) {
+  return source?.dataAgendada ?? source?.data_agendada ?? source?.dataProgramada ?? source?.data_programada ?? source?.data ?? '';
+}
+
+function pickFeedbackTimeCandidate(source = {}) {
+  return source?.horaAgendada ?? source?.hora_agendada ?? source?.horaProgramada ?? source?.hora_programada ?? source?.hora ?? '';
+}
+
 function normalizeAgendamentoForFeedback(agendamento = {}) {
-  const dataAgendada = normalizeDateValue(
-    agendamento?.dataAgendada ?? agendamento?.data_agendada ?? agendamento?.dataProgramada ?? agendamento?.data_programada,
-    ''
-  );
+  const dataAgendada = normalizeDateValue(pickFeedbackDateCandidate(agendamento), '');
   const horaAgendada = normalizeHora(
-    agendamento?.horaAgendada ?? agendamento?.hora_agendada ?? agendamento?.horaProgramada ?? agendamento?.hora_programada,
+    pickFeedbackTimeCandidate(agendamento),
     deriveHoraFromJanela(agendamento)
   ) || '-';
 
