@@ -271,7 +271,9 @@ async function loadAgendamentosForConsulta({ numeroNf = '', dataAgendada = '' } 
       include: { notasFiscais: true, documentos: true, doca: true, janela: true },
       orderBy: { id: 'desc' }
     });
-    return (items || []).filter(matches);
+    return (items || [])
+      .map((item) => mergeAgendamentoSources(item, findAgendamentoFile(item?.id)))
+      .filter(matches);
   } catch {
     return readAgendamentos().filter(matches);
   }
@@ -324,6 +326,47 @@ function deriveHourFromJanela(item = {}) {
 function normalizeScheduleItem(item = {}, fallback = null) {
   const resolved = resolveScheduleValues(item, fallback || {});
   return { ...fallback, ...item, ...resolved };
+}
+
+function hasMeaningfulValue(value) {
+  if (value == null) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (value instanceof Date) return !Number.isNaN(value.getTime());
+  if (typeof value === 'object') return Object.keys(value || {}).length > 0;
+  const normalized = String(value).trim().toLowerCase();
+  return !!normalized && !['-', 'invalid date', 'null', 'undefined'].includes(normalized);
+}
+
+function chooseMeaningfulValue(primary, fallback) {
+  return hasMeaningfulValue(primary) ? primary : fallback;
+}
+
+function mergeAgendamentoSources(primary = null, fallback = null) {
+  if (!primary && !fallback) return null;
+  if (!primary) return normalizeScheduleItem(fallback || {});
+  if (!fallback) return normalizeScheduleItem(primary || {});
+  const merged = {
+    ...fallback,
+    ...primary,
+    protocolo: chooseMeaningfulValue(primary?.protocolo, fallback?.protocolo),
+    status: chooseMeaningfulValue(primary?.status, fallback?.status),
+    fornecedor: chooseMeaningfulValue(primary?.fornecedor, fallback?.fornecedor),
+    transportadora: chooseMeaningfulValue(primary?.transportadora, fallback?.transportadora),
+    motorista: chooseMeaningfulValue(primary?.motorista, fallback?.motorista),
+    placa: chooseMeaningfulValue(primary?.placa, fallback?.placa),
+    cpfMotorista: chooseMeaningfulValue(primary?.cpfMotorista, fallback?.cpfMotorista),
+    emailMotorista: chooseMeaningfulValue(primary?.emailMotorista, fallback?.emailMotorista),
+    emailTransportadora: chooseMeaningfulValue(primary?.emailTransportadora, fallback?.emailTransportadora),
+    checkinToken: chooseMeaningfulValue(primary?.checkinToken, fallback?.checkinToken),
+    checkoutToken: chooseMeaningfulValue(primary?.checkoutToken, fallback?.checkoutToken),
+    publicTokenMotorista: chooseMeaningfulValue(primary?.publicTokenMotorista, fallback?.publicTokenMotorista),
+    publicTokenFornecedor: chooseMeaningfulValue(primary?.publicTokenFornecedor, fallback?.publicTokenFornecedor),
+    notasFiscais: Array.isArray(primary?.notasFiscais) && primary.notasFiscais.length ? primary.notasFiscais : (Array.isArray(fallback?.notasFiscais) ? fallback.notasFiscais : []),
+    documentos: Array.isArray(primary?.documentos) && primary.documentos.length ? primary.documentos : (Array.isArray(fallback?.documentos) ? fallback.documentos : []),
+    doca: hasMeaningfulValue(primary?.doca) ? primary.doca : fallback?.doca,
+    janela: hasMeaningfulValue(primary?.janela) ? primary.janela : fallback?.janela
+  };
+  return normalizeScheduleItem(merged, fallback);
 }
 
 function parseBooleanLike(value) {
@@ -778,7 +821,8 @@ async function dispatchDriverFeedbackSurvey(item, req, actor = req.user) {
 
 async function full(id) {
   try {
-    return await prisma.agendamento.findUnique({ where: { id: Number(id) }, include: { notasFiscais: true, documentos: true, doca: true, janela: true } });
+    const found = await prisma.agendamento.findUnique({ where: { id: Number(id) }, include: { notasFiscais: true, documentos: true, doca: true, janela: true } });
+    return mergeAgendamentoSources(found, findAgendamentoFile(id));
   } catch {
     return findAgendamentoFile(id);
   }
@@ -794,7 +838,12 @@ async function ensureAgendamentoScheduleContext(item = {}, fallback = null) {
 }
 
 async function mustExist(id) {
-  try { return await prisma.agendamento.findUnique({ where: { id: Number(id) } }); } catch { return findAgendamentoFile(id); }
+  try {
+    const found = await prisma.agendamento.findUnique({ where: { id: Number(id) } });
+    return mergeAgendamentoSources(found, findAgendamentoFile(id));
+  } catch {
+    return findAgendamentoFile(id);
+  }
 }
 
 async function notificationSummary(agendamentoId) {

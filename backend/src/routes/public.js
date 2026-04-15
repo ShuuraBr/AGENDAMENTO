@@ -525,10 +525,7 @@ function buildLinks(req, item) {
 }
 
 function formatItem(item, req) {
-  const normalized = normalizeScheduleItem({
-    ...item,
-    notasFiscais: normalizeOperationNotasFiscais(item)
-  });
+  const normalized = normalizeScheduleItem(item);
   const links = buildLinks(req, normalized);
   return {
     ...normalized,
@@ -619,25 +616,6 @@ async function getOrCreateDocaPadrao() {
   }
 }
 
-function normalizeOperationNotasFiscais(item = {}) {
-  const source = Array.isArray(item?.notasFiscais)
-    ? item.notasFiscais
-    : Array.isArray(item?.notas)
-      ? item.notas
-      : [];
-  return source.map((nota, index) => ({
-    numeroNf: String(nota?.numeroNf || nota?.numero_nf || nota?.numero || nota?.nf || '').trim(),
-    serie: String(nota?.serie || nota?.serie_nf || '').trim(),
-    chaveAcesso: String(nota?.chaveAcesso || nota?.chave_acesso || nota?.chave || '').trim(),
-    destino: String(nota?.destino || nota?.empresa || '').trim(),
-    volumes: Number(nota?.volumes || nota?.volume || 0),
-    peso: Number(nota?.peso || 0),
-    valorNf: Number(nota?.valorNf || nota?.valor_nf || nota?.valor || 0),
-    observacao: String(nota?.observacao || '').trim(),
-    label: String(nota?.label || '').trim() || `NF ${String(nota?.numeroNf || nota?.numero || index + 1).trim()}`
-  }));
-}
-
 function buildTokenCandidates(...values) {
   const items = values
     .flatMap((value) => {
@@ -649,6 +627,72 @@ function buildTokenCandidates(...values) {
   return [...new Set(items.flatMap((value) => [value, value.toUpperCase(), value.toLowerCase()]))];
 }
 
+function hasMeaningfulValue(value) {
+  if (value == null) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (value instanceof Date) return !Number.isNaN(value.getTime());
+  if (typeof value === 'object') return Object.keys(value || {}).length > 0;
+  const normalized = String(value).trim().toLowerCase();
+  return !!normalized && !['-', 'invalid date', 'null', 'undefined'].includes(normalized);
+}
+
+function chooseMeaningfulValue(primary, fallback) {
+  return hasMeaningfulValue(primary) ? primary : fallback;
+}
+
+function mergeOperationRecords(primary = null, fallback = null) {
+  if (!primary && !fallback) return null;
+  if (!primary) return normalizeScheduleItem(fallback || {});
+  if (!fallback) return normalizeScheduleItem(primary || {});
+
+  const merged = {
+    ...fallback,
+    ...primary,
+    protocolo: chooseMeaningfulValue(primary?.protocolo, fallback?.protocolo),
+    status: chooseMeaningfulValue(primary?.status, fallback?.status),
+    fornecedor: chooseMeaningfulValue(primary?.fornecedor, fallback?.fornecedor),
+    transportadora: chooseMeaningfulValue(primary?.transportadora, fallback?.transportadora),
+    motorista: chooseMeaningfulValue(primary?.motorista, fallback?.motorista),
+    placa: chooseMeaningfulValue(primary?.placa, fallback?.placa),
+    cpfMotorista: chooseMeaningfulValue(primary?.cpfMotorista, fallback?.cpfMotorista),
+    emailMotorista: chooseMeaningfulValue(primary?.emailMotorista, fallback?.emailMotorista),
+    emailTransportadora: chooseMeaningfulValue(primary?.emailTransportadora, fallback?.emailTransportadora),
+    checkinToken: chooseMeaningfulValue(primary?.checkinToken, fallback?.checkinToken),
+    checkoutToken: chooseMeaningfulValue(primary?.checkoutToken, fallback?.checkoutToken),
+    publicTokenMotorista: chooseMeaningfulValue(primary?.publicTokenMotorista, fallback?.publicTokenMotorista),
+    publicTokenFornecedor: chooseMeaningfulValue(primary?.publicTokenFornecedor, fallback?.publicTokenFornecedor),
+    docaId: chooseMeaningfulValue(primary?.docaId, fallback?.docaId),
+    janelaId: chooseMeaningfulValue(primary?.janelaId, fallback?.janelaId),
+    observacoes: chooseMeaningfulValue(primary?.observacoes, fallback?.observacoes),
+    notasFiscais: Array.isArray(primary?.notasFiscais) && primary.notasFiscais.length ? primary.notasFiscais : (Array.isArray(fallback?.notasFiscais) ? fallback.notasFiscais : []),
+    documentos: Array.isArray(primary?.documentos) && primary.documentos.length ? primary.documentos : (Array.isArray(fallback?.documentos) ? fallback.documentos : []),
+    doca: hasMeaningfulValue(primary?.doca) ? primary.doca : fallback?.doca,
+    janela: hasMeaningfulValue(primary?.janela) ? primary.janela : fallback?.janela
+  };
+
+  return normalizeScheduleItem(merged, fallback);
+}
+
+function findFileOperationSnapshot({ id = null, protocolo = '', tokens = [] } = {}) {
+  const numericId = Number(id || 0);
+  const normalizedProtocol = normalizeLookupIdentity(protocolo);
+  const candidates = (Array.isArray(tokens) ? tokens : [tokens]).flatMap((value) => buildTokenCandidates(value)).filter(Boolean);
+  const rows = readAgendamentos();
+
+  if (Number.isFinite(numericId) && numericId > 0) {
+    const byId = rows.find((item) => Number(item?.id || 0) == numericId);
+    if (byId) return byId;
+  }
+  if (normalizedProtocol) {
+    const byProtocol = rows.find((item) => normalizeLookupIdentity(item?.protocolo || '') === normalizedProtocol);
+    if (byProtocol) return byProtocol;
+  }
+  for (const candidate of candidates) {
+    const found = findAgendamentoByTokenFile(candidate);
+    if (found) return found;
+  }
+  return null;
+}
 
 function normalizeLookupIdentity(value = '') {
   return String(value || '').replace(/[^A-Za-z0-9]/g, '').trim().toUpperCase();
@@ -699,8 +743,9 @@ async function resolveByToken(token) {
   const candidates = buildTokenCandidates(token);
   if (!candidates.length) return null;
 
+  let found = null;
   try {
-    const found = await prisma.agendamento.findFirst({
+    found = await prisma.agendamento.findFirst({
       where: {
         OR: candidates.flatMap((candidate) => ([
           { publicTokenFornecedor: candidate },
@@ -711,22 +756,22 @@ async function resolveByToken(token) {
       },
       include: { notasFiscais: true, doca: true, janela: true, documentos: true }
     });
-    if (found) return found;
-  } catch (error) {
-    logTechnicalEvent('public-token-db-lookup-fallback', {
-      token: String(token || ''),
-      reason: error?.message || String(error)
-    });
+  } catch {}
+
+  if (found) {
+    const fileSnapshot = findFileOperationSnapshot({ id: found?.id, protocolo: found?.protocolo, tokens: candidates });
+    return mergeOperationRecords(found, fileSnapshot);
   }
 
-  for (const candidate of candidates) {
-    const found = findAgendamentoByTokenFile(candidate);
-    if (found) return found;
-  }
+  const fileSnapshot = findFileOperationSnapshot({ tokens: candidates });
+  if (fileSnapshot) return fileSnapshot;
 
   for (const candidate of candidates) {
     const seedFound = await resolveByTokenSeed(extractTokenSeed(candidate));
-    if (seedFound) return seedFound;
+    if (seedFound) {
+      const fallbackSnapshot = findFileOperationSnapshot({ id: seedFound?.id, protocolo: seedFound?.protocolo, tokens: candidates });
+      return mergeOperationRecords(seedFound, fallbackSnapshot);
+    }
   }
   return null;
 }
@@ -747,11 +792,12 @@ async function resolveOperationItem(rawToken, lookupId = "") {
 async function loadAgendamentoSnapshot(id, fallback = null) {
   const numericId = Number(id || 0);
   if (!Number.isFinite(numericId) || numericId <= 0) return fallback;
+  let persisted = null;
   try {
-    return await prisma.agendamento.findUnique({ where: { id: numericId }, include: { notasFiscais: true, doca: true, janela: true, documentos: true } }) || fallback;
-  } catch {
-    return readAgendamentos().find((item) => Number(item?.id || 0) === numericId) || fallback;
-  }
+    persisted = await prisma.agendamento.findUnique({ where: { id: numericId }, include: { notasFiscais: true, doca: true, janela: true, documentos: true } }) || null;
+  } catch {}
+  const fileSnapshot = findFileOperationSnapshot({ id: numericId, protocolo: persisted?.protocolo || fallback?.protocolo, tokens: [persisted?.checkoutToken, persisted?.checkinToken, persisted?.publicTokenFornecedor, persisted?.publicTokenMotorista, fallback?.checkoutToken, fallback?.checkinToken, fallback?.publicTokenFornecedor, fallback?.publicTokenMotorista] });
+  return mergeOperationRecords(persisted || fallback, fileSnapshot || fallback);
 }
 
 function tokenMatchesExpectedPrefix(token = '', expectedPrefix = '') {
@@ -765,10 +811,12 @@ async function findOperationItemById(lookupId = '') {
   const numericId = Number(String(lookupId || '').replace(/\D/g, '').trim());
   if (!Number.isFinite(numericId) || numericId <= 0) return null;
   try {
-    return await prisma.agendamento.findUnique({ where: { id: numericId }, include: { notasFiscais: true, doca: true, janela: true, documentos: true } });
+    const found = await prisma.agendamento.findUnique({ where: { id: numericId }, include: { notasFiscais: true, doca: true, janela: true, documentos: true } });
+    const fileSnapshot = findFileOperationSnapshot({ id: numericId, protocolo: found?.protocolo, tokens: [found?.checkoutToken, found?.checkinToken, found?.publicTokenFornecedor, found?.publicTokenMotorista] });
+    return mergeOperationRecords(found, fileSnapshot);
   } catch (error) {
     logTechnicalEvent('operation-id-fallback', { lookupId: String(lookupId || ''), reason: error?.message || String(error) });
-    return readAgendamentos().find((item) => Number(item?.id || 0) === numericId) || null;
+    return findFileOperationSnapshot({ id: numericId }) || null;
   }
 }
 
@@ -885,33 +933,34 @@ O voucher operacional e o QR Code do motorista serão enviados somente após a a
 }
 
 function buildManualAuthorizationMail(item, req, windowInfo) {
+  const normalizedItem = normalizeScheduleItem(item);
   const baseUrl = getBaseUrl(req);
-  const links = buildLinks(req, item);
+  const links = buildLinks(req, normalizedItem);
   const diff = Number(windowInfo?.diffMinutes || 0);
   const antecedencia = diff < 0 ? Math.abs(diff) : 0;
   const profileHint = "ADMIN, GESTOR, OPERADOR ou PORTARIA";
   return {
-    subject: `Autorização manual de check-in antecipado - ${item.protocolo}`,
+    subject: `Autorização manual de check-in antecipado - ${normalizedItem.protocolo}`,
     text: [
       "Foi bloqueada uma tentativa de check-in antecipado acima da tolerância permitida.",
       "",
-      `Protocolo: ${item.protocolo}`,
-      `Fornecedor: ${item.fornecedor || "-"}`,
-      `Transportadora: ${item.transportadora || "-"}`,
-      `Motorista: ${item.motorista || "-"}`,
-      `Placa: ${item.placa || "-"}`,
-      `Data agendada: ${item.dataAgendada || "-"}`,
-      `Hora agendada: ${item.horaAgendada || "-"}`,
+      `Protocolo: ${normalizedItem.protocolo}`,
+      `Fornecedor: ${normalizedItem.fornecedor || "-"}`,
+      `Transportadora: ${normalizedItem.transportadora || "-"}`,
+      `Motorista: ${normalizedItem.motorista || "-"}`,
+      `Placa: ${normalizedItem.placa || "-"}`,
+      `Data agendada: ${normalizedItem.dataAgendada || "-"}`,
+      `Hora agendada: ${normalizedItem.horaAgendada || "-"}`,
       `Antecedência detectada: ${antecedencia} minuto(s)`,
       `Tolerância permitida: ${windowInfo?.toleranceMinutes ?? 0} minuto(s)`,
-      `Token de check-in: ${item.checkinToken || "-"}`,
-      `Token de consulta: ${item.publicTokenFornecedor || "-"}`,
+      `Token de check-in: ${normalizedItem.checkinToken || "-"}`,
+      `Token de consulta: ${normalizedItem.publicTokenFornecedor || "-"}`,
       `Consulta do agendamento: ${links.consulta}`,
-      `Tela de check-in: ${baseUrl}/?view=checkin&token=${encodeURIComponent(item.checkinToken || "")}`,
+      `Tela de check-in: ${baseUrl}/?view=checkin&token=${encodeURIComponent(normalizedItem.checkinToken || "")}`,
       "",
       `Para autorizar manualmente, acesse o sistema com perfil ${profileHint} e valide o check-in com override manual.`
     ].join("\n"),
-    html: `<div style="font-family:Arial,sans-serif"><h2>Autorização manual de check-in antecipado</h2><p>Foi bloqueada uma tentativa de <strong>check-in antecipado</strong> acima da tolerância permitida.</p><p><strong>Protocolo:</strong> ${item.protocolo}<br><strong>Fornecedor:</strong> ${item.fornecedor || "-"}<br><strong>Transportadora:</strong> ${item.transportadora || "-"}<br><strong>Motorista:</strong> ${item.motorista || "-"}<br><strong>Placa:</strong> ${item.placa || "-"}<br><strong>Data agendada:</strong> ${item.dataAgendada || "-"}<br><strong>Hora agendada:</strong> ${item.horaAgendada || "-"}<br><strong>Antecedência detectada:</strong> ${antecedencia} minuto(s)<br><strong>Tolerância permitida:</strong> ${windowInfo?.toleranceMinutes ?? 0} minuto(s)<br><strong>Token de check-in:</strong> ${item.checkinToken || "-"}<br><strong>Token de consulta:</strong> ${item.publicTokenFornecedor || "-"}</p><p><a href="${links.consulta}">Consultar agendamento</a></p><p>Para autorizar manualmente, acesse o sistema com perfil <strong>${profileHint}</strong> e valide o check-in com override manual.</p></div>`
+    html: `<div style="font-family:Arial,sans-serif"><h2>Autorização manual de check-in antecipado</h2><p>Foi bloqueada uma tentativa de <strong>check-in antecipado</strong> acima da tolerância permitida.</p><p><strong>Protocolo:</strong> ${normalizedItem.protocolo}<br><strong>Fornecedor:</strong> ${normalizedItem.fornecedor || "-"}<br><strong>Transportadora:</strong> ${normalizedItem.transportadora || "-"}<br><strong>Motorista:</strong> ${normalizedItem.motorista || "-"}<br><strong>Placa:</strong> ${normalizedItem.placa || "-"}<br><strong>Data agendada:</strong> ${normalizedItem.dataAgendada || "-"}<br><strong>Hora agendada:</strong> ${normalizedItem.horaAgendada || "-"}<br><strong>Antecedência detectada:</strong> ${antecedencia} minuto(s)<br><strong>Tolerância permitida:</strong> ${windowInfo?.toleranceMinutes ?? 0} minuto(s)<br><strong>Token de check-in:</strong> ${normalizedItem.checkinToken || "-"}<br><strong>Token de consulta:</strong> ${normalizedItem.publicTokenFornecedor || "-"}</p><p><a href="${links.consulta}">Consultar agendamento</a></p><p>Para autorizar manualmente, acesse o sistema com perfil <strong>${profileHint}</strong> e valide o check-in com override manual.</p></div>`
   };
 }
 

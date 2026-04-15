@@ -1,151 +1,100 @@
-import { prisma } from "./prisma.js";
-import { readAgendamentos, updateAgendamentoFile } from "./file-store.js";
-import { logTechnicalEvent } from "./telemetry.js";
+import { prisma } from './prisma.js';
+import { readAgendamentos, updateAgendamentoFile } from './file-store.js';
 
-const ELIGIBLE_NO_SHOW_STATUSES = new Set(["PENDENTE_APROVACAO", "APROVADO"]);
-const DEFAULT_TIMEZONE = process.env.APP_TIMEZONE || "America/Sao_Paulo";
+const ELIGIBLE_STATUSES = new Set(['PENDENTE_APROVACAO', 'APROVADO']);
 
-function normalizeScheduleDate(value) {
-  if (!value) return "";
+function normalizeDateValue(value) {
+  if (!value) return '';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const year = String(value.getUTCFullYear());
-    const month = String(value.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(value.getUTCDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+    const y = String(value.getUTCFullYear());
+    const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(value.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
-  const raw = String(value || "").trim();
+  const raw = String(value).trim();
   const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T].*)?$/);
   if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (br) return `${br[3]}-${br[2]}-${br[1]}`;
   const native = new Date(raw);
   if (!Number.isNaN(native.getTime())) {
-    const year = String(native.getUTCFullYear());
-    const month = String(native.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(native.getUTCDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+    const y = String(native.getUTCFullYear());
+    const m = String(native.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(native.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
-  return "";
+  return '';
 }
 
-function normalizeScheduleTime(value) {
-  if (!value) return "";
+function normalizeTimeValue(value) {
+  if (!value) return '00:00';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return `${String(value.getUTCHours()).padStart(2, "0")}:${String(value.getUTCMinutes()).padStart(2, "0")}`;
+    return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}`;
   }
-  const raw = String(value || "").trim();
+  const raw = String(value).trim();
   const match = raw.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
   if (match) return `${match[1]}:${match[2]}`;
   const native = new Date(raw);
   if (!Number.isNaN(native.getTime())) {
-    return `${String(native.getUTCHours()).padStart(2, "0")}:${String(native.getUTCMinutes()).padStart(2, "0")}`;
+    return `${String(native.getUTCHours()).padStart(2, '0')}:${String(native.getUTCMinutes()).padStart(2, '0')}`;
   }
-  return "";
+  return '00:00';
 }
 
-function deriveHourFromJanela(item = {}) {
-  const janelaCodigo = String(item?.janela?.codigo || item?.janela || item?.janelaCodigo || "").trim();
-  const match = janelaCodigo.match(/(\d{2}:\d{2})/);
-  return match?.[1] || "";
+function scheduledAtFromItem(item = {}) {
+  const data = normalizeDateValue(item?.dataAgendada || item?.data_agendada);
+  if (!data) return null;
+  const hora = normalizeTimeValue(item?.horaAgendada || item?.hora_agendada || item?.janela?.horaInicio || item?.horaInicio || '00:00');
+  const scheduledAt = new Date(`${data}T${hora}:00`);
+  return Number.isNaN(scheduledAt.getTime()) ? null : scheduledAt;
 }
 
-function getNowInTimezone(timeZone = DEFAULT_TIMEZONE) {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  });
-  const parts = Object.fromEntries(formatter.formatToParts(new Date()).filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
-  return {
-    date: `${parts.year}-${parts.month}-${parts.day}`,
-    time: `${parts.hour}:${parts.minute}:${parts.second}`,
-    timeZone
-  };
+function shouldMarkNoShow(item = {}, now = new Date()) {
+  const status = String(item?.status || '').trim().toUpperCase();
+  if (!ELIGIBLE_STATUSES.has(status)) return false;
+  if (item?.checkinEm || item?.inicioDescargaEm || item?.fimDescargaEm || item?.chegadaRealEm) return false;
+  const scheduledAt = scheduledAtFromItem(item);
+  if (!scheduledAt) return false;
+  return scheduledAt.getTime() < now.getTime();
 }
 
-function resolveSchedule(item = {}) {
-  return {
-    dataAgendada: normalizeScheduleDate(item?.dataAgendada || item?.data_agendada || item?.dataProgramada || item?.data),
-    horaAgendada: normalizeScheduleTime(item?.horaAgendada || item?.hora_agendada || item?.horaProgramada || item?.hora) || deriveHourFromJanela(item)
-  };
+async function applyNoShowToDatabase(now = new Date()) {
+  const items = await prisma.agendamento.findMany({ include: { janela: true } });
+  const due = items.filter((item) => shouldMarkNoShow(item, now));
+  for (const item of due) {
+    await prisma.agendamento.update({ where: { id: Number(item.id) }, data: { status: 'NO_SHOW' } });
+    updateAgendamentoFile(item.id, { status: 'NO_SHOW' });
+  }
+  return due.length;
 }
 
-function hasOperationalStart(item = {}) {
-  return !!(item?.checkinEm || item?.checkin_em || item?.inicioDescargaEm || item?.inicio_descarga_em || item?.fimDescargaEm || item?.fim_descarga_em || item?.chegadaRealEm || item?.chegada_real_em);
+function applyNoShowToFile(now = new Date()) {
+  const items = readAgendamentos();
+  const due = items.filter((item) => shouldMarkNoShow(item, now));
+  for (const item of due) {
+    updateAgendamentoFile(item.id, { status: 'NO_SHOW' });
+  }
+  return due.length;
 }
 
-function shouldMarkNoShow(item = {}, reference = getNowInTimezone()) {
-  const status = String(item?.status || "").trim().toUpperCase();
-  if (!ELIGIBLE_NO_SHOW_STATUSES.has(status)) return false;
-  if (hasOperationalStart(item)) return false;
-  const { dataAgendada, horaAgendada } = resolveSchedule(item);
-  if (!dataAgendada) return false;
-  if (dataAgendada < reference.date) return true;
-  if (dataAgendada > reference.date) return false;
-  const scheduledTime = horaAgendada || "00:00";
-  return scheduledTime < String(reference.time || "00:00:00").slice(0, 5);
-}
-
-async function persistNoShow(item = {}) {
-  const id = Number(item?.id || 0);
-  if (!id) return false;
-  const patch = { status: "NO_SHOW", updatedAt: new Date().toISOString() };
+export async function runNoShowSweep(now = new Date()) {
   try {
-    await prisma.agendamento.update({ where: { id }, data: { status: "NO_SHOW" } });
+    return await applyNoShowToDatabase(now);
   } catch {
-    updateAgendamentoFile(id, patch);
-    return true;
+    return applyNoShowToFile(now);
   }
-  updateAgendamentoFile(id, patch);
-  return true;
 }
 
-export async function runAutomaticNoShowSweep({ reason = "scheduler", timeZone = DEFAULT_TIMEZONE } = {}) {
-  const reference = getNowInTimezone(timeZone);
-  let source = "database";
-  let items = [];
-  try {
-    items = await prisma.agendamento.findMany({
-      where: { status: { in: [...ELIGIBLE_NO_SHOW_STATUSES] } },
-      include: { janela: true }
-    });
-  } catch {
-    source = "file";
-    items = readAgendamentos().filter((item) => ELIGIBLE_NO_SHOW_STATUSES.has(String(item?.status || "").trim().toUpperCase()));
-  }
-
-  const updatedIds = [];
-  for (const item of items || []) {
-    if (!shouldMarkNoShow(item, reference)) continue;
-    const ok = await persistNoShow(item);
-    if (ok) updatedIds.push(Number(item?.id || 0));
-  }
-
-  if (updatedIds.length) {
-    logTechnicalEvent("automatic-no-show-sweep", {
-      reason,
-      source,
-      updated: updatedIds.length,
-      ids: updatedIds,
-      referenceDate: reference.date,
-      referenceTime: reference.time,
-      timeZone: reference.timeZone
-    });
-  }
-
-  return {
-    ok: true,
-    reason,
-    source,
-    updated: updatedIds.length,
-    ids: updatedIds,
-    referenceDate: reference.date,
-    referenceTime: reference.time,
-    timeZone: reference.timeZone
+export function startNoShowWatcher({ intervalMs = 5 * 60 * 1000 } = {}) {
+  const execute = async () => {
+    try {
+      const count = await runNoShowSweep(new Date());
+      if (count > 0) console.log(`[NO_SHOW] ${count} agendamento(s) atualizado(s) automaticamente.`);
+    } catch (error) {
+      console.error('[NO_SHOW] Falha na atualização automática:', error?.message || error);
+    }
   };
+
+  execute();
+  return setInterval(execute, Math.max(60_000, Number(intervalMs) || 300_000));
 }

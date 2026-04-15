@@ -652,22 +652,10 @@
 
     if (!canAccessCadastroTab(state.cadastroTipo)) {
       const firstVisibleTab = [...document.querySelectorAll('.cad-tab[data-tipo]')].find((btn) => !btn.classList.contains('hidden'));
-      if (firstVisibleTab?.dataset?.tipo) {
-        state.cadastroTipo = firstVisibleTab.dataset.tipo;
-        setActiveButton('.cad-tab', firstVisibleTab);
-        renderCadastroForm();
-        loadCadastro().catch(() => {});
-      } else {
-        state.cadastroTipo = '';
-        const titulo = byId('cadastroTitulo');
-        const form = byId('cadastroForm');
-        const list = byId('cadastroList');
-        const msg = byId('cadastroMsg');
-        if (titulo) titulo.textContent = 'Cadastros';
-        if (form) form.innerHTML = '';
-        if (list) list.innerHTML = '<p>Seu perfil não possui acesso aos cadastros.</p>';
-        if (msg) msg.textContent = 'Seu perfil não possui acesso aos cadastros.';
-      }
+      state.cadastroTipo = firstVisibleTab?.dataset?.tipo || 'fornecedores';
+      setActiveButton('.cad-tab', firstVisibleTab || document.querySelector('.cad-tab[data-tipo="fornecedores"]'));
+      renderCadastroForm();
+      loadCadastro().catch(() => {});
     }
 
     const canManageCadastros = hasPermission('cadastros.manage') && (state.cadastroTipo !== 'usuarios' || hasPermission('users.manage'));
@@ -2247,21 +2235,13 @@
 
   function renderCadastroForm(record = null) {
     const config = CADASTRO_CONFIG[state.cadastroTipo];
-    if (!config) {
-      const titulo = byId("cadastroTitulo");
-      const form = byId("cadastroForm");
-      const msg = byId("cadastroMsg");
-      if (titulo) titulo.textContent = 'Cadastros';
-      if (form) form.innerHTML = '';
-      if (msg) msg.textContent = 'Seu perfil não possui acesso aos cadastros.';
-      state.cadastroEditId = null;
-      return;
-    }
+    if (!config) return;
     byId("cadastroTitulo").textContent = config.titulo;
     byId("cadastroForm").innerHTML = config.fields.map((field) => buildField(field, record ? record[field.name] : "")).join("");
     state.cadastroEditId = record?.id || null;
     byId("cadastroMsg").textContent = state.cadastroEditId ? `Modo edição: ID ${state.cadastroEditId}` : "Modo novo cadastro";
     applyInputMasks(byId("cadastroForm"));
+    applyRoleAccess();
   }
 
   function getCadastroPayload() {
