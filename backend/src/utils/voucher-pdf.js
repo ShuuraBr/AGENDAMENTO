@@ -43,7 +43,7 @@ function parseJanelaCodigo(codigo = '') {
 
 function normalizeVoucherAgendamento(agendamento = {}) {
   const janelaCodigo = agendamento?.janela?.codigo || agendamento?.janela || '';
-  const horaAgendada = String(agendamento?.horaAgendada || '').trim() || parseJanelaCodigo(janelaCodigo).horaInicio || '';
+  const horaAgendada = parseJanelaCodigo(janelaCodigo).horaInicio || String(agendamento?.horaAgendada || '').trim() || '';
   return { ...agendamento, horaAgendada, dataAgendada: agendamento?.dataAgendada || '' };
 }
 

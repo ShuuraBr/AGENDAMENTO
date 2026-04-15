@@ -19,12 +19,9 @@ if (!process.env.DATABASE_URL && process.env.DB_HOST) {
 
 const { default: app } = await import("./app.js");
 const { startRelatorioImportWatcher } = await import("./utils/relatorio-entradas.js");
-const { startNoShowWatcher } = await import("./utils/no-show.js");
 
 const PORT = Number(process.env.PORT || 3000);
 const shouldStartWatcher = ['1', 'true', 'yes', 'on'].includes(String(process.env.RELATORIO_IMPORT_WATCHER || '0').toLowerCase());
-const noShowIntervalMs = Number(process.env.NO_SHOW_SWEEP_INTERVAL_MS || 300000);
-let noShowWatcherHandle = null;
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`[OK] Servidor rodando na porta ${PORT}`);
@@ -38,17 +35,6 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   } else {
     console.log('[OK] Monitor automático da planilha de entradas desativado por configuração.');
   }
-
-  try {
-    noShowWatcherHandle = startNoShowWatcher({ intervalMs: noShowIntervalMs });
-    console.log(`[OK] Monitor automático de NO-SHOW ativado (${Math.round(noShowIntervalMs / 1000)}s).`);
-  } catch (error) {
-    console.error('[WARN] Falha ao ativar monitor automático de NO-SHOW:', error?.message || error);
-  }
-});
-
-server.on('close', () => {
-  if (noShowWatcherHandle) clearInterval(noShowWatcherHandle);
 });
 
 server.on("error", (err) => {

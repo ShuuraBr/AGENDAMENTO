@@ -8,7 +8,7 @@ import { qrSvg } from "../utils/qrcode.js";
 import { sendMail } from "../utils/email.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
 import { calculateTotals, normalizeCpf } from "../utils/agendamento-helpers.js";
-import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile, addDocumentoFile, addNotaFile, readAuditLogs } from "../utils/file-store.js";
+import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile, addDocumentoFile, addNotaFile, readAuditLogs, readJanelas } from "../utils/file-store.js";
 import { validateAgendamentoPayload, validateNf, validateStatusTransition, normalizeChaveAcesso } from "../utils/validators.js";
 import { assertJanelaDocaDisponivel, trafficColor } from "../utils/operations.js";
 import { auditLog } from "../utils/audit.js";
@@ -163,13 +163,14 @@ function resolveScheduleValues(item = {}, fallback = {}) {
   const fallbackDateCandidate = pickScheduleDateCandidate(fallback);
   const primaryTimeCandidate = pickScheduleTimeCandidate(item);
   const fallbackTimeCandidate = pickScheduleTimeCandidate(fallback);
-  const janelaCodigo = item?.janela?.codigo || fallback?.janela?.codigo || item?.janela || fallback?.janela || '';
-  const derivedHour = parseJanelaCodigo(janelaCodigo).horaInicio;
+  const derivedPrimaryHour = deriveHourFromJanela(item);
+  const derivedFallbackHour = deriveHourFromJanela(fallback);
+  const preferredDerivedHour = derivedPrimaryHour || derivedFallbackHour;
   const dataAgendada = normalizeScheduleDateValue(isMissingScheduleValue(primaryDateCandidate) ? fallbackDateCandidate : primaryDateCandidate)
     || normalizeScheduleDateValue(fallbackDateCandidate);
-  const horaAgendada = normalizeScheduleTimeValue(isMissingScheduleValue(primaryTimeCandidate) ? fallbackTimeCandidate : primaryTimeCandidate)
+  const horaAgendada = preferredDerivedHour
+    || normalizeScheduleTimeValue(isMissingScheduleValue(primaryTimeCandidate) ? fallbackTimeCandidate : primaryTimeCandidate)
     || normalizeScheduleTimeValue(fallbackTimeCandidate)
-    || derivedHour
     || '';
   return { dataAgendada, horaAgendada };
 }
@@ -271,9 +272,7 @@ async function loadAgendamentosForConsulta({ numeroNf = '', dataAgendada = '' } 
       include: { notasFiscais: true, documentos: true, doca: true, janela: true },
       orderBy: { id: 'desc' }
     });
-    return (items || [])
-      .map((item) => mergeAgendamentoSources(item, findAgendamentoFile(item?.id)))
-      .filter(matches);
+    return (items || []).filter(matches);
   } catch {
     return readAgendamentos().filter(matches);
   }
@@ -323,50 +322,35 @@ function deriveHourFromJanela(item = {}) {
   return match?.[1] || '';
 }
 
+async function resolveJanelaById(janelaId) {
+  const numericId = Number(janelaId || 0);
+  if (!Number.isFinite(numericId) || numericId <= 0) return null;
+  try {
+    const janela = await prisma.janela.findUnique({ where: { id: numericId } });
+    if (janela) return janela;
+  } catch {}
+  return readJanelas().find((item) => Number(item?.id || 0) === numericId) || null;
+}
+
+async function syncPayloadScheduleWithJanela(payload = {}, fallback = {}) {
+  const merged = { ...fallback, ...payload };
+  const requestedJanelaId = merged?.janelaId || fallback?.janelaId || merged?.janela?.id;
+  const janela = await resolveJanelaById(requestedJanelaId);
+  const derivedHour = deriveHourFromJanela({ ...fallback, ...merged, janela: janela || merged?.janela || fallback?.janela });
+  const dataAgendada = normalizeScheduleDateValue(merged?.dataAgendada || fallback?.dataAgendada || '');
+  const horaAgendada = derivedHour || normalizeScheduleTimeValue(merged?.horaAgendada || fallback?.horaAgendada || '');
+  return {
+    ...merged,
+    janelaId: janela?.id || merged?.janelaId || fallback?.janelaId || null,
+    janela: janela || merged?.janela || fallback?.janela || null,
+    dataAgendada,
+    horaAgendada
+  };
+}
+
 function normalizeScheduleItem(item = {}, fallback = null) {
   const resolved = resolveScheduleValues(item, fallback || {});
   return { ...fallback, ...item, ...resolved };
-}
-
-function hasMeaningfulValue(value) {
-  if (value == null) return false;
-  if (Array.isArray(value)) return value.length > 0;
-  if (value instanceof Date) return !Number.isNaN(value.getTime());
-  if (typeof value === 'object') return Object.keys(value || {}).length > 0;
-  const normalized = String(value).trim().toLowerCase();
-  return !!normalized && !['-', 'invalid date', 'null', 'undefined'].includes(normalized);
-}
-
-function chooseMeaningfulValue(primary, fallback) {
-  return hasMeaningfulValue(primary) ? primary : fallback;
-}
-
-function mergeAgendamentoSources(primary = null, fallback = null) {
-  if (!primary && !fallback) return null;
-  if (!primary) return normalizeScheduleItem(fallback || {});
-  if (!fallback) return normalizeScheduleItem(primary || {});
-  const merged = {
-    ...fallback,
-    ...primary,
-    protocolo: chooseMeaningfulValue(primary?.protocolo, fallback?.protocolo),
-    status: chooseMeaningfulValue(primary?.status, fallback?.status),
-    fornecedor: chooseMeaningfulValue(primary?.fornecedor, fallback?.fornecedor),
-    transportadora: chooseMeaningfulValue(primary?.transportadora, fallback?.transportadora),
-    motorista: chooseMeaningfulValue(primary?.motorista, fallback?.motorista),
-    placa: chooseMeaningfulValue(primary?.placa, fallback?.placa),
-    cpfMotorista: chooseMeaningfulValue(primary?.cpfMotorista, fallback?.cpfMotorista),
-    emailMotorista: chooseMeaningfulValue(primary?.emailMotorista, fallback?.emailMotorista),
-    emailTransportadora: chooseMeaningfulValue(primary?.emailTransportadora, fallback?.emailTransportadora),
-    checkinToken: chooseMeaningfulValue(primary?.checkinToken, fallback?.checkinToken),
-    checkoutToken: chooseMeaningfulValue(primary?.checkoutToken, fallback?.checkoutToken),
-    publicTokenMotorista: chooseMeaningfulValue(primary?.publicTokenMotorista, fallback?.publicTokenMotorista),
-    publicTokenFornecedor: chooseMeaningfulValue(primary?.publicTokenFornecedor, fallback?.publicTokenFornecedor),
-    notasFiscais: Array.isArray(primary?.notasFiscais) && primary.notasFiscais.length ? primary.notasFiscais : (Array.isArray(fallback?.notasFiscais) ? fallback.notasFiscais : []),
-    documentos: Array.isArray(primary?.documentos) && primary.documentos.length ? primary.documentos : (Array.isArray(fallback?.documentos) ? fallback.documentos : []),
-    doca: hasMeaningfulValue(primary?.doca) ? primary.doca : fallback?.doca,
-    janela: hasMeaningfulValue(primary?.janela) ? primary.janela : fallback?.janela
-  };
-  return normalizeScheduleItem(merged, fallback);
 }
 
 function parseBooleanLike(value) {
@@ -821,8 +805,7 @@ async function dispatchDriverFeedbackSurvey(item, req, actor = req.user) {
 
 async function full(id) {
   try {
-    const found = await prisma.agendamento.findUnique({ where: { id: Number(id) }, include: { notasFiscais: true, documentos: true, doca: true, janela: true } });
-    return mergeAgendamentoSources(found, findAgendamentoFile(id));
+    return await prisma.agendamento.findUnique({ where: { id: Number(id) }, include: { notasFiscais: true, documentos: true, doca: true, janela: true } });
   } catch {
     return findAgendamentoFile(id);
   }
@@ -838,12 +821,7 @@ async function ensureAgendamentoScheduleContext(item = {}, fallback = null) {
 }
 
 async function mustExist(id) {
-  try {
-    const found = await prisma.agendamento.findUnique({ where: { id: Number(id) } });
-    return mergeAgendamentoSources(found, findAgendamentoFile(id));
-  } catch {
-    return findAgendamentoFile(id);
-  }
+  try { return await prisma.agendamento.findUnique({ where: { id: Number(id) } }); } catch { return findAgendamentoFile(id); }
 }
 
 async function notificationSummary(agendamentoId) {
@@ -880,7 +858,8 @@ function canShareVoucher(itemOrStatus) {
 
 async function enrichResponseItem(item) {
   if (!item) return item;
-  try { return await enrichAgendamentoWithMonitoring(item); } catch { return item; }
+  const normalized = await ensureAgendamentoScheduleContext(item);
+  try { return await enrichAgendamentoWithMonitoring(normalized); } catch { return normalized; }
 }
 
 async function buildAwarenessAnalysisFromPayload(base = {}, payload = {}) {
@@ -1359,6 +1338,7 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
   try {
     const payload = req.body || {};
     payload.cpfMotorista = normalizeCpf(payload.cpfMotorista || payload.cpf || '');
+    Object.assign(payload, await syncPayloadScheduleWithJanela(payload));
     payload.notasFiscais = await canonicalizeNotasSelecionadasComRelatorio(payload.fornecedor, Array.isArray(payload.notasFiscais) ? payload.notasFiscais : []);
     const totals = calculateTotals(Array.isArray(payload.notasFiscais) ? payload.notasFiscais : [], payload);
     Object.assign(payload, totals);
@@ -1545,11 +1525,13 @@ router.post("/:id(\\d+)/aprovar", requirePermission("agendamentos.approve"), asy
     if (req.body?.dataAgendada) data.dataAgendada = String(req.body.dataAgendada);
     if (req.body?.horaAgendada) data.horaAgendada = String(req.body.horaAgendada);
 
-    const merged = {
+    const merged = await syncPayloadScheduleWithJanela({
       ...found,
       ...data,
       notasFiscais: Array.isArray(found.notasFiscais) ? found.notasFiscais : []
-    };
+    }, found);
+    if (merged?.horaAgendada) data.horaAgendada = merged.horaAgendada;
+    if (merged?.dataAgendada) data.dataAgendada = merged.dataAgendada;
 
     if (!merged.docaId) throw new Error("Doca é obrigatória para aprovação.");
     if (!merged.janelaId) throw new Error("Janela é obrigatória para aprovação.");
@@ -1612,13 +1594,13 @@ router.post("/:id(\\d+)/reagendar", requirePermission("agendamentos.reschedule")
     if (!found) throw new Error("Agendamento não encontrado.");
     if (["FINALIZADO", "CANCELADO"].includes(found.status)) throw new Error("Não é possível reagendar esse status.");
 
-    const merged = {
+    const merged = await syncPayloadScheduleWithJanela({
       ...found,
       dataAgendada: req.body?.dataAgendada || found.dataAgendada,
       horaAgendada: req.body?.horaAgendada || found.horaAgendada,
       docaId: req.body?.docaId || found.docaId,
       janelaId: req.body?.janelaId || found.janelaId
-    };
+    }, found);
     validateAgendamentoPayload(merged, false);
     const awarenessAnalysis = await buildAwarenessAnalysisFromPayload(found, merged);
     if (awarenessAnalysis?.requiresAwareness && !req.body?.confirmarCienciaVencimento) {

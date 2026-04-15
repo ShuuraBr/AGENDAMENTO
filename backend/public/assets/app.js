@@ -1395,6 +1395,24 @@
     return Number.isFinite(num) ? num : 0;
   }
 
+  function getJanelaHoraBySelect(select) {
+    const selected = select?.selectedOptions?.[0] || null;
+    const dataHora = String(selected?.dataset?.hora || '').trim();
+    if (dataHora) return formatHour(dataHora) || dataHora;
+    const label = String(selected?.textContent || selected?.label || '').trim();
+    const match = label.match(/(\d{2}:\d{2})/);
+    return match ? match[1] : '';
+  }
+
+  function syncInternalHoraFromJanela() {
+    const janelaSelect = byId('internalJanelaSelect');
+    const horaInput = byId('agendamentoForm')?.querySelector('[name="horaAgendada"]');
+    if (!janelaSelect || !horaInput) return '';
+    const hora = getJanelaHoraBySelect(janelaSelect);
+    if (hora) horaInput.value = hora;
+    return hora;
+  }
+
   function buildNotasFromLines(text) {
     return String(text || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => ({ numeroNf: line, serie: '', chaveAcesso: '', volumes: 0, peso: 0, valorNf: 0, observacao: '' }));
   }
@@ -2017,7 +2035,12 @@
       const janelas = await api("/api/cadastros/janelas");
       const janelaOptions = janelas.map((j) => `<option value="${j.id}">${escapeHtml(j.codigo)}</option>`).join("");
       const janelaSelect = byId("internalJanelaSelect");
-      if (janelaSelect) janelaSelect.innerHTML = janelaOptions;
+      if (janelaSelect) {
+        janelaSelect.innerHTML = janelaOptions;
+        janelaSelect.removeEventListener('change', syncInternalHoraFromJanela);
+        janelaSelect.addEventListener('change', syncInternalHoraFromJanela);
+        syncInternalHoraFromJanela();
+      }
       await Promise.allSettled([loadDocaOptions(), loadFilterOptions()]);
     } catch {}
   }
@@ -2687,9 +2710,10 @@
     byId("agendamentoForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       try {
+        syncInternalHoraFromJanela();
         const payload = Object.fromEntries(new FormData(e.target).entries());
         payload.dataAgendada = normalizeDateToIso(payload.dataAgendada);
-        payload.horaAgendada = formatHour(payload.horaAgendada);
+        payload.horaAgendada = formatHour(payload.horaAgendada || syncInternalHoraFromJanela());
         payload.cpfMotorista = String(payload.cpfMotorista || '').replace(/\D/g, '');
         payload.telefoneMotorista = String(payload.telefoneMotorista || '').replace(/\D/g, '');
         payload.notasFiscais = selectedInternalNotas();
@@ -2737,7 +2761,7 @@
       }
     });
     byId("btnAprovar")?.addEventListener("click", async () => handleOp(async () => {
-      const body = { janelaId: byId("internalJanelaSelect")?.value };
+      const body = { janelaId: byId("internalJanelaSelect")?.value, horaAgendada: syncInternalHoraFromJanela() || undefined };
       const awareness = await confirmAwarenessForExistingAgendamento(currentId(), body);
       if (awareness.analysis?.requiresAwareness && !awareness.confirmed) return;
       if (awareness.confirmed) body.confirmarCienciaVencimento = true;
@@ -2745,7 +2769,7 @@
     }, "Agendamento aprovado."));
     byId("btnReprovar")?.addEventListener("click", async () => handleOp(() => postStatus("reprovar", { motivo: "Reprovado via painel" }), "Agendamento reprovado."));
     byId("btnReagendar")?.addEventListener("click", async () => handleOp(async () => {
-      const body = { dataAgendada: new Date().toISOString().slice(0, 10), horaAgendada: "10:00", janelaId: byId("internalJanelaSelect")?.value };
+      const body = { dataAgendada: new Date().toISOString().slice(0, 10), horaAgendada: syncInternalHoraFromJanela() || undefined, janelaId: byId("internalJanelaSelect")?.value };
       const awareness = await confirmAwarenessForExistingAgendamento(currentId(), body);
       if (awareness.analysis?.requiresAwareness && !awareness.confirmed) return;
       if (awareness.confirmed) body.confirmarCienciaVencimento = true;

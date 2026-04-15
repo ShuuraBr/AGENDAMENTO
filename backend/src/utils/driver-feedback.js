@@ -122,10 +122,12 @@ function normalizeFeedbackRecordShape(record = {}, fallback = {}) {
     isMissingScheduleValue(primaryDateCandidate) ? fallbackDateCandidate : primaryDateCandidate,
     normalizeDateValue(fallbackDateCandidate, '')
   );
-  const horaAgendada = normalizeTimeValue(
-    isMissingScheduleValue(primaryTimeCandidate) ? fallbackTimeCandidate : primaryTimeCandidate,
-    normalizeTimeValue(fallbackTimeCandidate, deriveHoraFromJanela(record) || deriveHoraFromJanela(fallback))
-  );
+  const derivedHora = deriveHoraFromJanela(record) || deriveHoraFromJanela(fallback);
+  const horaAgendada = derivedHora
+    || normalizeTimeValue(
+      isMissingScheduleValue(primaryTimeCandidate) ? fallbackTimeCandidate : primaryTimeCandidate,
+      normalizeTimeValue(fallbackTimeCandidate, '')
+    );
   return {
     ...fallback,
     ...record,

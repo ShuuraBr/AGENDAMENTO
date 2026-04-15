@@ -96,10 +96,13 @@ function normalizeAgendamentoForFeedback(agendamento = {}, fallback = {}) {
     isMissingScheduleValue(primaryDateCandidate) ? fallbackDateCandidate : primaryDateCandidate,
     normalizeDateValue(fallbackDateCandidate, '')
   );
-  const horaAgendada = normalizeHora(
-    isMissingScheduleValue(primaryTimeCandidate) ? fallbackTimeCandidate : primaryTimeCandidate,
-    normalizeHora(fallbackTimeCandidate, deriveHoraFromJanela(agendamento) || deriveHoraFromJanela(fallback))
-  ) || '-';
+  const derivedHora = deriveHoraFromJanela(agendamento) || deriveHoraFromJanela(fallback);
+  const horaAgendada = derivedHora
+    || normalizeHora(
+      isMissingScheduleValue(primaryTimeCandidate) ? fallbackTimeCandidate : primaryTimeCandidate,
+      normalizeHora(fallbackTimeCandidate, '')
+    )
+    || '-';
 
   return {
     ...fallback,
