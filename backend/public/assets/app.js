@@ -866,11 +866,25 @@
         form.append(key, value);
         return;
       }
-      if (value instanceof FileList || Array.isArray(value)) {
+      if (value instanceof FileList) {
         Array.from(value).forEach((item) => {
           if (item instanceof File) form.append(key, item);
-          else if (item != null) form.append(key, String(item));
         });
+        return;
+      }
+      if (Array.isArray(value)) {
+        value.forEach((item) => {
+          if (item instanceof File) {
+            form.append(key, item);
+            return;
+          }
+          if (item == null) return;
+          form.append(key, typeof item === 'object' ? JSON.stringify(item) : String(item));
+        });
+        return;
+      }
+      if (typeof value === 'object') {
+        form.append(key, JSON.stringify(value));
         return;
       }
       form.append(key, String(value));
@@ -890,48 +904,90 @@
     card.classList.add('app-modal-card-wide');
     bodyEl.classList.add('app-modal-body-html');
     bodyEl.innerHTML = `
-      <form id="checkoutCompletionForm" class="grid2" style="gap:12px;">
-        <div class="grid-full"><p>${escapeHtml(contextLabel)}</p></div>
-        <label>Como foi a descarga?
-          <select name="comoFoiDescarga">
-            <option value="Concluída sem ocorrência">Concluída sem ocorrência</option>
-            <option value="Concluída com ressalvas">Concluída com ressalvas</option>
-            <option value="Parcial">Parcial</option>
-          </select>
-        </label>
-        <label>Observação do assistente
-          <textarea name="observacaoAssistente" rows="3" placeholder="Descreva o que ocorreu na descarga."></textarea>
-        </label>
-        <label>Houve avaria?
-          <select name="houveAvaria" id="checkoutAvariaSelect">
-            <option value="nao">Não</option>
-            <option value="sim">Sim</option>
-          </select>
-        </label>
-        <label>Motorista tranquilo?
-          <select name="motoristaTranquilo">
-            <option value="">Selecione</option>
-            <option value="SIM">Sim</option>
-            <option value="NAO">Não</option>
-          </select>
-        </label>
-        <label>Carga batida?
-          <select name="cargaBatida">
-            <option value="">Selecione</option>
-            <option value="SIM">Sim</option>
-            <option value="NAO">Não</option>
-          </select>
-        </label>
-        <div class="grid-full hidden" id="checkoutAvariaFields">
-          <div class="grid2" style="gap:12px;">
-            <label>Item avariado<input name="itemAvaria" placeholder="Informe o item" /></label>
-            <label>Quantidade avariada<input name="quantidadeAvaria" type="number" min="1" step="1" placeholder="0" /></label>
-            <label class="grid-full">Observação da avaria<textarea name="observacaoAvaria" rows="3" placeholder="Descreva a avaria."></textarea></label>
-            <label class="grid-full">Imagens da avaria
-              <input name="imagensAvaria" type="file" accept="image/*" capture="environment" multiple />
+      <form id="checkoutCompletionForm" class="checkout-form-layout">
+        <div class="checkout-form-intro">${escapeHtml(contextLabel)}</div>
+
+        <section class="checkout-form-section checkout-form-section-primary">
+          <div class="checkout-form-section-header">
+            <div>
+              <strong>Resumo do recebimento</strong>
+              <span>Preencha primeiro a situação geral da descarga.</span>
+            </div>
+          </div>
+          <div class="checkout-form-grid checkout-form-grid-main">
+            <label class="checkout-field checkout-field-full checkout-field-textarea">Observação do assistente
+              <textarea name="observacaoAssistente" rows="4" placeholder="Descreva o que ocorreu na descarga."></textarea>
+            </label>
+            <label class="checkout-field">Como foi a descarga?
+              <select name="comoFoiDescarga">
+                <option value="Concluída sem ocorrência">Concluída sem ocorrência</option>
+                <option value="Concluída com ressalvas">Concluída com ressalvas</option>
+                <option value="Parcial">Parcial</option>
+              </select>
+            </label>
+            <label class="checkout-field checkout-field-highlight">Houve avaria?
+              <select name="houveAvaria" id="checkoutAvariaSelect">
+                <option value="nao">Não</option>
+                <option value="sim">Sim</option>
+              </select>
+            </label>
+            <label class="checkout-field">Motorista tranquilo?
+              <select name="motoristaTranquilo">
+                <option value="">Selecione</option>
+                <option value="SIM">Sim</option>
+                <option value="NAO">Não</option>
+              </select>
+            </label>
+            <label class="checkout-field">Carga batida?
+              <select name="cargaBatida">
+                <option value="">Selecione</option>
+                <option value="SIM">Sim</option>
+                <option value="NAO">Não</option>
+              </select>
             </label>
           </div>
-        </div>
+        </section>
+
+        <section class="checkout-form-section checkout-form-section-warning hidden" id="checkoutAvariaFields">
+          <div class="checkout-form-section-header">
+            <div>
+              <strong>Detalhamento da avaria</strong>
+              <span>Informe o tipo, a origem do recebimento e cada produto afetado.</span>
+            </div>
+            <button type="button" id="checkoutAddAvariaItem" class="btn-secondary checkout-inline-action">Adicionar produto</button>
+          </div>
+
+          <div class="checkout-form-grid checkout-form-grid-secondary">
+            <label class="checkout-field">Tipo de avaria
+              <select name="tipoAvaria" id="checkoutTipoAvaria">
+                <option value="">Selecione</option>
+                <option value="PRODUTO FALTANDO DENTRO DOS VOLUMES">PRODUTO FALTANDO DENTRO DOS VOLUMES</option>
+                <option value="PRODUTO AVARIADO/DANIFICADO">PRODUTO AVARIADO/DANIFICADO</option>
+                <option value="PRODUTO EM DESACORDO/TROCADO">PRODUTO EM DESACORDO/TROCADO</option>
+                <option value="FALTANDO VOLUMES">FALTANDO VOLUMES</option>
+              </select>
+            </label>
+            <label class="checkout-field">Recebido em
+              <select name="origemRecebimento" id="checkoutOrigemRecebimento">
+                <option value="">Selecione</option>
+                <option value="MATRIZ">1 - MATRIZ</option>
+                <option value="FILIAL">2 - FILIAL</option>
+              </select>
+            </label>
+            <label class="checkout-field checkout-field-full">Observação geral da avaria
+              <textarea name="observacaoAvaria" rows="3" placeholder="Detalhes complementares da ocorrência."></textarea>
+            </label>
+          </div>
+
+          <div class="checkout-products-block">
+            <div class="checkout-products-title">Produtos com avaria</div>
+            <div id="checkoutAvariaItems" class="checkout-products-list"></div>
+          </div>
+
+          <label class="checkout-field checkout-field-full">Imagens da avaria
+            <input name="imagensAvaria" type="file" accept="image/*" capture="environment" multiple />
+          </label>
+        </section>
       </form>
     `;
     confirmBtn.textContent = 'Concluir';
@@ -941,9 +997,82 @@
     document.body.classList.add('modal-open');
     const avariaSelect = byId('checkoutAvariaSelect');
     const avariaFields = byId('checkoutAvariaFields');
-    const toggle = () => avariaFields?.classList.toggle('hidden', String(avariaSelect?.value || 'nao') !== 'sim');
+    const avariaItemsContainer = byId('checkoutAvariaItems');
+    const addAvariaItemBtn = byId('checkoutAddAvariaItem');
+
+    const buildAvariaItemRow = (index) => `
+      <article class="checkout-avaria-item-row" data-avaria-index="${index}">
+        <div class="checkout-avaria-item-header">
+          <strong>Produto ${index + 1}</strong>
+          <button type="button" class="btn-secondary checkout-remove-avaria-item">Remover</button>
+        </div>
+        <div class="checkout-avaria-item-grid">
+          <label class="checkout-field">Produto
+            <input name="avariaProduto" placeholder="Informe o produto" />
+          </label>
+          <label class="checkout-field checkout-field-compact">Quantidade
+            <input name="avariaQuantidade" type="number" min="1" step="1" placeholder="0" />
+          </label>
+          <label class="checkout-field checkout-field-full">Observação do produto
+            <textarea name="avariaObservacao" rows="2" placeholder="Detalhe específico deste produto, se houver."></textarea>
+          </label>
+        </div>
+      </article>
+    `;
+
+    const ensureAvariaItemRow = () => {
+      if (!avariaItemsContainer) return;
+      if (avariaItemsContainer.children.length > 0) return;
+      avariaItemsContainer.insertAdjacentHTML('beforeend', buildAvariaItemRow(0));
+      const firstRemoveBtn = avariaItemsContainer.querySelector('.checkout-remove-avaria-item');
+      if (firstRemoveBtn) firstRemoveBtn.disabled = true;
+    };
+
+    const refreshAvariaRowsState = () => {
+      if (!avariaItemsContainer) return;
+      const rows = Array.from(avariaItemsContainer.querySelectorAll('.checkout-avaria-item-row'));
+      rows.forEach((row, index) => {
+        row.dataset.avariaIndex = String(index);
+        const title = row.querySelector('.checkout-avaria-item-header strong');
+        if (title) title.textContent = `Produto ${index + 1}`;
+        const removeBtn = row.querySelector('.checkout-remove-avaria-item');
+        if (removeBtn) removeBtn.disabled = rows.length === 1;
+      });
+    };
+
+    const collectAvariaItems = () => {
+      if (!avariaItemsContainer) return [];
+      return Array.from(avariaItemsContainer.querySelectorAll('.checkout-avaria-item-row')).map((row) => ({
+        produto: String(row.querySelector('[name="avariaProduto"]')?.value || '').trim(),
+        quantidade: String(row.querySelector('[name="avariaQuantidade"]')?.value || '').trim(),
+        observacao: String(row.querySelector('[name="avariaObservacao"]')?.value || '').trim()
+      })).filter((item) => item.produto || item.quantidade || item.observacao);
+    };
+
+    const toggle = () => {
+      const enabled = String(avariaSelect?.value || 'nao') === 'sim';
+      avariaFields?.classList.toggle('hidden', !enabled);
+      if (enabled) ensureAvariaItemRow();
+    };
+
     avariaSelect?.addEventListener('change', toggle);
+    addAvariaItemBtn?.addEventListener('click', () => {
+      if (!avariaItemsContainer) return;
+      avariaItemsContainer.insertAdjacentHTML('beforeend', buildAvariaItemRow(avariaItemsContainer.children.length));
+      refreshAvariaRowsState();
+    });
+    avariaItemsContainer?.addEventListener('click', (event) => {
+      const removeBtn = event.target?.closest('.checkout-remove-avaria-item');
+      if (!removeBtn) return;
+      const row = removeBtn.closest('.checkout-avaria-item-row');
+      if (!row) return;
+      if (avariaItemsContainer.querySelectorAll('.checkout-avaria-item-row').length <= 1) return;
+      row.remove();
+      refreshAvariaRowsState();
+    });
     toggle();
+    refreshAvariaRowsState();
+
     return new Promise((resolve) => {
       const cleanup = (result) => {
         host.classList.add('hidden');
@@ -958,18 +1087,29 @@
         const form = byId('checkoutCompletionForm');
         if (!form) return cleanup(null);
         const fd = new FormData(form);
-        if (String(fd.get('houveAvaria') || 'nao') === 'sim') {
-          if (!String(fd.get('itemAvaria') || '').trim() || !String(fd.get('quantidadeAvaria') || '').trim() || !String(fd.get('observacaoAvaria') || '').trim()) {
-            window.alert('Preencha item, quantidade e observação da avaria.');
+        const houveAvaria = String(fd.get('houveAvaria') || 'nao') === 'sim';
+        const avarias = collectAvariaItems();
+        if (houveAvaria) {
+          const tipoAvaria = String(fd.get('tipoAvaria') || '').trim();
+          const origemRecebimento = String(fd.get('origemRecebimento') || '').trim();
+          const hasInvalidAvaria = !tipoAvaria
+            || !origemRecebimento
+            || !avarias.length
+            || avarias.some((item) => !item.produto || !item.quantidade || Number(item.quantidade) <= 0);
+          if (hasInvalidAvaria) {
+            window.alert('Preencha o tipo da avaria, a origem do recebimento e todos os produtos com quantidade.');
             return;
           }
         }
         cleanup({
           comoFoiDescarga: fd.get('comoFoiDescarga') || '',
           observacaoAssistente: fd.get('observacaoAssistente') || '',
-          houveAvaria: String(fd.get('houveAvaria') || 'nao') === 'sim',
-          itemAvaria: fd.get('itemAvaria') || '',
-          quantidadeAvaria: fd.get('quantidadeAvaria') || '',
+          houveAvaria,
+          tipoAvaria: fd.get('tipoAvaria') || '',
+          origemRecebimento: fd.get('origemRecebimento') || '',
+          avarias,
+          itemAvaria: avarias[0]?.produto || '',
+          quantidadeAvaria: avarias[0]?.quantidade || '',
           observacaoAvaria: fd.get('observacaoAvaria') || '',
           motoristaTranquilo: fd.get('motoristaTranquilo') || '',
           cargaBatida: fd.get('cargaBatida') || '',

@@ -147,18 +147,28 @@ function deriveHoraFromJanela(item = {}) {
   return match?.[1] || '';
 }
 
+function isMissingScheduleValue(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return !normalized || ['-', 'invalid date', 'null', 'undefined'].includes(normalized);
+}
+
 function pickScheduleDateCandidate(source = {}) {
-  return source?.dataAgendada ?? source?.data_agendada ?? source?.dataProgramada ?? source?.data_programada ?? '';
+  return source?.dataAgendada ?? source?.data_agendada ?? source?.dataProgramada ?? source?.data_programada ?? source?.data ?? source?.date ?? '';
 }
 
 function pickScheduleTimeCandidate(source = {}) {
-  return source?.horaAgendada ?? source?.hora_agendada ?? source?.horaProgramada ?? source?.hora_programada ?? '';
+  return source?.horaAgendada ?? source?.hora_agendada ?? source?.horaProgramada ?? source?.hora_programada ?? source?.hora ?? source?.time ?? '';
 }
 
 function resolveScheduleValues(item = {}, fallback = null) {
-  const dataAgendada = normalizeScheduleDateValue(pickScheduleDateCandidate(item)) || normalizeScheduleDateValue(pickScheduleDateCandidate(fallback || {}));
-  const horaAgendada = normalizeScheduleTimeValue(pickScheduleTimeCandidate(item))
-    || normalizeScheduleTimeValue(pickScheduleTimeCandidate(fallback || {}))
+  const primaryDateCandidate = pickScheduleDateCandidate(item);
+  const fallbackDateCandidate = pickScheduleDateCandidate(fallback || {});
+  const primaryTimeCandidate = pickScheduleTimeCandidate(item);
+  const fallbackTimeCandidate = pickScheduleTimeCandidate(fallback || {});
+  const dataAgendada = normalizeScheduleDateValue(isMissingScheduleValue(primaryDateCandidate) ? fallbackDateCandidate : primaryDateCandidate)
+    || normalizeScheduleDateValue(fallbackDateCandidate);
+  const horaAgendada = normalizeScheduleTimeValue(isMissingScheduleValue(primaryTimeCandidate) ? fallbackTimeCandidate : primaryTimeCandidate)
+    || normalizeScheduleTimeValue(fallbackTimeCandidate)
     || deriveHoraFromJanela(item)
     || deriveHoraFromJanela(fallback || {});
   return { dataAgendada, horaAgendada };
@@ -175,19 +185,94 @@ function parseBooleanLike(value) {
   return ['1', 'true', 'sim', 's', 'yes', 'y', 'on'].includes(normalized);
 }
 
+function normalizeAvariaItems(value, fallbackItem = '', fallbackQuantity = '') {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        const parsedEntry = typeof entry === 'string'
+          ? (() => { try { return JSON.parse(entry); } catch { return { produto: entry, quantidade: '' }; } })()
+          : entry;
+        return {
+          produto: String(parsedEntry?.produto || parsedEntry?.item || '').trim(),
+          quantidade: String(parsedEntry?.quantidade || parsedEntry?.qtd || '').trim(),
+          observacao: String(parsedEntry?.observacao || parsedEntry?.obs || parsedEntry?.detalhe || '').trim()
+        };
+      })
+      .filter((entry) => entry.produto || entry.quantidade);
+  }
+
+  const parsed = (() => {
+    if (typeof value !== 'string') return null;
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  })();
+
+  if (Array.isArray(parsed)) return normalizeAvariaItems(parsed, fallbackItem, fallbackQuantity);
+  if (parsed && typeof parsed === 'object') return normalizeAvariaItems([parsed], fallbackItem, fallbackQuantity);
+
+  const item = String(fallbackItem || '').trim();
+  const quantity = String(fallbackQuantity || '').trim();
+  return item || quantity ? [{ produto: item, quantidade: quantity, observacao: '' }] : [];
+}
+
+function normalizeAvariaType(value = '') {
+  return String(value || '').trim().toUpperCase();
+}
+
+function normalizeRecebimentoOrigin(value = '') {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (normalized === '1') return 'MATRIZ';
+  if (normalized === '2') return 'FILIAL';
+  return normalized;
+}
+
+function formatScheduleDateLabel(value) {
+  const normalized = normalizeScheduleDateValue(value);
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : (normalized || '-');
+}
+
+function buildAvariaItemsText(avarias = []) {
+  const items = Array.isArray(avarias) ? avarias : [];
+  if (!items.length) return 'Nenhum produto informado.';
+  return items.map((entry) => `- ${entry.produto || '-'} | Quantidade: ${entry.quantidade || '-'}${entry.observacao ? ` | Observação: ${entry.observacao}` : ''}`).join('\n');
+}
+
+function buildAvariaItemsHtml(avarias = []) {
+  const items = Array.isArray(avarias) ? avarias : [];
+  if (!items.length) return '<li>Nenhum produto informado.</li>';
+  return items.map((entry) => `<li><strong>${entry.produto || '-'}</strong> | Quantidade: ${entry.quantidade || '-'}${entry.observacao ? ` | Observação: ${entry.observacao}` : ''}</li>`).join('');
+}
+
 function normalizeCheckoutPayload(body = {}) {
+  const avarias = normalizeAvariaItems(
+    body?.avarias,
+    body?.itemAvaria || body?.item,
+    body?.quantidadeAvaria || body?.quantidade
+  );
   const payload = {
     comoFoiDescarga: String(body?.comoFoiDescarga || body?.descargaConcluida || '').trim() || 'Concluída',
     houveAvaria: parseBooleanLike(body?.houveAvaria ?? body?.teveOcorrencia),
-    itemAvaria: String(body?.itemAvaria || '').trim(),
-    quantidadeAvaria: String(body?.quantidadeAvaria || '').trim(),
+    tipoAvaria: normalizeAvariaType(body?.tipoAvaria || body?.tipoOcorrencia),
+    origemRecebimento: normalizeRecebimentoOrigin(body?.origemRecebimento || body?.localRecebimento || body?.recebidoEm),
+    avarias,
+    itemAvaria: String(avarias?.[0]?.produto || body?.itemAvaria || '').trim(),
+    quantidadeAvaria: String(avarias?.[0]?.quantidade || body?.quantidadeAvaria || '').trim(),
     observacaoAvaria: String(body?.observacaoAvaria || body?.descricaoOcorrencia || '').trim(),
     observacaoAssistente: String(body?.observacaoAssistente || '').trim(),
     motoristaTranquilo: String(body?.motoristaTranquilo || '').trim(),
     cargaBatida: String(body?.cargaBatida || '').trim()
   };
-  if (payload.houveAvaria && (!payload.itemAvaria || !payload.quantidadeAvaria || !payload.observacaoAvaria)) {
-    throw new Error('Preencha item, quantidade e observação da avaria antes de concluir o check-out.');
+  if (payload.houveAvaria) {
+    const hasInvalidItems = !payload.avarias.length || payload.avarias.some((entry) => !entry.produto || !entry.quantidade || Number(entry.quantidade) <= 0);
+    if (!payload.tipoAvaria || !payload.origemRecebimento || hasInvalidItems) {
+      throw new Error('Preencha o tipo da avaria, a origem do recebimento e todos os produtos com quantidade antes de concluir o check-out.');
+    }
   }
   return payload;
 }
@@ -196,8 +281,14 @@ function buildCheckoutObservation(payload = {}) {
   const parts = [];
   if (payload?.comoFoiDescarga) parts.push(`Descarga: ${payload.comoFoiDescarga}`);
   if (payload?.observacaoAssistente) parts.push(`Assistente: ${payload.observacaoAssistente}`);
+  if (payload?.motoristaTranquilo) parts.push(`Motorista tranquilo: ${payload.motoristaTranquilo}`);
+  if (payload?.cargaBatida) parts.push(`Carga batida: ${payload.cargaBatida}`);
   if (payload?.houveAvaria) {
-    parts.push(`Avaria: item ${payload.itemAvaria || '-'}, qtd ${payload.quantidadeAvaria || '-'}, obs ${payload.observacaoAvaria || '-'}`);
+    parts.push(`Tipo avaria: ${payload.tipoAvaria || '-'}`);
+    parts.push(`Origem recebimento: ${payload.origemRecebimento || '-'}`);
+    const avarias = Array.isArray(payload?.avarias) ? payload.avarias : [];
+    parts.push(`Produtos: ${avarias.map((entry) => `${entry.produto || '-'} (${entry.quantidade || '-'})${entry.observacao ? ` - ${entry.observacao}` : ''}`).join(', ') || '-'}`);
+    if (payload?.observacaoAvaria) parts.push(`Obs. avaria: ${payload.observacaoAvaria}`);
   }
   return parts.join(' | ');
 }
@@ -283,6 +374,8 @@ async function notifyControladoriaAvaria({ agendamento, payload, actor = null, f
   const notasText = buildNotasResumo(item?.notasFiscais || []).map((nota) => `NF ${nota.numeroNf} | Série ${nota.serie} | Vol ${nota.volumes} | Peso ${nota.peso} | Itens ${nota.itens}`).join('\n') || 'NFs não informadas.';
   const actorLabel = String(actor?.nome || actor?.name || actor?.email || actor?.sub || 'Não identificado').trim();
   const attachments = buildAvariaAttachments(files);
+  const avariasText = buildAvariaItemsText(payload?.avarias || []);
+  const avariasHtml = buildAvariaItemsHtml(payload?.avarias || []);
   const sent = await sendMail({
     to: recipients.join(', '),
     subject: `Avaria registrada no recebimento - ${item.protocolo || item.id || 'sem protocolo'}`,
@@ -294,11 +387,13 @@ async function notifyControladoriaAvaria({ agendamento, payload, actor = null, f
       `Transportadora: ${item.transportadora || '-'}`,
       `Motorista: ${item.motorista || '-'}`,
       `Placa: ${item.placa || '-'}`,
-      `Data agendada: ${item.dataAgendada || '-'}`,
+      `Data agendada: ${formatScheduleDateLabel(item.dataAgendada)}`,
       `Hora agendada: ${item.horaAgendada || '-'}`,
       `Como foi a descarga: ${payload.comoFoiDescarga || '-'}`,
-      `Item avariado: ${payload.itemAvaria || '-'}`,
-      `Quantidade: ${payload.quantidadeAvaria || '-'}`,
+      `Tipo de avaria: ${payload.tipoAvaria || '-'}`,
+      `Recebido em: ${payload.origemRecebimento || '-'}`,
+      'Produtos informados:',
+      avariasText,
       `Observação da avaria: ${payload.observacaoAvaria || '-'}`,
       `Observação do assistente: ${payload.observacaoAssistente || '-'}`,
       `Operador responsável: ${actorLabel}`,
@@ -306,7 +401,7 @@ async function notifyControladoriaAvaria({ agendamento, payload, actor = null, f
       'Notas fiscais:',
       notasText
     ].join('\n'),
-    html: `<div style="font-family:Arial,sans-serif"><h2>Avaria registrada no recebimento</h2><p><strong>Protocolo:</strong> ${item.protocolo || '-'}<br><strong>Fornecedor:</strong> ${item.fornecedor || '-'}<br><strong>Transportadora:</strong> ${item.transportadora || '-'}<br><strong>Motorista:</strong> ${item.motorista || '-'}<br><strong>Placa:</strong> ${item.placa || '-'}<br><strong>Data agendada:</strong> ${item.dataAgendada || '-'}<br><strong>Hora agendada:</strong> ${item.horaAgendada || '-'}<br><strong>Como foi a descarga:</strong> ${payload.comoFoiDescarga || '-'}<br><strong>Item avariado:</strong> ${payload.itemAvaria || '-'}<br><strong>Quantidade:</strong> ${payload.quantidadeAvaria || '-'}<br><strong>Observação da avaria:</strong> ${payload.observacaoAvaria || '-'}<br><strong>Observação do assistente:</strong> ${payload.observacaoAssistente || '-'}<br><strong>Operador responsável:</strong> ${actorLabel}</p>${notasHtml}</div>`,
+    html: `<div style="font-family:Arial,sans-serif"><h2>Avaria registrada no recebimento</h2><p><strong>Protocolo:</strong> ${item.protocolo || '-'}<br><strong>Fornecedor:</strong> ${item.fornecedor || '-'}<br><strong>Transportadora:</strong> ${item.transportadora || '-'}<br><strong>Motorista:</strong> ${item.motorista || '-'}<br><strong>Placa:</strong> ${item.placa || '-'}<br><strong>Data agendada:</strong> ${formatScheduleDateLabel(item.dataAgendada)}<br><strong>Hora agendada:</strong> ${item.horaAgendada || '-'}<br><strong>Como foi a descarga:</strong> ${payload.comoFoiDescarga || '-'}<br><strong>Tipo de avaria:</strong> ${payload.tipoAvaria || '-'}<br><strong>Recebido em:</strong> ${payload.origemRecebimento || '-'}<br><strong>Observação da avaria:</strong> ${payload.observacaoAvaria || '-'}<br><strong>Observação do assistente:</strong> ${payload.observacaoAssistente || '-'}<br><strong>Operador responsável:</strong> ${actorLabel}</p><p><strong>Produtos informados:</strong></p><ul>${avariasHtml}</ul>${notasHtml}</div>`,
     attachments: attachments.length ? attachments : undefined
   });
   return { ...sent, to: recipients.join(', '), attachments: attachments.map((item) => item.filename) };
@@ -476,6 +571,17 @@ async function resolveOperationItem(rawToken, lookupId = "") {
   }
 }
 
+
+async function loadAgendamentoSnapshot(id, fallback = null) {
+  const numericId = Number(id || 0);
+  if (!Number.isFinite(numericId) || numericId <= 0) return fallback;
+  try {
+    return await prisma.agendamento.findUnique({ where: { id: numericId }, include: { notasFiscais: true, doca: true, janela: true, documentos: true } }) || fallback;
+  } catch {
+    return readAgendamentos().find((item) => Number(item?.id || 0) === numericId) || fallback;
+  }
+}
+
 function tokenMatchesExpectedPrefix(token = '', expectedPrefix = '') {
   const normalizedToken = String(token || '').trim().toUpperCase();
   const normalizedPrefix = String(expectedPrefix || '').trim().toUpperCase();
@@ -494,6 +600,15 @@ async function findOperationItemById(lookupId = '') {
   }
 }
 
+async function ensureOperationScheduleContext(item = {}, fallback = null) {
+  const normalized = normalizeScheduleItem(item, fallback);
+  if (!isMissingScheduleValue(normalized?.dataAgendada) && !isMissingScheduleValue(normalized?.horaAgendada)) {
+    return normalized;
+  }
+  const persisted = await loadAgendamentoSnapshot(normalized?.id || fallback?.id, null);
+  return normalizeScheduleItem(persisted || normalized, normalized);
+}
+
 async function resolveOperationContext({ rawToken = '', lookupId = '', expectedPrefix = '' } = {}) {
   const normalizedToken = normalizePublicOperationToken(rawToken);
   const numericLookupId = Number(String(lookupId || '').replace(/\D/g, '').trim()) || null;
@@ -503,12 +618,18 @@ async function resolveOperationContext({ rawToken = '', lookupId = '', expectedP
     }
     const foundByToken = await resolveByToken(normalizedToken);
     if (!foundByToken) {
+      if (numericLookupId) {
+        const foundById = await findOperationItemById(numericLookupId);
+        if (foundById) {
+          return { item: foundById, normalizedToken, lookupId: numericLookupId, reason: 'resolved_by_id_fallback', tokenMatchedStored: false };
+        }
+      }
       return { item: null, normalizedToken, lookupId: numericLookupId, reason: 'token_not_found' };
     }
     if (numericLookupId && Number(foundByToken?.id || 0) !== numericLookupId) {
       return { item: null, normalizedToken, lookupId: numericLookupId, foundId: Number(foundByToken?.id || 0) || null, reason: 'id_mismatch' };
     }
-    return { item: foundByToken, normalizedToken, lookupId: numericLookupId, reason: 'resolved_by_token' };
+    return { item: foundByToken, normalizedToken, lookupId: numericLookupId, reason: 'resolved_by_token', tokenMatchedStored: true };
   }
   const foundById = await findOperationItemById(lookupId);
   if (!foundById) {
@@ -563,7 +684,7 @@ async function logPublicAction({ actor = null, action, item, req, details = null
     acao: action,
     entidade: "AGENDAMENTO",
     entidadeId: Number(item?.id || 0) || null,
-    detalhes,
+    detalhes: details,
     ip: req.ip
   });
 }
@@ -967,7 +1088,7 @@ router.post("/checkin/:token", async (req, res) => {
     const operationRef = parsePublicOperationReference(rawReference);
     const lookupId = String(req.body?.lookupId || req.query?.id || operationRef.id || '').trim();
     const resolution = await resolveOperationContext({ rawToken: operationRef.token || req.params.token, lookupId, expectedPrefix: 'CHK' });
-    const item = resolution.item;
+    const item = resolution.item ? await ensureOperationScheduleContext(resolution.item) : null;
 
     if (!item) {
       await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, reason: resolution.reason });
@@ -1147,7 +1268,8 @@ router.post('/checkout/:token', publicAvariaUploadMiddleware, async (req, res) =
       });
     }
 
-    const normalizedUpdated = normalizeScheduleItem({ ...item, ...updated }, item);
+    const refreshed = await loadAgendamentoSnapshot(updated?.id || item?.id, { ...item, ...updated });
+    const normalizedUpdated = await ensureOperationScheduleContext(refreshed || { ...item, ...updated }, item);
     const survey = await sendDriverFeedbackRequestEmail({
       agendamento: normalizedUpdated,
       baseUrl: getBaseUrl(req)
