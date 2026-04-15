@@ -525,13 +525,17 @@ function buildLinks(req, item) {
 }
 
 function formatItem(item, req) {
-  const links = buildLinks(req, item);
-  return {
+  const normalized = normalizeScheduleItem({
     ...item,
-    semaforo: trafficColor(item.status),
+    notasFiscais: normalizeOperationNotasFiscais(item)
+  });
+  const links = buildLinks(req, normalized);
+  return {
+    ...normalized,
+    semaforo: trafficColor(normalized.status),
     links,
-    doca: item.doca?.codigo || item.doca || "A DEFINIR",
-    janela: item.janela?.codigo || item.janela || "-"
+    doca: normalized.doca?.codigo || normalized.doca || "A DEFINIR",
+    janela: normalized.janela?.codigo || normalized.janela || "-"
   };
 }
 
@@ -615,6 +619,25 @@ async function getOrCreateDocaPadrao() {
   }
 }
 
+function normalizeOperationNotasFiscais(item = {}) {
+  const source = Array.isArray(item?.notasFiscais)
+    ? item.notasFiscais
+    : Array.isArray(item?.notas)
+      ? item.notas
+      : [];
+  return source.map((nota, index) => ({
+    numeroNf: String(nota?.numeroNf || nota?.numero_nf || nota?.numero || nota?.nf || '').trim(),
+    serie: String(nota?.serie || nota?.serie_nf || '').trim(),
+    chaveAcesso: String(nota?.chaveAcesso || nota?.chave_acesso || nota?.chave || '').trim(),
+    destino: String(nota?.destino || nota?.empresa || '').trim(),
+    volumes: Number(nota?.volumes || nota?.volume || 0),
+    peso: Number(nota?.peso || 0),
+    valorNf: Number(nota?.valorNf || nota?.valor_nf || nota?.valor || 0),
+    observacao: String(nota?.observacao || '').trim(),
+    label: String(nota?.label || '').trim() || `NF ${String(nota?.numeroNf || nota?.numero || index + 1).trim()}`
+  }));
+}
+
 function buildTokenCandidates(...values) {
   const items = values
     .flatMap((value) => {
@@ -675,6 +698,7 @@ async function resolveByTokenSeed(seed = '') {
 async function resolveByToken(token) {
   const candidates = buildTokenCandidates(token);
   if (!candidates.length) return null;
+
   try {
     const found = await prisma.agendamento.findFirst({
       where: {
@@ -688,11 +712,16 @@ async function resolveByToken(token) {
       include: { notasFiscais: true, doca: true, janela: true, documentos: true }
     });
     if (found) return found;
-  } catch {
-    for (const candidate of candidates) {
-      const found = findAgendamentoByTokenFile(candidate);
-      if (found) return found;
-    }
+  } catch (error) {
+    logTechnicalEvent('public-token-db-lookup-fallback', {
+      token: String(token || ''),
+      reason: error?.message || String(error)
+    });
+  }
+
+  for (const candidate of candidates) {
+    const found = findAgendamentoByTokenFile(candidate);
+    if (found) return found;
   }
 
   for (const candidate of candidates) {

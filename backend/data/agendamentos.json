@@ -1,9 +1,9 @@
 [
   {
     "id": 4,
-    "status": "PENDENTE_APROVACAO",
+    "status": "NO_SHOW",
     "createdAt": "2026-04-01T13:42:45.016Z",
-    "updatedAt": "2026-04-01T13:42:45.016Z",
+    "updatedAt": "2026-04-15T18:46:18.174Z",
     "protocolo": "AGD-1775050965016",
     "publicTokenMotorista": "MOT-12345678901-F0HNN5",
     "publicTokenFornecedor": "FOR-FORNECEDORTESTE-ADDAG2",
@@ -34,13 +34,23 @@
         "valorNf": 10
       }
     ],
-    "documentos": []
+    "documentos": [],
+    "doca": {
+      "id": 1,
+      "codigo": "DOCA-01",
+      "descricao": "Doca principal"
+    },
+    "janela": {
+      "id": 1,
+      "codigo": "08:00-09:00",
+      "descricao": "Janela manhã 1"
+    }
   },
   {
     "id": 3,
-    "status": "PENDENTE_APROVACAO",
+    "status": "NO_SHOW",
     "createdAt": "2026-04-01T13:42:17.883Z",
-    "updatedAt": "2026-04-01T13:42:17.883Z",
+    "updatedAt": "2026-04-15T18:46:18.175Z",
     "protocolo": "AGD-1775050937883",
     "publicTokenMotorista": "MOT-12345678901-4M1POW",
     "publicTokenFornecedor": "FOR-FORNECEDORTESTE-OWMCOM",
@@ -71,13 +81,23 @@
         "valorNf": 10
       }
     ],
-    "documentos": []
+    "documentos": [],
+    "doca": {
+      "id": 1,
+      "codigo": "DOCA-01",
+      "descricao": "Doca principal"
+    },
+    "janela": {
+      "id": 1,
+      "codigo": "08:00-09:00",
+      "descricao": "Janela manhã 1"
+    }
   },
   {
     "id": 2,
-    "status": "PENDENTE_APROVACAO",
+    "status": "NO_SHOW",
     "createdAt": "2026-04-01T12:23:43.049Z",
-    "updatedAt": "2026-04-01T12:23:43.049Z",
+    "updatedAt": "2026-04-15T18:46:18.177Z",
     "protocolo": "AGD-1775046223047",
     "publicTokenMotorista": "MOT-12345678901-YM70LO",
     "publicTokenFornecedor": "FOR-FORNECEDORX-LA6ONJ",
@@ -113,8 +133,16 @@
         "observacao": ""
       }
     ],
-    "doca": "DOCA-01",
-    "janela": "08:00-09:00",
+    "doca": {
+      "id": 1,
+      "codigo": "DOCA-01",
+      "descricao": "Doca principal"
+    },
+    "janela": {
+      "id": 1,
+      "codigo": "08:00-09:00",
+      "descricao": "Janela manhã 1"
+    },
     "documentos": []
   },
   {
@@ -126,15 +154,19 @@
     "motorista": "Teste",
     "placa": "Teste",
     "doca": "DOCA-01",
-    "janela": "08:00-09:00",
+    "janela": {
+      "id": 1,
+      "codigo": "08:00-09:00",
+      "descricao": "Janela manhã 1"
+    },
     "dataAgendada": "2026-03-27",
     "horaAgendada": "08:00",
     "quantidadeNotas": 1,
     "quantidadeVolumes": 0,
-    "status": "APROVADO",
+    "status": "NO_SHOW",
     "observacoes": "teste",
     "createdAt": "2026-03-27T00:00:00.000Z",
-    "updatedAt": "2026-03-27T00:00:00.000Z",
+    "updatedAt": "2026-04-15T18:46:18.177Z",
     "notasFiscais": [
       {
         "numeroNf": "290.244",

@@ -1,1 +1,74 @@
-[]
+[
+  {
+    "id": 6,
+    "usuarioId": 1,
+    "usuarioNome": null,
+    "perfil": "ADMIN",
+    "acao": "LOGIN",
+    "entidade": "USUARIO",
+    "entidadeId": 1,
+    "detalhes": "{\"email\":\"admin@local.test\"}",
+    "ip": "127.0.0.1",
+    "createdAt": "2026-04-15T18:46:36.109Z"
+  },
+  {
+    "id": 5,
+    "usuarioId": 1,
+    "usuarioNome": null,
+    "perfil": "ADMIN",
+    "acao": "LOGIN_SUCCESS",
+    "entidade": "AUTH",
+    "entidadeId": 1,
+    "detalhes": "{\"email\":\"admin@local.test\"}",
+    "ip": "127.0.0.1",
+    "createdAt": "2026-04-15T18:46:36.109Z"
+  },
+  {
+    "id": 4,
+    "usuarioId": 1,
+    "usuarioNome": null,
+    "perfil": "ADMIN",
+    "acao": "LOGIN",
+    "entidade": "USUARIO",
+    "entidadeId": 1,
+    "detalhes": "{\"email\":\"admin@local.test\"}",
+    "ip": "127.0.0.1",
+    "createdAt": "2026-04-15T18:34:51.919Z"
+  },
+  {
+    "id": 3,
+    "usuarioId": 1,
+    "usuarioNome": null,
+    "perfil": "ADMIN",
+    "acao": "LOGIN_SUCCESS",
+    "entidade": "AUTH",
+    "entidadeId": 1,
+    "detalhes": "{\"email\":\"admin@local.test\"}",
+    "ip": "127.0.0.1",
+    "createdAt": "2026-04-15T18:34:51.918Z"
+  },
+  {
+    "id": 2,
+    "usuarioId": 1,
+    "usuarioNome": null,
+    "perfil": "ADMIN",
+    "acao": "LOGIN",
+    "entidade": "USUARIO",
+    "entidadeId": 1,
+    "detalhes": "{\"email\":\"admin@local.test\"}",
+    "ip": "127.0.0.1",
+    "createdAt": "2026-04-15T18:34:21.150Z"
+  },
+  {
+    "id": 1,
+    "usuarioId": 1,
+    "usuarioNome": null,
+    "perfil": "ADMIN",
+    "acao": "LOGIN_SUCCESS",
+    "entidade": "AUTH",
+    "entidadeId": 1,
+    "detalhes": "{\"email\":\"admin@local.test\"}",
+    "ip": "127.0.0.1",
+    "createdAt": "2026-04-15T18:34:21.147Z"
+  }
+]

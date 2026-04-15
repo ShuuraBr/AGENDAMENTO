@@ -1,0 +1,2 @@
+{"timestamp":"2026-04-15T18:46:18.178Z","event":"automatic-no-show-sweep","reason":"startup","source":"file","updated":4,"ids":[4,3,2,1],"referenceDate":"2026-04-15","referenceTime":"15:46:18","timeZone":"America/Sao_Paulo"}
+{"timestamp":"2026-04-15T18:46:38.736Z","event":"public-token-db-lookup-fallback","token":"OUT-AGD1776180801693-PJODDJ","reason":"MySQL direto indisponível: variáveis de ambiente não configuradas."}

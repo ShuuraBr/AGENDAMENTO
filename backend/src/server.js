@@ -19,12 +19,32 @@ if (!process.env.DATABASE_URL && process.env.DB_HOST) {
 
 const { default: app } = await import("./app.js");
 const { startRelatorioImportWatcher } = await import("./utils/relatorio-entradas.js");
+const { runAutomaticNoShowSweep } = await import("./utils/no-show.js");
 
 const PORT = Number(process.env.PORT || 3000);
 const shouldStartWatcher = ['1', 'true', 'yes', 'on'].includes(String(process.env.RELATORIO_IMPORT_WATCHER || '0').toLowerCase());
 
+const noShowIntervalMinutes = Math.max(1, Number(process.env.NO_SHOW_SWEEP_INTERVAL_MINUTES || 5));
+let noShowInterval = null;
+
+async function executeAutomaticNoShowSweep(reason = 'startup') {
+  try {
+    const result = await runAutomaticNoShowSweep({ reason });
+    if (result.updated > 0) {
+      console.log(`[OK] Sweep automático de no-show atualizado: ${result.updated} agendamento(s).`);
+    }
+  } catch (error) {
+    console.error('[WARN] Falha no sweep automático de no-show:', error?.message || error);
+  }
+}
+
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`[OK] Servidor rodando na porta ${PORT}`);
+  executeAutomaticNoShowSweep('startup');
+  noShowInterval = setInterval(() => {
+    executeAutomaticNoShowSweep('interval');
+  }, noShowIntervalMinutes * 60 * 1000);
+  if (typeof noShowInterval?.unref === 'function') noShowInterval.unref();
   if (shouldStartWatcher) {
     try {
       startRelatorioImportWatcher();
@@ -40,4 +60,9 @@ const server = app.listen(PORT, "0.0.0.0", () => {
 server.on("error", (err) => {
   console.error("[ERRO] Falha ao iniciar:", err);
   process.exit(1);
+});
+
+
+server.on("close", () => {
+  if (noShowInterval) clearInterval(noShowInterval);
 });
