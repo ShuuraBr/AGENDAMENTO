@@ -29,6 +29,11 @@ export function buildFeedbackLink(baseUrl, token) {
   return `${base}/?view=avaliacao&token=${encodeURIComponent(token)}`;
 }
 
+function isMissingScheduleValue(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return !normalized || ['-', 'invalid date', 'null', 'undefined'].includes(normalized);
+}
+
 
 function normalizeHora(value, fallback = '') {
   const raw = String(value || fallback || '').trim();
@@ -73,17 +78,31 @@ function normalizeDateValue(value, fallback = '') {
   return raw;
 }
 
-function normalizeAgendamentoForFeedback(agendamento = {}) {
+
+function pickFeedbackDateCandidate(source = {}) {
+  return source?.dataAgendada ?? source?.data_agendada ?? source?.dataProgramada ?? source?.data_programada ?? source?.data ?? source?.date ?? '';
+}
+
+function pickFeedbackTimeCandidate(source = {}) {
+  return source?.horaAgendada ?? source?.hora_agendada ?? source?.horaProgramada ?? source?.hora_programada ?? source?.hora ?? source?.time ?? '';
+}
+
+function normalizeAgendamentoForFeedback(agendamento = {}, fallback = {}) {
+  const primaryDateCandidate = pickFeedbackDateCandidate(agendamento);
+  const fallbackDateCandidate = pickFeedbackDateCandidate(fallback);
+  const primaryTimeCandidate = pickFeedbackTimeCandidate(agendamento);
+  const fallbackTimeCandidate = pickFeedbackTimeCandidate(fallback);
   const dataAgendada = normalizeDateValue(
-    agendamento?.dataAgendada ?? agendamento?.data_agendada ?? agendamento?.dataProgramada ?? agendamento?.data_programada,
-    ''
+    isMissingScheduleValue(primaryDateCandidate) ? fallbackDateCandidate : primaryDateCandidate,
+    normalizeDateValue(fallbackDateCandidate, '')
   );
   const horaAgendada = normalizeHora(
-    agendamento?.horaAgendada ?? agendamento?.hora_agendada ?? agendamento?.horaProgramada ?? agendamento?.hora_programada,
-    deriveHoraFromJanela(agendamento)
+    isMissingScheduleValue(primaryTimeCandidate) ? fallbackTimeCandidate : primaryTimeCandidate,
+    normalizeHora(fallbackTimeCandidate, deriveHoraFromJanela(agendamento) || deriveHoraFromJanela(fallback))
   ) || '-';
 
   return {
+    ...fallback,
     ...agendamento,
     dataAgendada,
     horaAgendada
@@ -103,15 +122,16 @@ export async function sendDriverFeedbackRequestEmail({ agendamento, baseUrl }) {
 
   const normalized = normalizeAgendamentoForFeedback(agendamento);
   const request = await ensureFeedbackRequest(normalized);
+  const enriched = normalizeAgendamentoForFeedback(request || {}, normalized);
   const feedbackLink = buildFeedbackLink(baseUrl, request.token);
-  const subject = `Avaliação de atendimento - agendamento ${normalized.protocolo}`;
+  const subject = `Avaliação de atendimento - agendamento ${enriched.protocolo}`;
   const text = [
     'Olá, motorista.',
     '',
     'Sua operação foi concluída. Queremos ouvir sua avaliação sobre o atendimento recebido no recebimento.',
-    `Protocolo: ${normalized.protocolo}`,
-    `Data agendada: ${formatDateBR(normalized.dataAgendada)}`,
-    `Horário: ${normalized.horaAgendada || '-'}`,
+    `Protocolo: ${enriched.protocolo}`,
+    `Data agendada: ${formatDateBR(enriched.dataAgendada)}`,
+    `Horário: ${enriched.horaAgendada || '-'}`,
     '',
     'A pesquisa é confidencial e pode ser respondida apenas uma vez.',
     `Link do formulário: ${feedbackLink}`
@@ -122,9 +142,9 @@ export async function sendDriverFeedbackRequestEmail({ agendamento, baseUrl }) {
       <div style="padding:24px;border:1px solid #dbe2ea;border-radius:18px;background:#ffffff;">
         <h2 style="margin:0 0 12px;color:#16355c;">Avaliação do atendimento</h2>
         <p style="margin:0 0 12px;">Sua operação foi concluída. Queremos ouvir sua avaliação sobre o atendimento recebido no recebimento.</p>
-        <p style="margin:0 0 4px;"><strong>Protocolo:</strong> ${normalized.protocolo}</p>
-        <p style="margin:0 0 4px;"><strong>Data agendada:</strong> ${formatDateBR(normalized.dataAgendada)}</p>
-        <p style="margin:0 0 18px;"><strong>Horário:</strong> ${normalized.horaAgendada || '-'}</p>
+        <p style="margin:0 0 4px;"><strong>Protocolo:</strong> ${enriched.protocolo}</p>
+        <p style="margin:0 0 4px;"><strong>Data agendada:</strong> ${formatDateBR(enriched.dataAgendada)}</p>
+        <p style="margin:0 0 18px;"><strong>Horário:</strong> ${enriched.horaAgendada || '-'}</p>
         <p style="margin:0 0 18px;">A pesquisa é confidencial e pode ser respondida apenas uma vez.</p>
         <p style="margin:0;">
           <a href="${feedbackLink}" style="display:inline-block;background:#16355c;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:12px;font-weight:700;">Responder avaliação</a>
@@ -134,7 +154,7 @@ export async function sendDriverFeedbackRequestEmail({ agendamento, baseUrl }) {
   `;
 
   const sent = await sendMail({
-    to: normalized.emailMotorista,
+    to: enriched.emailMotorista,
     subject,
     text,
     html
@@ -142,7 +162,7 @@ export async function sendDriverFeedbackRequestEmail({ agendamento, baseUrl }) {
 
   return {
     ...sent,
-    to: normalized.emailMotorista,
+    to: enriched.emailMotorista,
     feedbackLink,
     token: request.token,
     request

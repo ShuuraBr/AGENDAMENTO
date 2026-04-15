@@ -86,15 +86,33 @@ function deriveHoraFromJanela(agendamento = {}) {
   return match ? match[1] : '';
 }
 
+
+function isMissingScheduleValue(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return !normalized || ['-', 'invalid date', 'null', 'undefined'].includes(normalized);
+}
+
+function pickFeedbackDateCandidate(source = {}) {
+  return source?.dataAgendada ?? source?.data_agendada ?? source?.dataProgramada ?? source?.data_programada ?? source?.data ?? source?.date ?? '';
+}
+
+function pickFeedbackTimeCandidate(source = {}) {
+  return source?.horaAgendada ?? source?.hora_agendada ?? source?.horaProgramada ?? source?.hora_programada ?? source?.hora ?? source?.time ?? '';
+}
+
 function normalizeFeedbackRecordShape(record = {}, fallback = {}) {
   if (!record) return null;
+  const primaryDateCandidate = pickFeedbackDateCandidate(record);
+  const fallbackDateCandidate = pickFeedbackDateCandidate(fallback);
+  const primaryTimeCandidate = pickFeedbackTimeCandidate(record);
+  const fallbackTimeCandidate = pickFeedbackTimeCandidate(fallback);
   const dataAgendada = normalizeDateValue(
-    record?.dataAgendada ?? record?.data_agendada ?? fallback?.dataAgendada ?? fallback?.data_agendada,
-    ''
+    isMissingScheduleValue(primaryDateCandidate) ? fallbackDateCandidate : primaryDateCandidate,
+    normalizeDateValue(fallbackDateCandidate, '')
   );
   const horaAgendada = normalizeTimeValue(
-    record?.horaAgendada ?? record?.hora_agendada ?? fallback?.horaAgendada ?? fallback?.hora_agendada,
-    deriveHoraFromJanela(record) || deriveHoraFromJanela(fallback)
+    isMissingScheduleValue(primaryTimeCandidate) ? fallbackTimeCandidate : primaryTimeCandidate,
+    normalizeTimeValue(fallbackTimeCandidate, deriveHoraFromJanela(record) || deriveHoraFromJanela(fallback))
   );
   return {
     ...fallback,
@@ -117,7 +135,7 @@ async function findAgendamentoById(agendamentoId) {
 async function enrichFeedbackRecord(record = {}) {
   const normalized = normalizeFeedbackRecordShape(record);
   if (!normalized) return null;
-  const needsBackfill = !normalized.dataAgendada || !normalized.horaAgendada || !normalized.emailMotorista;
+  const needsBackfill = isMissingScheduleValue(normalized.dataAgendada) || isMissingScheduleValue(normalized.horaAgendada) || !normalized.emailMotorista;
   if (!needsBackfill) return normalized;
   const agendamento = await findAgendamentoById(normalized.agendamentoId);
   if (!agendamento) return normalized;
@@ -218,7 +236,7 @@ export async function ensureFeedbackRequest(agendamento) {
     );
     if (Array.isArray(existing) && existing[0]) {
       const normalizedExisting = await enrichFeedbackRecord(existing[0]);
-      if ((!existing[0]?.dataAgendada && normalizedExisting?.dataAgendada) || (!existing[0]?.horaAgendada && normalizedExisting?.horaAgendada) || (!existing[0]?.emailMotorista && normalizedExisting?.emailMotorista)) {
+      if ((isMissingScheduleValue(existing[0]?.dataAgendada) && normalizedExisting?.dataAgendada) || (isMissingScheduleValue(existing[0]?.horaAgendada) && normalizedExisting?.horaAgendada) || (!existing[0]?.emailMotorista && normalizedExisting?.emailMotorista)) {
         await prisma.$executeRawUnsafe(
           'UPDATE AvaliacaoMotorista SET dataAgendada = ?, horaAgendada = ?, emailMotorista = ? WHERE id = ?',
           normalizedExisting.dataAgendada || null,
@@ -257,7 +275,7 @@ export async function ensureFeedbackRequest(agendamento) {
     const existing = items.find((item) => Number(item.agendamentoId) === Number(agendamento.id));
     if (existing) {
       const normalizedExisting = await enrichFeedbackRecord(existing);
-      if ((!existing?.dataAgendada && normalizedExisting?.dataAgendada) || (!existing?.horaAgendada && normalizedExisting?.horaAgendada) || (!existing?.emailMotorista && normalizedExisting?.emailMotorista)) {
+      if ((isMissingScheduleValue(existing?.dataAgendada) && normalizedExisting?.dataAgendada) || (isMissingScheduleValue(existing?.horaAgendada) && normalizedExisting?.horaAgendada) || (!existing?.emailMotorista && normalizedExisting?.emailMotorista)) {
         const index = items.findIndex((item) => Number(item?.id || 0) === Number(existing.id || 0));
         if (index >= 0) {
           items[index] = { ...items[index], dataAgendada: normalizedExisting.dataAgendada, horaAgendada: normalizedExisting.horaAgendada, emailMotorista: normalizedExisting.emailMotorista };
