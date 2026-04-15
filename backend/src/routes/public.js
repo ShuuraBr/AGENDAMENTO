@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "fs";
 import { prisma } from "../utils/prisma.js";
 import { generateProtocol, generatePublicToken, verifyInternalSession } from "../utils/security.js";
 import { validateAgendamentoPayload, validateNf, normalizeChaveAcesso } from "../utils/validators.js";
@@ -211,6 +212,55 @@ function parseBooleanLike(value) {
   return ['1', 'true', 'sim', 's', 'yes', 'y', 'on'].includes(normalized);
 }
 
+function normalizeAvariaNotas(value) {
+  const source = Array.isArray(value)
+    ? value
+    : (() => {
+        if (typeof value !== 'string') return value ? [value] : [];
+        const raw = String(value || '').trim();
+        if (!raw) return [];
+        try {
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          return [{ numeroNf: raw, label: `NF ${raw}` }];
+        }
+      })();
+
+  return (Array.isArray(source) ? source : [source])
+    .map((entry) => {
+      const parsedEntry = typeof entry === 'string'
+        ? (() => { try { return JSON.parse(entry); } catch { return { numeroNf: entry, label: `NF ${entry}` }; } })()
+        : entry;
+      const numeroNf = String(parsedEntry?.numeroNf || parsedEntry?.numero || parsedEntry?.nf || '').trim();
+      const serie = String(parsedEntry?.serie || '').trim();
+      const chaveAcesso = String(parsedEntry?.chaveAcesso || parsedEntry?.chave || '').trim();
+      const destino = String(parsedEntry?.destino || parsedEntry?.empresa || '').trim();
+      const fallbackLabel = [numeroNf ? `NF ${numeroNf}` : '', serie ? `Série ${serie}` : '', destino].filter(Boolean).join(' | ');
+      const label = String(parsedEntry?.label || fallbackLabel).trim();
+      if (!numeroNf && !serie && !chaveAcesso && !label) return null;
+      return { numeroNf, serie, chaveAcesso, destino, label: label || fallbackLabel || numeroNf || chaveAcesso };
+    })
+    .filter(Boolean);
+}
+
+function formatAvariaNotasInline(notas = []) {
+  const items = Array.isArray(notas) ? notas : [];
+  if (!items.length) return '';
+  return items
+    .map((nota) => {
+      const numero = String(nota?.numeroNf || '').trim();
+      const serie = String(nota?.serie || '').trim();
+      const label = String(nota?.label || '').trim();
+      if (label) return label;
+      if (numero && serie) return `NF ${numero} / Série ${serie}`;
+      if (numero) return `NF ${numero}`;
+      return serie ? `Série ${serie}` : '';
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
 function normalizeAvariaItems(value, fallbackItem = '', fallbackQuantity = '') {
   if (Array.isArray(value)) {
     return value
@@ -221,10 +271,11 @@ function normalizeAvariaItems(value, fallbackItem = '', fallbackQuantity = '') {
         return {
           produto: String(parsedEntry?.produto || parsedEntry?.item || '').trim(),
           quantidade: String(parsedEntry?.quantidade || parsedEntry?.qtd || '').trim(),
-          observacao: String(parsedEntry?.observacao || parsedEntry?.obs || parsedEntry?.detalhe || '').trim()
+          observacao: String(parsedEntry?.observacao || parsedEntry?.obs || parsedEntry?.detalhe || '').trim(),
+          notas: normalizeAvariaNotas(parsedEntry?.notas || parsedEntry?.notasSelecionadas || parsedEntry?.nfs || parsedEntry?.notasFiscais)
         };
       })
-      .filter((entry) => entry.produto || entry.quantidade);
+      .filter((entry) => entry.produto || entry.quantidade || entry.observacao || entry.notas?.length);
   }
 
   const parsed = (() => {
@@ -243,7 +294,7 @@ function normalizeAvariaItems(value, fallbackItem = '', fallbackQuantity = '') {
 
   const item = String(fallbackItem || '').trim();
   const quantity = String(fallbackQuantity || '').trim();
-  return item || quantity ? [{ produto: item, quantidade: quantity, observacao: '' }] : [];
+  return item || quantity ? [{ produto: item, quantidade: quantity, observacao: '', notas: [] }] : [];
 }
 
 function normalizeAvariaType(value = '') {
@@ -266,13 +317,13 @@ function formatScheduleDateLabel(value) {
 function buildAvariaItemsText(avarias = []) {
   const items = Array.isArray(avarias) ? avarias : [];
   if (!items.length) return 'Nenhum produto informado.';
-  return items.map((entry) => `- ${entry.produto || '-'} | Quantidade: ${entry.quantidade || '-'}${entry.observacao ? ` | Observação: ${entry.observacao}` : ''}`).join('\n');
+  return items.map((entry) => `- ${entry.produto || '-'} | Quantidade: ${entry.quantidade || '-'}${entry.notas?.length ? ` | Notas: ${formatAvariaNotasInline(entry.notas)}` : ''}${entry.observacao ? ` | Observação: ${entry.observacao}` : ''}`).join('\n');
 }
 
 function buildAvariaItemsHtml(avarias = []) {
   const items = Array.isArray(avarias) ? avarias : [];
   if (!items.length) return '<li>Nenhum produto informado.</li>';
-  return items.map((entry) => `<li><strong>${entry.produto || '-'}</strong> | Quantidade: ${entry.quantidade || '-'}${entry.observacao ? ` | Observação: ${entry.observacao}` : ''}</li>`).join('');
+  return items.map((entry) => `<li><strong>${entry.produto || '-'}</strong> | Quantidade: ${entry.quantidade || '-'}${entry.notas?.length ? ` | Notas: ${formatAvariaNotasInline(entry.notas)}` : ''}${entry.observacao ? ` | Observação: ${entry.observacao}` : ''}</li>`).join('\n');
 }
 
 function normalizeCheckoutPayload(body = {}) {
@@ -286,6 +337,7 @@ function normalizeCheckoutPayload(body = {}) {
     houveAvaria: parseBooleanLike(body?.houveAvaria ?? body?.teveOcorrencia),
     tipoAvaria: normalizeAvariaType(body?.tipoAvaria || body?.tipoOcorrencia),
     origemRecebimento: normalizeRecebimentoOrigin(body?.origemRecebimento || body?.localRecebimento || body?.recebidoEm),
+    exigirVinculoNota: parseBooleanLike(body?.exigirVinculoNota) || Number(body?.totalNotasRelacionadas || 0) > 1,
     avarias,
     itemAvaria: String(avarias?.[0]?.produto || body?.itemAvaria || '').trim(),
     quantidadeAvaria: String(avarias?.[0]?.quantidade || body?.quantidadeAvaria || '').trim(),
@@ -295,9 +347,9 @@ function normalizeCheckoutPayload(body = {}) {
     cargaBatida: String(body?.cargaBatida || '').trim()
   };
   if (payload.houveAvaria) {
-    const hasInvalidItems = !payload.avarias.length || payload.avarias.some((entry) => !entry.produto || !entry.quantidade || Number(entry.quantidade) <= 0);
+    const hasInvalidItems = !payload.avarias.length || payload.avarias.some((entry) => !entry.produto || !entry.quantidade || Number(entry.quantidade) <= 0 || (payload.exigirVinculoNota && Array.isArray(entry?.notas) && entry.notas.length === 0));
     if (!payload.tipoAvaria || !payload.origemRecebimento || hasInvalidItems) {
-      throw new Error('Preencha o tipo da avaria, a origem do recebimento e todos os produtos com quantidade antes de concluir o check-out.');
+      throw new Error('Preencha o tipo da avaria, a origem do recebimento e todos os produtos com quantidade e nota fiscal vinculada antes de concluir o check-out.');
     }
   }
   return payload;
@@ -313,7 +365,7 @@ function buildCheckoutObservation(payload = {}) {
     parts.push(`Tipo avaria: ${payload.tipoAvaria || '-'}`);
     parts.push(`Origem recebimento: ${payload.origemRecebimento || '-'}`);
     const avarias = Array.isArray(payload?.avarias) ? payload.avarias : [];
-    parts.push(`Produtos: ${avarias.map((entry) => `${entry.produto || '-'} (${entry.quantidade || '-'})${entry.observacao ? ` - ${entry.observacao}` : ''}`).join(', ') || '-'}`);
+    parts.push(`Produtos: ${avarias.map((entry) => `${entry.produto || '-'} (${entry.quantidade || '-'})${entry.notas?.length ? ` [NFs: ${formatAvariaNotasInline(entry.notas)}]` : ''}${entry.observacao ? ` - ${entry.observacao}` : ''}`).join(', ') || '-'}`);
     if (payload?.observacaoAvaria) parts.push(`Obs. avaria: ${payload.observacaoAvaria}`);
   }
   return parts.join(' | ');
@@ -329,11 +381,15 @@ function uploadedAvariaFilesFromReq(req) {
 }
 
 function buildAvariaAttachments(files = []) {
-  return (Array.isArray(files) ? files : []).map((file) => ({
-    filename: file.originalname,
-    path: file.path,
-    contentType: file.mimetype || undefined
-  }));
+  return (Array.isArray(files) ? files : []).map((file) => {
+    const filePath = String(file?.path || '').trim();
+    if (!filePath || !fs.existsSync(filePath)) return null;
+    return {
+      filename: String(file?.originalname || file?.filename || 'imagem-avaria').trim() || 'imagem-avaria',
+      content: fs.readFileSync(filePath),
+      contentType: file?.mimetype || undefined
+    };
+  }).filter(Boolean);
 }
 
 function buildNotasResumo(notas = []) {
@@ -355,7 +411,7 @@ function renderNotasResumoHtml(notas = []) {
       <td style="padding:8px;border:1px solid #e2e8f0;text-align:right">${nota.peso}</td>
       <td style="padding:8px;border:1px solid #e2e8f0;text-align:right">${nota.itens}</td>
     </tr>
-  `).join('');
+  `).join('\n');
   if (!rows) return '<p><strong>NFs:</strong> não informadas.</p>';
   return `<table style="border-collapse:collapse;width:100%;margin-top:12px"><thead><tr><th style="padding:8px;border:1px solid #e2e8f0">NF</th><th style="padding:8px;border:1px solid #e2e8f0">Série</th><th style="padding:8px;border:1px solid #e2e8f0">Volumes</th><th style="padding:8px;border:1px solid #e2e8f0">Peso</th><th style="padding:8px;border:1px solid #e2e8f0">Itens</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
@@ -400,6 +456,7 @@ async function notifyControladoriaAvaria({ agendamento, payload, actor = null, f
   const notasText = buildNotasResumo(item?.notasFiscais || []).map((nota) => `NF ${nota.numeroNf} | Série ${nota.serie} | Vol ${nota.volumes} | Peso ${nota.peso} | Itens ${nota.itens}`).join('\n') || 'NFs não informadas.';
   const actorLabel = String(actor?.nome || actor?.name || actor?.email || actor?.sub || 'Não identificado').trim();
   const attachments = buildAvariaAttachments(files);
+  const attachmentNames = attachments.map((entry) => entry.filename);
   const avariasText = buildAvariaItemsText(payload?.avarias || []);
   const avariasHtml = buildAvariaItemsHtml(payload?.avarias || []);
   const sent = await sendMail({
@@ -423,11 +480,12 @@ async function notifyControladoriaAvaria({ agendamento, payload, actor = null, f
       `Observação da avaria: ${payload.observacaoAvaria || '-'}`,
       `Observação do assistente: ${payload.observacaoAssistente || '-'}`,
       `Operador responsável: ${actorLabel}`,
+      `Imagens anexadas: ${attachmentNames.length ? attachmentNames.join(', ') : 'Nenhuma'}`,
       '',
       'Notas fiscais:',
       notasText
     ].join('\n'),
-    html: `<div style="font-family:Arial,sans-serif"><h2>Avaria registrada no recebimento</h2><p><strong>Protocolo:</strong> ${item.protocolo || '-'}<br><strong>Fornecedor:</strong> ${item.fornecedor || '-'}<br><strong>Transportadora:</strong> ${item.transportadora || '-'}<br><strong>Motorista:</strong> ${item.motorista || '-'}<br><strong>Placa:</strong> ${item.placa || '-'}<br><strong>Data agendada:</strong> ${formatScheduleDateLabel(item.dataAgendada)}<br><strong>Hora agendada:</strong> ${item.horaAgendada || '-'}<br><strong>Como foi a descarga:</strong> ${payload.comoFoiDescarga || '-'}<br><strong>Tipo de avaria:</strong> ${payload.tipoAvaria || '-'}<br><strong>Recebido em:</strong> ${payload.origemRecebimento || '-'}<br><strong>Observação da avaria:</strong> ${payload.observacaoAvaria || '-'}<br><strong>Observação do assistente:</strong> ${payload.observacaoAssistente || '-'}<br><strong>Operador responsável:</strong> ${actorLabel}</p><p><strong>Produtos informados:</strong></p><ul>${avariasHtml}</ul>${notasHtml}</div>`,
+    html: `<div style="font-family:Arial,sans-serif"><h2>Avaria registrada no recebimento</h2><p><strong>Protocolo:</strong> ${item.protocolo || '-'}<br><strong>Fornecedor:</strong> ${item.fornecedor || '-'}<br><strong>Transportadora:</strong> ${item.transportadora || '-'}<br><strong>Motorista:</strong> ${item.motorista || '-'}<br><strong>Placa:</strong> ${item.placa || '-'}<br><strong>Data agendada:</strong> ${formatScheduleDateLabel(item.dataAgendada)}<br><strong>Hora agendada:</strong> ${item.horaAgendada || '-'}<br><strong>Como foi a descarga:</strong> ${payload.comoFoiDescarga || '-'}<br><strong>Tipo de avaria:</strong> ${payload.tipoAvaria || '-'}<br><strong>Recebido em:</strong> ${payload.origemRecebimento || '-'}<br><strong>Observação da avaria:</strong> ${payload.observacaoAvaria || '-'}<br><strong>Observação do assistente:</strong> ${payload.observacaoAssistente || '-'}<br><strong>Operador responsável:</strong> ${actorLabel}<br><strong>Imagens anexadas:</strong> ${attachmentNames.length ? attachmentNames.join(', ') : 'Nenhuma'}</p><p><strong>Produtos informados:</strong></p><ul>${avariasHtml}</ul>${notasHtml}</div>`,
     attachments: attachments.length ? attachments : undefined
   });
   return { ...sent, to: recipients.join(', '), attachments: attachments.map((item) => item.filename) };
@@ -1126,6 +1184,20 @@ router.get("/voucher/:token", async (req, res) => {
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename=voucher-${item.protocolo}.pdf`);
   res.send(pdf);
+});
+
+router.get("/checkout-context", async (req, res) => {
+  const rawReference = String(req.query?.token || req.query?.rawToken || '').trim();
+  const lookupId = String(req.query?.id || '').trim();
+  const resolution = await resolveOperationContext({ rawToken: rawReference, lookupId, expectedPrefix: 'OUT' });
+  if (!resolution.item) {
+    const message = resolution.reason === 'wrong_token_type'
+      ? 'Token informado não pertence ao fluxo de check-out.'
+      : 'Token de check-out inválido.';
+    return res.status(404).json({ message, reason: resolution.reason });
+  }
+  const item = await ensureOperationScheduleContext(resolution.item);
+  return res.json(formatItem(item, req));
 });
 
 router.get("/avaliacao/:token", async (req, res) => {

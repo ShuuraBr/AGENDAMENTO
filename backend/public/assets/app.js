@@ -892,7 +892,7 @@
     return form;
   }
 
-  async function showCheckoutCompletionForm({ title = 'Concluir operação', contextLabel = 'Finalize o recebimento.' } = {}) {
+  async function showCheckoutCompletionForm({ title = 'Concluir operação', contextLabel = 'Finalize o recebimento.', notasFiscais = [] } = {}) {
     const host = ensureModalHost();
     const titleEl = byId('appModalTitle');
     const bodyEl = byId('appModalBody');
@@ -903,6 +903,43 @@
     titleEl.textContent = title;
     card.classList.add('app-modal-card-wide');
     bodyEl.classList.add('app-modal-body-html');
+
+    const notaOptions = (() => {
+      const source = Array.isArray(notasFiscais) ? notasFiscais : [];
+      const normalized = source.map((nota, index) => {
+        const numeroNf = String(nota?.numeroNf || nota?.numero || '').trim();
+        const serie = String(nota?.serie || '').trim();
+        const chaveAcesso = String(nota?.chaveAcesso || nota?.chave || '').trim();
+        const destino = String(nota?.destino || nota?.empresa || '').trim();
+        const key = [numeroNf || `sem-numero-${index}`, serie, chaveAcesso || destino].filter(Boolean).join('||');
+        const label = [numeroNf ? `NF ${numeroNf}` : `NF ${index + 1}`, serie ? `Série ${serie}` : '', destino].filter(Boolean).join(' • ');
+        return { key, numeroNf, serie, chaveAcesso, destino, label: label || `NF ${index + 1}` };
+      }).filter((nota) => nota.key);
+      return normalized.filter((nota, index, arr) => arr.findIndex((item) => item.key === nota.key) === index);
+    })();
+    const notaOptionsMap = new Map(notaOptions.map((nota) => [nota.key, nota]));
+    const mustSelectNotas = notaOptions.length > 1;
+    const notaSummaryHtml = notaOptions.length
+      ? `
+        <div class="checkout-note-summary">
+          <div class="checkout-note-summary-header">
+            <strong>Notas fiscais disponíveis</strong>
+            <span>${mustSelectNotas ? 'Selecione uma ou mais notas em cada ocorrência.' : 'A NF única já ficará pré-selecionada no item.'}</span>
+          </div>
+          <div class="checkout-note-pill-list">
+            ${notaOptions.map((nota) => `<span class="checkout-note-pill">${escapeHtml(nota.label)}</span>`).join('')}
+          </div>
+        </div>
+      `
+      : `
+        <div class="checkout-note-summary checkout-note-summary-empty">
+          <div class="checkout-note-summary-header">
+            <strong>Notas fiscais</strong>
+            <span>Nenhuma NF foi encontrada para vincular automaticamente nesta ocorrência.</span>
+          </div>
+        </div>
+      `;
+
     bodyEl.innerHTML = `
       <form id="checkoutCompletionForm" class="checkout-form-layout">
         <div class="checkout-form-intro">${escapeHtml(contextLabel)}</div>
@@ -952,7 +989,7 @@
           <div class="checkout-form-section-header">
             <div>
               <strong>Detalhamento da avaria</strong>
-              <span>Informe o tipo, a origem do recebimento e cada produto afetado.</span>
+              <span>Informe o tipo, a origem do recebimento, os produtos afetados e as notas relacionadas.</span>
             </div>
             <button type="button" id="checkoutAddAvariaItem" class="btn-secondary checkout-inline-action">Adicionar produto</button>
           </div>
@@ -979,6 +1016,8 @@
             </label>
           </div>
 
+          ${notaSummaryHtml}
+
           <div class="checkout-products-block">
             <div class="checkout-products-title">Produtos com avaria</div>
             <div id="checkoutAvariaItems" class="checkout-products-list"></div>
@@ -1000,6 +1039,23 @@
     const avariaItemsContainer = byId('checkoutAvariaItems');
     const addAvariaItemBtn = byId('checkoutAddAvariaItem');
 
+    const buildNotaSelectorHtml = () => {
+      if (!notaOptions.length) return '';
+      return `
+        <div class="checkout-field checkout-field-full">
+          <span>Notas fiscais vinculadas</span>
+          <div class="checkout-note-chip-grid">
+            ${notaOptions.map((nota) => `
+              <label class="checkout-note-chip">
+                <input type="checkbox" name="avariaNotaSelecionada" value="${escapeHtml(nota.key)}" ${notaOptions.length === 1 ? 'checked' : ''} />
+                <span>${escapeHtml(nota.label)}</span>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    };
+
     const buildAvariaItemRow = (index) => `
       <article class="checkout-avaria-item-row" data-avaria-index="${index}">
         <div class="checkout-avaria-item-header">
@@ -1013,6 +1069,7 @@
           <label class="checkout-field checkout-field-compact">Quantidade
             <input name="avariaQuantidade" type="number" min="1" step="1" placeholder="0" />
           </label>
+          ${buildNotaSelectorHtml()}
           <label class="checkout-field checkout-field-full">Observação do produto
             <textarea name="avariaObservacao" rows="2" placeholder="Detalhe específico deste produto, se houver."></textarea>
           </label>
@@ -1045,8 +1102,12 @@
       return Array.from(avariaItemsContainer.querySelectorAll('.checkout-avaria-item-row')).map((row) => ({
         produto: String(row.querySelector('[name="avariaProduto"]')?.value || '').trim(),
         quantidade: String(row.querySelector('[name="avariaQuantidade"]')?.value || '').trim(),
-        observacao: String(row.querySelector('[name="avariaObservacao"]')?.value || '').trim()
-      })).filter((item) => item.produto || item.quantidade || item.observacao);
+        observacao: String(row.querySelector('[name="avariaObservacao"]')?.value || '').trim(),
+        notas: Array.from(row.querySelectorAll('[name="avariaNotaSelecionada"]:checked')).map((input) => {
+          const nota = notaOptionsMap.get(String(input?.value || ''));
+          return nota ? { numeroNf: nota.numeroNf, serie: nota.serie, chaveAcesso: nota.chaveAcesso, destino: nota.destino, label: nota.label } : null;
+        }).filter(Boolean)
+      })).filter((item) => item.produto || item.quantidade || item.observacao || item.notas.length);
     };
 
     const toggle = () => {
@@ -1095,9 +1156,11 @@
           const hasInvalidAvaria = !tipoAvaria
             || !origemRecebimento
             || !avarias.length
-            || avarias.some((item) => !item.produto || !item.quantidade || Number(item.quantidade) <= 0);
+            || avarias.some((item) => !item.produto || !item.quantidade || Number(item.quantidade) <= 0 || (notaOptions.length && !item.notas.length));
           if (hasInvalidAvaria) {
-            window.alert('Preencha o tipo da avaria, a origem do recebimento e todos os produtos com quantidade.');
+            window.alert(notaOptions.length
+              ? 'Preencha o tipo da avaria, a origem do recebimento, os produtos com quantidade e vincule ao menos uma nota fiscal em cada ocorrência.'
+              : 'Preencha o tipo da avaria, a origem do recebimento e todos os produtos com quantidade.');
             return;
           }
         }
@@ -1107,6 +1170,8 @@
           houveAvaria,
           tipoAvaria: fd.get('tipoAvaria') || '',
           origemRecebimento: fd.get('origemRecebimento') || '',
+          exigirVinculoNota: mustSelectNotas,
+          totalNotasRelacionadas: notaOptions.length,
           avarias,
           itemAvaria: avarias[0]?.produto || '',
           quantidadeAvaria: avarias[0]?.quantidade || '',
@@ -2434,7 +2499,18 @@
       try {
         let requestOptions = { method: "POST", body: JSON.stringify(requestBody) };
         if (modo === 'checkout') {
-          const completion = await showCheckoutCompletionForm({ title: 'Concluir check-out', contextLabel: 'Informe como foi a descarga antes de concluir o check-out.' });
+          let checkoutContext = null;
+          try {
+            const params = new URLSearchParams();
+            if (normalizedToken) params.set('token', normalizedToken);
+            if (lookupId) params.set('id', lookupId);
+            checkoutContext = await api(`/api/public/checkout-context?${params.toString()}`);
+          } catch (_ctxErr) {}
+          const completion = await showCheckoutCompletionForm({
+            title: 'Concluir check-out',
+            contextLabel: 'Informe como foi a descarga antes de concluir o check-out.',
+            notasFiscais: Array.isArray(checkoutContext?.notasFiscais) ? checkoutContext.notasFiscais : []
+          });
           if (!completion) return;
           const payload = { ...requestBody, ...completion, teveOcorrencia: completion.houveAvaria, descricaoOcorrencia: completion.observacaoAvaria, descargaConcluida: completion.comoFoiDescarga };
           if (completion.imagensAvaria?.length) requestOptions = { method: 'POST', body: buildMultipartFormData(payload) };
@@ -2678,7 +2754,9 @@
     byId("btnCancelar")?.addEventListener("click", async () => handleOp(() => postStatus("cancelar", { motivo: "Cancelado via painel" }), "Agendamento cancelado."));
     byId("btnIniciar")?.addEventListener("click", async () => handleOp(() => postStatus("iniciar"), "Descarga iniciada."));
     byId("btnFinalizar")?.addEventListener("click", async () => handleOp(async () => {
-      const completion = await showCheckoutCompletionForm({ title: 'Finalizar agendamento', contextLabel: 'Preencha as informações do recebimento antes de finalizar.' });
+      let finalizacaoContext = null;
+      try { finalizacaoContext = await api(`/api/agendamentos/${currentId()}`); } catch (_err) {}
+      const completion = await showCheckoutCompletionForm({ title: 'Finalizar agendamento', contextLabel: 'Preencha as informações do recebimento antes de finalizar.', notasFiscais: Array.isArray(finalizacaoContext?.notasFiscais) ? finalizacaoContext.notasFiscais : [] });
       if (!completion) return false;
       const payload = { ...completion, teveOcorrencia: completion.houveAvaria, descricaoOcorrencia: completion.observacaoAvaria, descargaConcluida: completion.comoFoiDescarga };
       if (completion.imagensAvaria?.length) {

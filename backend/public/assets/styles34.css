@@ -364,9 +364,20 @@ body.modal-open{overflow:hidden}
 .checkout-products-block{display:grid;gap:12px}
 .checkout-products-title{font-size:15px;font-weight:700;color:#0f172a}
 .checkout-products-list{display:grid;gap:12px}
+.checkout-note-summary{display:grid;gap:10px;padding:14px 16px;border:1px dashed #cbd5e1;border-radius:16px;background:#fff}
+.checkout-note-summary-empty{background:#f8fafc}
+.checkout-note-summary-header{display:grid;gap:4px}
+.checkout-note-summary-header strong{font-size:15px;color:#0f172a}
+.checkout-note-summary-header span{font-size:13px;color:#64748b}
+.checkout-note-pill-list{display:flex;flex-wrap:wrap;gap:8px}
+.checkout-note-pill{display:inline-flex;align-items:center;padding:7px 10px;border-radius:999px;background:#eef2ff;color:#334155;font-size:12px;font-weight:600}
+.checkout-note-chip-grid{display:flex;flex-wrap:wrap;gap:10px}
+.checkout-note-chip{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid #dbe2ea;border-radius:14px;background:#fff;cursor:pointer;min-width:220px;max-width:100%}
+.checkout-note-chip input{margin-top:2px}
+.checkout-note-chip span{font-size:13px;line-height:1.35;color:#334155}
 .checkout-avaria-item-row{display:grid;gap:12px;padding:16px;border:1px solid #dbe2ea;border-radius:16px;background:#f8fafc}
 .checkout-avaria-item-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .checkout-avaria-item-header strong{font-size:15px;color:#0f172a}
 .checkout-avaria-item-grid{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:12px;align-items:start}
 @media (max-width:1180px){.checkout-form-grid-main{grid-template-columns:1fr 1fr}.checkout-field-textarea{grid-column:1 / -1}}
-@media (max-width:760px){.checkout-form-section{padding:14px}.checkout-form-grid-main,.checkout-form-grid-secondary,.checkout-avaria-item-grid{grid-template-columns:1fr}.checkout-field-compact{max-width:none}.checkout-inline-action{width:100%}.checkout-avaria-item-header .checkout-remove-avaria-item{width:100%}}
+@media (max-width:760px){.checkout-form-section{padding:14px}.checkout-form-grid-main,.checkout-form-grid-secondary,.checkout-avaria-item-grid{grid-template-columns:1fr}.checkout-field-compact{max-width:none}.checkout-inline-action{width:100%}.checkout-avaria-item-header .checkout-remove-avaria-item{width:100%}.checkout-note-chip{min-width:100%}}
