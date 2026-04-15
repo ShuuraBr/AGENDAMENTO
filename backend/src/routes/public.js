@@ -1,7 +1,4 @@
 import express from "express";
-import multer from "multer";
-import fs from "fs";
-import path from "path";
 import { prisma } from "../utils/prisma.js";
 import { generateProtocol, generatePublicToken, verifyInternalSession } from "../utils/security.js";
 import { validateAgendamentoPayload, validateNf, normalizeChaveAcesso } from "../utils/validators.js";
@@ -25,19 +22,15 @@ import { getFeedbackRequestByToken, submitFeedbackByToken, maskCpf } from "../ut
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
 import { encodeNotaObservacao } from "../utils/nota-metadata.js";
 import { sendMail } from "../utils/email.js";
+import { createAvariaImageUpload, wrapMulter, AVARIA_IMAGE_MAX_COUNT } from "../utils/upload-policy.js";
+import { logTechnicalEvent } from "../utils/telemetry.js";
 
 const router = express.Router();
 const ACTIVE_STATUSES = ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"];
 const MANUAL_AUTH_PROFILES = ["ADMIN", "OPERADOR", "GESTOR", "PORTARIA"];
 const VOUCHER_ALLOWED_STATUSES = new Set(["APROVADO", "CHEGOU", "EM_DESCARGA", "FINALIZADO"]);
-const publicAvariaUploadDir = path.resolve("uploads", "avarias");
-fs.mkdirSync(publicAvariaUploadDir, { recursive: true });
-const publicAvariaUpload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, publicAvariaUploadDir),
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${String(file.originalname || "imagem").replace(/\s+/g, "-")}`)
-  })
-});
+const publicAvariaUpload = createAvariaImageUpload();
+const publicAvariaUploadMiddleware = wrapMulter(publicAvariaUpload.fields([{ name: "imagensAvaria", maxCount: AVARIA_IMAGE_MAX_COUNT }]));
 
 function canShareVoucher(itemOrStatus) {
   const status = typeof itemOrStatus === "string" ? itemOrStatus : itemOrStatus?.status;
@@ -475,6 +468,86 @@ async function resolveOperationItem(rawToken, lookupId = "") {
   }
 }
 
+function tokenMatchesExpectedPrefix(token = '', expectedPrefix = '') {
+  const normalizedToken = String(token || '').trim().toUpperCase();
+  const normalizedPrefix = String(expectedPrefix || '').trim().toUpperCase();
+  if (!normalizedToken || !normalizedPrefix) return false;
+  return normalizedToken.startsWith(`${normalizedPrefix}-`);
+}
+
+async function findOperationItemById(lookupId = '') {
+  const numericId = Number(String(lookupId || '').replace(/\D/g, '').trim());
+  if (!Number.isFinite(numericId) || numericId <= 0) return null;
+  try {
+    return await prisma.agendamento.findUnique({ where: { id: numericId }, include: { notasFiscais: true, doca: true, janela: true, documentos: true } });
+  } catch (error) {
+    logTechnicalEvent('operation-id-fallback', { lookupId: String(lookupId || ''), reason: error?.message || String(error) });
+    return readAgendamentos().find((item) => Number(item?.id || 0) === numericId) || null;
+  }
+}
+
+async function resolveOperationContext({ rawToken = '', lookupId = '', expectedPrefix = '' } = {}) {
+  const normalizedToken = normalizePublicOperationToken(rawToken);
+  const numericLookupId = Number(String(lookupId || '').replace(/\D/g, '').trim()) || null;
+  if (normalizedToken) {
+    if (expectedPrefix && !tokenMatchesExpectedPrefix(normalizedToken, expectedPrefix)) {
+      return { item: null, normalizedToken, lookupId: numericLookupId, reason: 'wrong_token_type' };
+    }
+    const foundByToken = await resolveByToken(normalizedToken);
+    if (!foundByToken) {
+      return { item: null, normalizedToken, lookupId: numericLookupId, reason: 'token_not_found' };
+    }
+    if (numericLookupId && Number(foundByToken?.id || 0) !== numericLookupId) {
+      return { item: null, normalizedToken, lookupId: numericLookupId, foundId: Number(foundByToken?.id || 0) || null, reason: 'id_mismatch' };
+    }
+    return { item: foundByToken, normalizedToken, lookupId: numericLookupId, reason: 'resolved_by_token' };
+  }
+  const foundById = await findOperationItemById(lookupId);
+  if (!foundById) {
+    return { item: null, normalizedToken: '', lookupId: numericLookupId, reason: numericLookupId ? 'id_not_found' : 'empty_reference' };
+  }
+  return { item: foundById, normalizedToken: '', lookupId: numericLookupId, reason: 'resolved_by_id' };
+}
+
+function buildPublicTokenLogDetails({ operation, req, rawReference, operationRef, resolution, item = null, reason = null, extra = {} } = {}) {
+  return {
+    operation,
+    route: req?.originalUrl || req?.url || null,
+    method: req?.method || null,
+    ip: req?.ip || null,
+    userAgent: req?.get ? req.get('user-agent') : null,
+    tokenRecebido: String(rawReference || '').trim() || null,
+    tokenNormalizado: operationRef?.token || resolution?.normalizedToken || null,
+    idRecebido: String(operationRef?.id || resolution?.lookupId || '').trim() || null,
+    agendamentoEncontrado: item ? Number(item?.id || 0) || null : null,
+    statusAtual: item?.status || null,
+    motivoBloqueio: reason || resolution?.reason || null,
+    ...extra
+  };
+}
+
+async function logPublicTokenFlow({ operation, req, rawReference, operationRef, resolution, item = null, reason = null, extra = {} } = {}) {
+  const details = buildPublicTokenLogDetails({ operation, req, rawReference, operationRef, resolution, item, reason, extra });
+  try {
+    logTechnicalEvent('public-token-flow', details);
+  } catch (error) {
+    console.error('[TECH_LOG] Falha ao registrar telemetria pública:', error?.message || error);
+  }
+  try {
+    await auditLog({
+      usuarioId: null,
+      perfil: 'PUBLICO',
+      acao: `TOKEN_${String(operation || '').toUpperCase()}`,
+      entidade: 'AGENDAMENTO',
+      entidadeId: Number(item?.id || 0) || null,
+      detalhes: details,
+      ip: req?.ip || null
+    });
+  } catch (error) {
+    console.error('[AUDIT] Falha ao registrar auditoria pública:', error?.message || error);
+  }
+}
+
 async function logPublicAction({ actor = null, action, item, req, details = null }) {
   await auditLog({
     usuarioId: actor?.sub || actor?.id || null,
@@ -878,13 +951,29 @@ router.post("/avaliacao/:token", async (req, res) => {
   return res.json({ ok: true, message: "Avaliação registrada com sucesso.", record: result.record });
 });
 
+
 router.post("/checkin/:token", async (req, res) => {
   const actor = getOptionalActor(req);
-  const operationRef = parsePublicOperationReference(req.body?.rawToken || req.body?.token || req.query?.token || req.params.token);
+  const rawReference = req.body?.rawToken || req.body?.token || req.query?.token || req.params.token;
+  const operationRef = parsePublicOperationReference(rawReference);
   const lookupId = String(req.body?.lookupId || req.query?.id || operationRef.id || '').trim();
-  const item = await resolveOperationItem(operationRef.token || req.params.token, lookupId);
-  if (!item) return res.status(404).json({ message: "Token de check-in inválido." });
-  if (!["APROVADO", "CHEGOU"].includes(item.status)) return res.status(400).json({ message: "Check-in só permitido para agendamentos aprovados." });
+  const resolution = await resolveOperationContext({ rawToken: operationRef.token || req.params.token, lookupId, expectedPrefix: 'CHK' });
+  const item = resolution.item;
+
+  if (!item) {
+    await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, reason: resolution.reason });
+    const message = resolution.reason === 'wrong_token_type'
+      ? 'Token informado não pertence ao fluxo de check-in.'
+      : resolution.reason === 'id_mismatch'
+        ? 'O token informado não corresponde ao agendamento selecionado.'
+        : 'Token de check-in inválido.';
+    return res.status(404).json({ message, reason: resolution.reason });
+  }
+
+  if (!["APROVADO", "CHEGOU"].includes(item.status)) {
+    await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, item, reason: 'status_not_allowed' });
+    return res.status(400).json({ message: "Check-in só permitido para agendamentos aprovados." });
+  }
 
   const windowInfo = buildCheckinWindow(item);
   const requiresManualAuthorization = !!(windowInfo.dateMismatch || windowInfo.timeMismatch);
@@ -912,6 +1001,7 @@ router.post("/checkin/:token", async (req, res) => {
         gestorNotification
       }
     });
+    await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, item, reason: requiresGestorAuthorization ? 'requires_manager_authorization' : 'outside_window', extra: { gestorNotification } });
 
     const baseMessage = buildCheckinMismatchMessage(item, windowInfo);
     const managerMessage = requiresGestorAuthorization
@@ -933,6 +1023,7 @@ router.post("/checkin/:token", async (req, res) => {
   }
 
   if (requiresManualAuthorization && overrideRequested && !canManuallyAuthorize(actor)) {
+    await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, item, reason: 'override_without_permission' });
     return res.status(403).json({ message: "A liberação manual do check-in fora da janela só pode ser feita por operador, portaria, gestor ou administrador autenticado." });
   }
 
@@ -940,7 +1031,8 @@ router.post("/checkin/:token", async (req, res) => {
   let updated;
   try {
     updated = await prisma.agendamento.update({ where: { id: item.id }, data: patch });
-  } catch {
+  } catch (error) {
+    logTechnicalEvent('public-checkin-persistence-fallback', { agendamentoId: item.id, reason: error?.message || String(error) });
     updated = updateAgendamentoFile(item.id, { ...patch, checkinEm: item.checkinEm || new Date().toISOString() });
   }
 
@@ -958,6 +1050,7 @@ router.post("/checkin/:token", async (req, res) => {
       diffMinutes: windowInfo.diffMinutes
     }
   });
+  await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, item: updated, reason: 'success' });
 
   return res.json({
     ok: true,
@@ -967,14 +1060,26 @@ router.post("/checkin/:token", async (req, res) => {
   });
 });
 
-router.post('/checkout/:token', publicAvariaUpload.fields([{ name: 'imagensAvaria', maxCount: 10 }]), async (req, res) => {
-  const actor = getOptionalActor(req);
-  const operationRef = parsePublicOperationReference(req.body?.rawToken || req.body?.token || req.query?.token || req.params.token);
-  const lookupId = String(req.body?.lookupId || req.query?.id || operationRef.id || '').trim();
-  const item = await resolveOperationItem(operationRef.token || req.params.token, lookupId);
-  if (!item) return res.status(404).json({ message: 'Token de check-out inválido.' });
+router.post('/checkout/:token', publicAvariaUploadMiddleware, async (req, res) => {
+
+const actor = getOptionalActor(req);
+const rawReference = req.body?.rawToken || req.body?.token || req.query?.token || req.params.token;
+const operationRef = parsePublicOperationReference(rawReference);
+const lookupId = String(req.body?.lookupId || req.query?.id || operationRef.id || '').trim();
+const resolution = await resolveOperationContext({ rawToken: operationRef.token || req.params.token, lookupId, expectedPrefix: 'OUT' });
+const item = resolution.item;
+if (!item) {
+  await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, reason: resolution.reason });
+  const message = resolution.reason === 'wrong_token_type'
+    ? 'Token informado não pertence ao fluxo de check-out.'
+    : resolution.reason === 'id_mismatch'
+      ? 'O token informado não corresponde ao agendamento selecionado.'
+      : 'Token de check-out inválido.';
+  return res.status(404).json({ message, reason: resolution.reason });
+}
 
   if (String(item.status || '').trim().toUpperCase() === 'CHEGOU') {
+    await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, item, reason: 'requires_start_unload' });
     return res.status(409).json({
       message: 'O check-out por token/QR só pode ser executado após o início da descarga. Inicie a descarga ou finalize pelo painel interno.',
       requiresStartUnload: true,
@@ -984,6 +1089,7 @@ router.post('/checkout/:token', publicAvariaUpload.fields([{ name: 'imagensAvari
   }
 
   if (String(item.status || '').trim().toUpperCase() !== 'EM_DESCARGA') {
+    await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, item, reason: 'status_not_allowed' });
     return res.status(400).json({ message: 'Check-out só permitido após o início da descarga.' });
   }
 
@@ -991,6 +1097,7 @@ router.post('/checkout/:token', publicAvariaUpload.fields([{ name: 'imagensAvari
   try {
     avaliacaoRecebimento = normalizeCheckoutPayload(req.body || {});
   } catch (err) {
+    await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, item, reason: 'invalid_checkout_payload', extra: { message: err.message } });
     return res.status(400).json({ message: err.message });
   }
 
@@ -1004,7 +1111,8 @@ router.post('/checkout/:token', publicAvariaUpload.fields([{ name: 'imagensAvari
   let updated;
   try {
     updated = await prisma.agendamento.update({ where: { id: item.id }, data: patch });
-  } catch {
+  } catch (error) {
+    logTechnicalEvent('public-checkout-persistence-fallback', { agendamentoId: item.id, reason: error?.message || String(error) });
     updated = updateAgendamentoFile(item.id, {
       ...patch,
       fimDescargaEm: new Date().toISOString()
@@ -1041,6 +1149,7 @@ router.post('/checkout/:token', publicAvariaUpload.fields([{ name: 'imagensAvari
     }
   });
 
+  await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, item: normalizedUpdated, reason: 'success', extra: { surveySent: !!survey?.sent, avariaEmailSent: !!ocorrenciaRecebimento?.sent, anexosAvaria: files.map((file) => file.originalname) } });
   return res.json({ ok: true, message: 'Check-out realizado com sucesso.', agendamento: normalizedUpdated, avaliacao: survey, avaliacaoRecebimento, ocorrenciaRecebimento });
 });
 

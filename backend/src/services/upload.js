@@ -1,17 +1,11 @@
-import multer from 'multer';
-import fs from 'fs';
-import path from 'path';
-import { env } from '../config/env.js';
+import { createDocumentUpload, createAvariaImageUpload, AVARIA_IMAGE_MAX_BYTES, AVARIA_IMAGE_MAX_COUNT, AVARIA_ALLOWED_MIME_TYPES } from '../utils/upload-policy.js';
 
-const uploadPath = path.resolve(process.cwd(), env.uploadDir);
-fs.mkdirSync(uploadPath, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadPath),
-  filename: (req, file, cb) => {
-    const safeName = `${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`;
-    cb(null, safeName);
-  },
-});
-
-export const upload = multer({ storage });
+export const upload = createDocumentUpload();
+export const uploadAvaria = createAvariaImageUpload();
+export const uploadPolicy = {
+  avaria: {
+    maxBytes: AVARIA_IMAGE_MAX_BYTES,
+    maxCount: AVARIA_IMAGE_MAX_COUNT,
+    allowedMimeTypes: AVARIA_ALLOWED_MIME_TYPES
+  }
+};

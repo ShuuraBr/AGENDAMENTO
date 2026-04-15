@@ -1,6 +1,4 @@
 import { Router } from "express";
-import multer from "multer";
-import fs from "fs";
 import path from "path";
 import { authRequired, requirePermission } from "../middlewares/auth.js";
 import { prisma } from "../utils/prisma.js";
@@ -19,26 +17,16 @@ import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamen
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
 import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, sendMonthlyNearDueDigestIfNeeded, searchByNumeroNf } from "../utils/nf-monitoring.js";
 import { encodeNotaObservacao } from "../utils/nota-metadata.js";
+import { createDocumentUpload, createAvariaImageUpload, wrapMulter, AVARIA_IMAGE_MAX_COUNT } from "../utils/upload-policy.js";
+import { logTechnicalEvent } from "../utils/telemetry.js";
 
 const router = Router();
 router.use(authRequired);
 
-const uploadDir = path.resolve("uploads", "documentos");
-fs.mkdirSync(uploadDir, { recursive: true });
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, "-")}`)
-});
-const upload = multer({ storage });
-const uploadAvaria = upload.fields([{ name: "imagensAvaria", maxCount: 10 }]);
-
-const avariaUploadDir = path.resolve("uploads", "avarias");
-fs.mkdirSync(avariaUploadDir, { recursive: true });
-const avariaStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, avariaUploadDir),
-  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, "-")}`)
-});
-const avariaUpload = multer({ storage: avariaStorage });
+const upload = createDocumentUpload();
+const uploadMiddleware = wrapMulter(upload.single("arquivo"));
+const avariaUpload = createAvariaImageUpload();
+const uploadAvariaMiddleware = wrapMulter(avariaUpload.fields([{ name: "imagensAvaria", maxCount: AVARIA_IMAGE_MAX_COUNT }]));
 
 function parseAuditDetalhes(raw) {
   if (!raw) return null;
@@ -1437,7 +1425,7 @@ router.post("/:id(\\d+)/iniciar", requirePermission("agendamentos.start"), async
   try { res.json(await transition(req.params.id, "EM_DESCARGA", { inicioDescargaEm: new Date() }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-router.post("/:id(\\d+)/finalizar", requirePermission("agendamentos.finish"), async (req, res) => {
+router.post("/:id(\\d+)/finalizar", requirePermission("agendamentos.finish"), uploadAvariaMiddleware, async (req, res) => {
   try {
     const found = await full(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
@@ -1453,11 +1441,12 @@ router.post("/:id(\\d+)/finalizar", requirePermission("agendamentos.finish"), as
 
     const updated = await transition(req.params.id, "FINALIZADO", patch, req);
     const item = normalizeScheduleItem(await full(updated.id), found);
-    const ocorrenciaRecebimento = await notifyControladoriaAvaria({ agendamento: item, payload: recebimento, req, actor: req.user });
+    const ocorrenciaRecebimento = await notifyControladoriaAvaria({ agendamento: item, payload: recebimento, req, actor: req.user, files: uploadedAvariaFilesFromReq(req) });
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "FINALIZAR_DESCARGA", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: { origem: 'painel-interno', recebimento, ocorrenciaRecebimento }, ip: req.ip });
     const avaliacao = await dispatchDriverFeedbackSurvey(item, req, req.user);
     res.json({ ...item, avaliacao, recebimento, ocorrenciaRecebimento });
   } catch (err) {
+    logTechnicalEvent('internal-finalization-error', { agendamentoId: Number(req.params.id || 0) || null, reason: err?.message || String(err), route: req.originalUrl || req.url });
     res.status(400).json({ message: err.message });
   }
 });
@@ -1492,7 +1481,7 @@ router.post("/:id(\\d+)/checkin", requirePermission("agendamentos.checkin"), asy
   }
 });
 
-router.post("/:id(\\d+)/documentos", requirePermission("agendamentos.documentos"), upload.single("arquivo"), async (req, res) => {
+router.post("/:id(\\d+)/documentos", requirePermission("agendamentos.documentos"), uploadMiddleware, async (req, res) => {
   try {
     const ag = await mustExist(req.params.id);
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
