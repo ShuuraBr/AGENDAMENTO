@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { prisma } from './prisma.js';
+import { readAgendamentos } from './file-store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +36,94 @@ function generateToken() {
   return `AVL-${crypto.randomBytes(12).toString('hex').toUpperCase()}`;
 }
 
+function normalizeDateValue(value, fallback = '') {
+  const rawValue = value ?? fallback;
+  if (!rawValue) return '';
+  if (rawValue instanceof Date && !Number.isNaN(rawValue.getTime())) {
+    const year = String(rawValue.getUTCFullYear());
+    const month = String(rawValue.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(rawValue.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  const raw = String(rawValue).trim();
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T].*)?$/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  const native = new Date(raw);
+  if (!Number.isNaN(native.getTime())) {
+    const year = String(native.getUTCFullYear());
+    const month = String(native.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(native.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return raw;
+}
+
+function normalizeTimeValue(value, fallback = '') {
+  const rawValue = value ?? fallback;
+  if (!rawValue) return '';
+  if (rawValue instanceof Date && !Number.isNaN(rawValue.getTime())) {
+    const hh = String(rawValue.getUTCHours()).padStart(2, '0');
+    const mm = String(rawValue.getUTCMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+  const raw = String(rawValue).trim();
+  const match = raw.match(/^(\d{2}:\d{2})(?::\d{2})?$/);
+  if (match) return match[1];
+  const native = new Date(raw);
+  if (!Number.isNaN(native.getTime())) {
+    const hh = String(native.getUTCHours()).padStart(2, '0');
+    const mm = String(native.getUTCMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  }
+  return raw;
+}
+
+function deriveHoraFromJanela(agendamento = {}) {
+  const janelaCodigo = String(agendamento?.janela?.codigo || agendamento?.janela || agendamento?.janelaCodigo || '').trim();
+  const match = janelaCodigo.match(/(\d{2}:\d{2})/);
+  return match ? match[1] : '';
+}
+
+function normalizeFeedbackRecordShape(record = {}, fallback = {}) {
+  if (!record) return null;
+  const dataAgendada = normalizeDateValue(
+    record?.dataAgendada ?? record?.data_agendada ?? fallback?.dataAgendada ?? fallback?.data_agendada,
+    ''
+  );
+  const horaAgendada = normalizeTimeValue(
+    record?.horaAgendada ?? record?.hora_agendada ?? fallback?.horaAgendada ?? fallback?.hora_agendada,
+    deriveHoraFromJanela(record) || deriveHoraFromJanela(fallback)
+  );
+  return {
+    ...fallback,
+    ...record,
+    dataAgendada,
+    horaAgendada
+  };
+}
+
+async function findAgendamentoById(agendamentoId) {
+  const numericId = Number(agendamentoId || 0);
+  if (!Number.isFinite(numericId) || numericId <= 0) return null;
+  try {
+    return await prisma.agendamento.findUnique({ where: { id: numericId }, include: { janela: true } });
+  } catch {
+    return readAgendamentos().find((item) => Number(item?.id || 0) === numericId) || null;
+  }
+}
+
+async function enrichFeedbackRecord(record = {}) {
+  const normalized = normalizeFeedbackRecordShape(record);
+  if (!normalized) return null;
+  const needsBackfill = !normalized.dataAgendada || !normalized.horaAgendada || !normalized.emailMotorista;
+  if (!needsBackfill) return normalized;
+  const agendamento = await findAgendamentoById(normalized.agendamentoId);
+  if (!agendamento) return normalized;
+  return normalizeFeedbackRecordShape(normalized, agendamento);
+}
+
 export function maskCpf(value = '') {
   const digits = String(value || '').replace(/\D/g, '');
   if (!digits) return '-';
@@ -44,28 +133,29 @@ export function maskCpf(value = '') {
 
 function normalizeRecord(record = {}) {
   if (!record) return null;
+  const shaped = normalizeFeedbackRecordShape(record);
   return {
-    id: Number(record.id || 0) || null,
-    agendamentoId: Number(record.agendamentoId || 0) || null,
-    token: String(record.token || '').trim(),
-    protocolo: String(record.protocolo || '').trim(),
-    fornecedor: String(record.fornecedor || '').trim(),
-    transportadora: String(record.transportadora || '').trim(),
-    motorista: String(record.motorista || '').trim(),
-    cpfMotorista: String(record.cpfMotorista || '').trim(),
-    placa: String(record.placa || '').trim(),
-    dataAgendada: String(record.dataAgendada || '').trim(),
-    horaAgendada: String(record.horaAgendada || '').trim(),
-    emailMotorista: String(record.emailMotorista || '').trim(),
-    atendimentoNota: record.atendimentoNota == null || record.atendimentoNota === '' ? null : Number(record.atendimentoNota),
-    equipeNota: record.equipeNota == null || record.equipeNota === '' ? null : Number(record.equipeNota),
-    rapidezNota: record.rapidezNota == null || record.rapidezNota === '' ? null : Number(record.rapidezNota),
-    processoTranquilo: String(record.processoTranquilo || '').trim(),
-    comentario: String(record.comentario || '').trim(),
-    respondeu: Boolean(Number(record.respondeu || 0)),
-    respondeuEm: record.respondeuEm || null,
-    createdAt: record.createdAt || null,
-    updatedAt: record.updatedAt || null
+    id: Number(shaped.id || 0) || null,
+    agendamentoId: Number(shaped.agendamentoId || 0) || null,
+    token: String(shaped.token || '').trim(),
+    protocolo: String(shaped.protocolo || '').trim(),
+    fornecedor: String(shaped.fornecedor || '').trim(),
+    transportadora: String(shaped.transportadora || '').trim(),
+    motorista: String(shaped.motorista || '').trim(),
+    cpfMotorista: String(shaped.cpfMotorista || '').trim(),
+    placa: String(shaped.placa || '').trim(),
+    dataAgendada: String(shaped.dataAgendada || '').trim(),
+    horaAgendada: String(shaped.horaAgendada || '').trim(),
+    emailMotorista: String(shaped.emailMotorista || '').trim(),
+    atendimentoNota: shaped.atendimentoNota == null || shaped.atendimentoNota === '' ? null : Number(shaped.atendimentoNota),
+    equipeNota: shaped.equipeNota == null || shaped.equipeNota === '' ? null : Number(shaped.equipeNota),
+    rapidezNota: shaped.rapidezNota == null || shaped.rapidezNota === '' ? null : Number(shaped.rapidezNota),
+    processoTranquilo: String(shaped.processoTranquilo || '').trim(),
+    comentario: String(shaped.comentario || '').trim(),
+    respondeu: Boolean(Number(shaped.respondeu || 0)),
+    respondeuEm: shaped.respondeuEm || null,
+    createdAt: shaped.createdAt || null,
+    updatedAt: shaped.updatedAt || null
   };
 }
 
@@ -127,7 +217,17 @@ export async function ensureFeedbackRequest(agendamento) {
       Number(agendamento.id)
     );
     if (Array.isArray(existing) && existing[0]) {
-      return normalizeRecord(existing[0]);
+      const normalizedExisting = await enrichFeedbackRecord(existing[0]);
+      if ((!existing[0]?.dataAgendada && normalizedExisting?.dataAgendada) || (!existing[0]?.horaAgendada && normalizedExisting?.horaAgendada) || (!existing[0]?.emailMotorista && normalizedExisting?.emailMotorista)) {
+        await prisma.$executeRawUnsafe(
+          'UPDATE AvaliacaoMotorista SET dataAgendada = ?, horaAgendada = ?, emailMotorista = ? WHERE id = ?',
+          normalizedExisting.dataAgendada || null,
+          normalizedExisting.horaAgendada || null,
+          normalizedExisting.emailMotorista || null,
+          Number(normalizedExisting.id)
+        );
+      }
+      return normalizedExisting;
     }
 
     const record = recordFromAgendamento(agendamento);
@@ -151,16 +251,26 @@ export async function ensureFeedbackRequest(agendamento) {
       'SELECT * FROM AvaliacaoMotorista WHERE token = ? LIMIT 1',
       record.token
     );
-    return normalizeRecord(created?.[0] || record);
+    return await enrichFeedbackRecord(created?.[0] || record);
   } catch {
     const items = readFileRecords();
     const existing = items.find((item) => Number(item.agendamentoId) === Number(agendamento.id));
-    if (existing) return normalizeRecord(existing);
+    if (existing) {
+      const normalizedExisting = await enrichFeedbackRecord(existing);
+      if ((!existing?.dataAgendada && normalizedExisting?.dataAgendada) || (!existing?.horaAgendada && normalizedExisting?.horaAgendada) || (!existing?.emailMotorista && normalizedExisting?.emailMotorista)) {
+        const index = items.findIndex((item) => Number(item?.id || 0) === Number(existing.id || 0));
+        if (index >= 0) {
+          items[index] = { ...items[index], dataAgendada: normalizedExisting.dataAgendada, horaAgendada: normalizedExisting.horaAgendada, emailMotorista: normalizedExisting.emailMotorista };
+          writeFileRecords(items);
+        }
+      }
+      return normalizedExisting;
+    }
 
     const record = { id: nextId(items), ...recordFromAgendamento(agendamento) };
     items.unshift(record);
     writeFileRecords(items);
-    return normalizeRecord(record);
+    return await enrichFeedbackRecord(record);
   }
 }
 
@@ -174,9 +284,9 @@ export async function getFeedbackRequestByToken(token) {
       'SELECT * FROM AvaliacaoMotorista WHERE token = ? LIMIT 1',
       normalizedToken
     );
-    return rows?.[0] ? normalizeRecord(rows[0]) : null;
+    return rows?.[0] ? await enrichFeedbackRecord(rows[0]) : null;
   } catch {
-    return normalizeRecord(readFileRecords().find((item) => String(item.token) === normalizedToken) || null);
+    return await enrichFeedbackRecord(readFileRecords().find((item) => String(item.token) === normalizedToken) || null);
   }
 }
 

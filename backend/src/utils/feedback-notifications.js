@@ -49,11 +49,44 @@ function deriveHoraFromJanela(agendamento = {}) {
   return match ? match[1] : '';
 }
 
+function normalizeDateValue(value, fallback = '') {
+  const rawValue = value ?? fallback;
+  if (!rawValue) return '';
+  if (rawValue instanceof Date && !Number.isNaN(rawValue.getTime())) {
+    const year = String(rawValue.getUTCFullYear());
+    const month = String(rawValue.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(rawValue.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  const raw = String(rawValue).trim();
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T].*)?$/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const br = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  const native = new Date(raw);
+  if (!Number.isNaN(native.getTime())) {
+    const year = String(native.getUTCFullYear());
+    const month = String(native.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(native.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return raw;
+}
+
 function normalizeAgendamentoForFeedback(agendamento = {}) {
+  const dataAgendada = normalizeDateValue(
+    agendamento?.dataAgendada ?? agendamento?.data_agendada ?? agendamento?.dataProgramada ?? agendamento?.data_programada,
+    ''
+  );
+  const horaAgendada = normalizeHora(
+    agendamento?.horaAgendada ?? agendamento?.hora_agendada ?? agendamento?.horaProgramada ?? agendamento?.hora_programada,
+    deriveHoraFromJanela(agendamento)
+  ) || '-';
+
   return {
     ...agendamento,
-    dataAgendada: agendamento?.dataAgendada || '',
-    horaAgendada: normalizeHora(agendamento?.horaAgendada, deriveHoraFromJanela(agendamento)) || '-'
+    dataAgendada,
+    horaAgendada
   };
 }
 

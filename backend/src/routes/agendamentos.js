@@ -120,11 +120,19 @@ function parseJanelaCodigo(codigo = '') {
 }
 
 
+function pickScheduleDateCandidate(source = {}) {
+  return source?.dataAgendada ?? source?.data_agendada ?? source?.dataProgramada ?? source?.data_programada ?? '';
+}
+
+function pickScheduleTimeCandidate(source = {}) {
+  return source?.horaAgendada ?? source?.hora_agendada ?? source?.horaProgramada ?? source?.hora_programada ?? '';
+}
+
 function resolveScheduleValues(item = {}, fallback = {}) {
-  const dataAgendada = normalizeScheduleDateValue(item?.dataAgendada || fallback?.dataAgendada || '');
+  const dataAgendada = normalizeScheduleDateValue(pickScheduleDateCandidate(item) || pickScheduleDateCandidate(fallback));
   const janelaCodigo = item?.janela?.codigo || fallback?.janela?.codigo || item?.janela || fallback?.janela || '';
   const derivedHour = parseJanelaCodigo(janelaCodigo).horaInicio;
-  const horaAgendada = normalizeScheduleTimeValue(item?.horaAgendada || fallback?.horaAgendada || derivedHour || '');
+  const horaAgendada = normalizeScheduleTimeValue(pickScheduleTimeCandidate(item) || pickScheduleTimeCandidate(fallback) || derivedHour || '');
   return { dataAgendada, horaAgendada };
 }
 

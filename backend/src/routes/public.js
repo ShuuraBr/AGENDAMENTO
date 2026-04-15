@@ -147,10 +147,18 @@ function deriveHoraFromJanela(item = {}) {
   return match?.[1] || '';
 }
 
+function pickScheduleDateCandidate(source = {}) {
+  return source?.dataAgendada ?? source?.data_agendada ?? source?.dataProgramada ?? source?.data_programada ?? '';
+}
+
+function pickScheduleTimeCandidate(source = {}) {
+  return source?.horaAgendada ?? source?.hora_agendada ?? source?.horaProgramada ?? source?.hora_programada ?? '';
+}
+
 function resolveScheduleValues(item = {}, fallback = null) {
-  const dataAgendada = normalizeScheduleDateValue(item?.dataAgendada) || normalizeScheduleDateValue(fallback?.dataAgendada);
-  const horaAgendada = normalizeScheduleTimeValue(item?.horaAgendada)
-    || normalizeScheduleTimeValue(fallback?.horaAgendada)
+  const dataAgendada = normalizeScheduleDateValue(pickScheduleDateCandidate(item)) || normalizeScheduleDateValue(pickScheduleDateCandidate(fallback || {}));
+  const horaAgendada = normalizeScheduleTimeValue(pickScheduleTimeCandidate(item))
+    || normalizeScheduleTimeValue(pickScheduleTimeCandidate(fallback || {}))
     || deriveHoraFromJanela(item)
     || deriveHoraFromJanela(fallback || {});
   return { dataAgendada, horaAgendada };
@@ -953,45 +961,76 @@ router.post("/avaliacao/:token", async (req, res) => {
 
 
 router.post("/checkin/:token", async (req, res) => {
-  const actor = getOptionalActor(req);
-  const rawReference = req.body?.rawToken || req.body?.token || req.query?.token || req.params.token;
-  const operationRef = parsePublicOperationReference(rawReference);
-  const lookupId = String(req.body?.lookupId || req.query?.id || operationRef.id || '').trim();
-  const resolution = await resolveOperationContext({ rawToken: operationRef.token || req.params.token, lookupId, expectedPrefix: 'CHK' });
-  const item = resolution.item;
+  try {
+    const actor = getOptionalActor(req);
+    const rawReference = req.body?.rawToken || req.body?.token || req.query?.token || req.params.token;
+    const operationRef = parsePublicOperationReference(rawReference);
+    const lookupId = String(req.body?.lookupId || req.query?.id || operationRef.id || '').trim();
+    const resolution = await resolveOperationContext({ rawToken: operationRef.token || req.params.token, lookupId, expectedPrefix: 'CHK' });
+    const item = resolution.item;
 
-  if (!item) {
-    await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, reason: resolution.reason });
-    const message = resolution.reason === 'wrong_token_type'
-      ? 'Token informado não pertence ao fluxo de check-in.'
-      : resolution.reason === 'id_mismatch'
-        ? 'O token informado não corresponde ao agendamento selecionado.'
-        : 'Token de check-in inválido.';
-    return res.status(404).json({ message, reason: resolution.reason });
-  }
+    if (!item) {
+      await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, reason: resolution.reason });
+      const message = resolution.reason === 'wrong_token_type'
+        ? 'Token informado não pertence ao fluxo de check-in.'
+        : resolution.reason === 'id_mismatch'
+          ? 'O token informado não corresponde ao agendamento selecionado.'
+          : 'Token de check-in inválido.';
+      return res.status(404).json({ message, reason: resolution.reason });
+    }
 
-  if (!["APROVADO", "CHEGOU"].includes(item.status)) {
-    await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, item, reason: 'status_not_allowed' });
-    return res.status(400).json({ message: "Check-in só permitido para agendamentos aprovados." });
-  }
+    if (!["APROVADO", "CHEGOU"].includes(item.status)) {
+      await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, item, reason: 'status_not_allowed' });
+      return res.status(400).json({ message: "Check-in só permitido para agendamentos aprovados." });
+    }
 
-  const windowInfo = buildCheckinWindow(item);
-  const requiresManualAuthorization = !!(windowInfo.dateMismatch || windowInfo.timeMismatch);
-  const requiresGestorAuthorization = !!windowInfo.tooEarly;
-  const overrideRequested = !!(req.body?.overrideDateMismatch || req.body?.overrideTimeMismatch || req.body?.overrideManualAuthorization);
+    const windowInfo = buildCheckinWindow(normalizeScheduleItem(item));
+    const requiresManualAuthorization = !!(windowInfo.dateMismatch || windowInfo.timeMismatch);
+    const requiresGestorAuthorization = !!windowInfo.tooEarly;
+    const overrideRequested = !!(req.body?.overrideDateMismatch || req.body?.overrideTimeMismatch || req.body?.overrideManualAuthorization);
 
-  if (requiresManualAuthorization && !overrideRequested) {
-    const gestorNotification = requiresGestorAuthorization
-      ? await notifyGestorAboutEarlyCheckin(item, req, windowInfo)
-      : { sent: false, reason: "Notificação ao gestor não necessária.", to: null };
+    if (requiresManualAuthorization && !overrideRequested) {
+      let gestorNotification = { sent: false, reason: "Notificação ao gestor não necessária.", to: null };
+      if (requiresGestorAuthorization) {
+        try {
+          gestorNotification = await notifyGestorAboutEarlyCheckin(normalizeScheduleItem(item), req, windowInfo);
+        } catch (error) {
+          gestorNotification = { sent: false, reason: error?.message || 'Falha ao notificar o gestor.', to: null };
+          logTechnicalEvent('public-checkin-manager-notification-error', {
+            agendamentoId: Number(item?.id || 0) || null,
+            token: operationRef.token || req.params.token,
+            reason: error?.message || String(error)
+          });
+        }
+      }
 
-    await logPublicAction({
-      actor,
-      action: requiresGestorAuthorization ? "SOLICITAR_AUTORIZACAO_CHECKIN_ANTECIPADO" : "BLOQUEAR_CHECKIN_FORA_JANELA",
-      item,
-      req,
-      details: {
-        origem: "qr-code",
+      await logPublicAction({
+        actor,
+        action: requiresGestorAuthorization ? "SOLICITAR_AUTORIZACAO_CHECKIN_ANTECIPADO" : "BLOQUEAR_CHECKIN_FORA_JANELA",
+        item,
+        req,
+        details: {
+          origem: "qr-code",
+          dateMismatch: windowInfo.dateMismatch,
+          timeMismatch: windowInfo.timeMismatch,
+          tooEarly: windowInfo.tooEarly,
+          tooLate: windowInfo.tooLate,
+          toleranceMinutes: windowInfo.toleranceMinutes,
+          diffMinutes: windowInfo.diffMinutes,
+          gestorNotification
+        }
+      });
+      await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, item, reason: requiresGestorAuthorization ? 'requires_manager_authorization' : 'outside_window', extra: { gestorNotification } });
+
+      const baseMessage = buildCheckinMismatchMessage(normalizeScheduleItem(item), windowInfo);
+      const managerMessage = requiresGestorAuthorization
+        ? `${baseMessage} O gestor foi notificado para autorização manual.`
+        : baseMessage;
+
+      return res.status(409).json({
+        message: managerMessage,
+        requiresManualAuthorization: true,
+        requiresGestorAuthorization,
         dateMismatch: windowInfo.dateMismatch,
         timeMismatch: windowInfo.timeMismatch,
         tooEarly: windowInfo.tooEarly,
@@ -999,158 +1038,156 @@ router.post("/checkin/:token", async (req, res) => {
         toleranceMinutes: windowInfo.toleranceMinutes,
         diffMinutes: windowInfo.diffMinutes,
         gestorNotification
+      });
+    }
+
+    if (requiresManualAuthorization && overrideRequested && !canManuallyAuthorize(actor)) {
+      await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, item, reason: 'override_without_permission' });
+      return res.status(403).json({ message: "A liberação manual do check-in fora da janela só pode ser feita por operador, portaria, gestor ou administrador autenticado." });
+    }
+
+    const patch = { status: "CHEGOU", checkinEm: item.checkinEm || new Date() };
+    let updated;
+    try {
+      updated = await prisma.agendamento.update({ where: { id: item.id }, data: patch });
+    } catch (error) {
+      logTechnicalEvent('public-checkin-persistence-fallback', { agendamentoId: item.id, reason: error?.message || String(error) });
+      updated = updateAgendamentoFile(item.id, { ...patch, checkinEm: item.checkinEm || new Date().toISOString() });
+    }
+
+    const action = requiresManualAuthorization ? "AUTORIZAR_CHECKIN_FORA_JANELA" : "CHECKIN_QR";
+    await logPublicAction({
+      actor,
+      action,
+      item: updated,
+      req,
+      details: {
+        origem: "qr-code",
+        dateMismatch: windowInfo.dateMismatch,
+        timeMismatch: windowInfo.timeMismatch,
+        toleranceMinutes: windowInfo.toleranceMinutes,
+        diffMinutes: windowInfo.diffMinutes
       }
     });
-    await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, item, reason: requiresGestorAuthorization ? 'requires_manager_authorization' : 'outside_window', extra: { gestorNotification } });
+    await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, item: updated, reason: 'success' });
 
-    const baseMessage = buildCheckinMismatchMessage(item, windowInfo);
-    const managerMessage = requiresGestorAuthorization
-      ? `${baseMessage} O gestor foi notificado para autorização manual.`
-      : baseMessage;
-
-    return res.status(409).json({
-      message: managerMessage,
-      requiresManualAuthorization: true,
-      requiresGestorAuthorization,
-      dateMismatch: windowInfo.dateMismatch,
-      timeMismatch: windowInfo.timeMismatch,
-      tooEarly: windowInfo.tooEarly,
-      tooLate: windowInfo.tooLate,
-      toleranceMinutes: windowInfo.toleranceMinutes,
-      diffMinutes: windowInfo.diffMinutes,
-      gestorNotification
+    return res.json({
+      ok: true,
+      message: requiresManualAuthorization ? "Check-in realizado com liberação manual do operador." : "Check-in realizado com sucesso.",
+      agendamento: updated,
+      requiresManualAuthorization: false
     });
-  }
-
-  if (requiresManualAuthorization && overrideRequested && !canManuallyAuthorize(actor)) {
-    await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, item, reason: 'override_without_permission' });
-    return res.status(403).json({ message: "A liberação manual do check-in fora da janela só pode ser feita por operador, portaria, gestor ou administrador autenticado." });
-  }
-
-  const patch = { status: "CHEGOU", checkinEm: item.checkinEm || new Date() };
-  let updated;
-  try {
-    updated = await prisma.agendamento.update({ where: { id: item.id }, data: patch });
   } catch (error) {
-    logTechnicalEvent('public-checkin-persistence-fallback', { agendamentoId: item.id, reason: error?.message || String(error) });
-    updated = updateAgendamentoFile(item.id, { ...patch, checkinEm: item.checkinEm || new Date().toISOString() });
+    logTechnicalEvent('public-checkin-unhandled-error', {
+      route: req.originalUrl || req.url,
+      token: req.params.token,
+      reason: error?.message || String(error)
+    });
+    console.error('[PUBLIC_CHECKIN] Falha inesperada:', error);
+    return res.status(500).json({ message: 'Falha interna ao validar o token de check-in.', detail: error?.message || 'Erro interno do servidor.' });
   }
-
-  const action = requiresManualAuthorization ? "AUTORIZAR_CHECKIN_FORA_JANELA" : "CHECKIN_QR";
-  await logPublicAction({
-    actor,
-    action,
-    item: updated,
-    req,
-    details: {
-      origem: "qr-code",
-      dateMismatch: windowInfo.dateMismatch,
-      timeMismatch: windowInfo.timeMismatch,
-      toleranceMinutes: windowInfo.toleranceMinutes,
-      diffMinutes: windowInfo.diffMinutes
-    }
-  });
-  await logPublicTokenFlow({ operation: 'checkin', req, rawReference, operationRef, resolution, item: updated, reason: 'success' });
-
-  return res.json({
-    ok: true,
-    message: requiresManualAuthorization ? "Check-in realizado com liberação manual do operador." : "Check-in realizado com sucesso.",
-    agendamento: updated,
-    requiresManualAuthorization: false
-  });
 });
 
 router.post('/checkout/:token', publicAvariaUploadMiddleware, async (req, res) => {
-
-const actor = getOptionalActor(req);
-const rawReference = req.body?.rawToken || req.body?.token || req.query?.token || req.params.token;
-const operationRef = parsePublicOperationReference(rawReference);
-const lookupId = String(req.body?.lookupId || req.query?.id || operationRef.id || '').trim();
-const resolution = await resolveOperationContext({ rawToken: operationRef.token || req.params.token, lookupId, expectedPrefix: 'OUT' });
-const item = resolution.item;
-if (!item) {
-  await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, reason: resolution.reason });
-  const message = resolution.reason === 'wrong_token_type'
-    ? 'Token informado não pertence ao fluxo de check-out.'
-    : resolution.reason === 'id_mismatch'
-      ? 'O token informado não corresponde ao agendamento selecionado.'
-      : 'Token de check-out inválido.';
-  return res.status(404).json({ message, reason: resolution.reason });
-}
-
-  if (String(item.status || '').trim().toUpperCase() === 'CHEGOU') {
-    await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, item, reason: 'requires_start_unload' });
-    return res.status(409).json({
-      message: 'O check-out por token/QR só pode ser executado após o início da descarga. Inicie a descarga ou finalize pelo painel interno.',
-      requiresStartUnload: true,
-      currentStatus: item.status,
-      agendamento: normalizeScheduleItem(item)
-    });
-  }
-
-  if (String(item.status || '').trim().toUpperCase() !== 'EM_DESCARGA') {
-    await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, item, reason: 'status_not_allowed' });
-    return res.status(400).json({ message: 'Check-out só permitido após o início da descarga.' });
-  }
-
-  let avaliacaoRecebimento;
   try {
-    avaliacaoRecebimento = normalizeCheckoutPayload(req.body || {});
-  } catch (err) {
-    await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, item, reason: 'invalid_checkout_payload', extra: { message: err.message } });
-    return res.status(400).json({ message: err.message });
-  }
-
-  const files = uploadedAvariaFilesFromReq(req);
-  const patch = {
-    status: 'FINALIZADO',
-    fimDescargaEm: new Date(),
-    observacoes: mergeCheckoutObservations(item.observacoes, avaliacaoRecebimento)
-  };
-
-  let updated;
-  try {
-    updated = await prisma.agendamento.update({ where: { id: item.id }, data: patch });
-  } catch (error) {
-    logTechnicalEvent('public-checkout-persistence-fallback', { agendamentoId: item.id, reason: error?.message || String(error) });
-    updated = updateAgendamentoFile(item.id, {
-      ...patch,
-      fimDescargaEm: new Date().toISOString()
-    });
-  }
-
-  const normalizedUpdated = normalizeScheduleItem({ ...item, ...updated }, item);
-  const survey = await sendDriverFeedbackRequestEmail({
-    agendamento: normalizedUpdated,
-    baseUrl: getBaseUrl(req)
-  });
-
-  const ocorrenciaRecebimento = await notifyControladoriaAvaria({
-    agendamento: normalizedUpdated,
-    payload: avaliacaoRecebimento,
-    actor,
-    files
-  }).catch((err) => ({ sent: false, to: controladoriaRecipients().join(', ') || null, reason: err.message || 'Falha ao enviar e-mail de avaria.' }));
-
-  await logPublicAction({
-    actor,
-    action: 'CHECKOUT_QR',
-    item: normalizedUpdated,
-    req,
-    details: {
-      origem: 'qr-code',
-      surveySent: !!survey?.sent,
-      surveyTo: survey?.to || null,
-      feedbackLink: survey?.feedbackLink || null,
-      surveyReason: survey?.reason || null,
-      avaliacaoRecebimento,
-      ocorrenciaRecebimento,
-      anexosAvaria: files.map((file) => file.originalname)
+    const actor = getOptionalActor(req);
+    const rawReference = req.body?.rawToken || req.body?.token || req.query?.token || req.params.token;
+    const operationRef = parsePublicOperationReference(rawReference);
+    const lookupId = String(req.body?.lookupId || req.query?.id || operationRef.id || '').trim();
+    const resolution = await resolveOperationContext({ rawToken: operationRef.token || req.params.token, lookupId, expectedPrefix: 'OUT' });
+    const item = resolution.item;
+    if (!item) {
+      await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, reason: resolution.reason });
+      const message = resolution.reason === 'wrong_token_type'
+        ? 'Token informado não pertence ao fluxo de check-out.'
+        : resolution.reason === 'id_mismatch'
+          ? 'O token informado não corresponde ao agendamento selecionado.'
+          : 'Token de check-out inválido.';
+      return res.status(404).json({ message, reason: resolution.reason });
     }
-  });
 
-  await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, item: normalizedUpdated, reason: 'success', extra: { surveySent: !!survey?.sent, avariaEmailSent: !!ocorrenciaRecebimento?.sent, anexosAvaria: files.map((file) => file.originalname) } });
-  return res.json({ ok: true, message: 'Check-out realizado com sucesso.', agendamento: normalizedUpdated, avaliacao: survey, avaliacaoRecebimento, ocorrenciaRecebimento });
+    if (String(item.status || '').trim().toUpperCase() === 'CHEGOU') {
+      await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, item, reason: 'requires_start_unload' });
+      return res.status(409).json({
+        message: 'O check-out por token/QR só pode ser executado após o início da descarga. Inicie a descarga ou finalize pelo painel interno.',
+        requiresStartUnload: true,
+        currentStatus: item.status,
+        agendamento: normalizeScheduleItem(item)
+      });
+    }
+
+    if (String(item.status || '').trim().toUpperCase() !== 'EM_DESCARGA') {
+      await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, item, reason: 'status_not_allowed' });
+      return res.status(400).json({ message: 'Check-out só permitido após o início da descarga.' });
+    }
+
+    let avaliacaoRecebimento;
+    try {
+      avaliacaoRecebimento = normalizeCheckoutPayload(req.body || {});
+    } catch (err) {
+      await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, item, reason: 'invalid_checkout_payload', extra: { message: err.message } });
+      return res.status(400).json({ message: err.message });
+    }
+
+    const files = uploadedAvariaFilesFromReq(req);
+    const patch = {
+      status: 'FINALIZADO',
+      fimDescargaEm: new Date(),
+      observacoes: mergeCheckoutObservations(item.observacoes, avaliacaoRecebimento)
+    };
+
+    let updated;
+    try {
+      updated = await prisma.agendamento.update({ where: { id: item.id }, data: patch });
+    } catch (error) {
+      logTechnicalEvent('public-checkout-persistence-fallback', { agendamentoId: item.id, reason: error?.message || String(error) });
+      updated = updateAgendamentoFile(item.id, {
+        ...patch,
+        fimDescargaEm: new Date().toISOString()
+      });
+    }
+
+    const normalizedUpdated = normalizeScheduleItem({ ...item, ...updated }, item);
+    const survey = await sendDriverFeedbackRequestEmail({
+      agendamento: normalizedUpdated,
+      baseUrl: getBaseUrl(req)
+    });
+
+    const ocorrenciaRecebimento = await notifyControladoriaAvaria({
+      agendamento: normalizedUpdated,
+      payload: avaliacaoRecebimento,
+      actor,
+      files
+    }).catch((err) => ({ sent: false, to: controladoriaRecipients().join(', ') || null, reason: err.message || 'Falha ao enviar e-mail de avaria.' }));
+
+    await logPublicAction({
+      actor,
+      action: 'CHECKOUT_QR',
+      item: normalizedUpdated,
+      req,
+      details: {
+        origem: 'qr-code',
+        surveySent: !!survey?.sent,
+        surveyTo: survey?.to || null,
+        feedbackLink: survey?.feedbackLink || null,
+        surveyReason: survey?.reason || null,
+        avaliacaoRecebimento,
+        ocorrenciaRecebimento,
+        anexosAvaria: files.map((file) => file.originalname)
+      }
+    });
+    await logPublicTokenFlow({ operation: 'checkout', req, rawReference, operationRef, resolution, item: normalizedUpdated, reason: 'success', extra: { anexosAvaria: files.map((file) => file.originalname) } });
+
+    return res.json({ ok: true, message: 'Check-out realizado com sucesso.', agendamento: normalizedUpdated, avaliacao: survey, avaliacaoRecebimento, ocorrenciaRecebimento });
+  } catch (error) {
+    logTechnicalEvent('public-checkout-unhandled-error', {
+      route: req.originalUrl || req.url,
+      token: req.params.token,
+      reason: error?.message || String(error)
+    });
+    console.error('[PUBLIC_CHECKOUT] Falha inesperada:', error);
+    return res.status(500).json({ message: 'Falha interna ao validar o token de check-out.', detail: error?.message || 'Erro interno do servidor.' });
+  }
 });
 
 export default router;
