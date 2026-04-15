@@ -81,20 +81,50 @@ function normalizeTimeValue(value, fallback = '') {
 }
 
 function deriveHoraFromJanela(agendamento = {}) {
+  const horaDireta = String(agendamento?.janela?.horaInicio || agendamento?.janela?.hora_inicio || agendamento?.horaInicio || agendamento?.hora_inicio || '').trim();
+  if (/^\d{2}:\d{2}(?::\d{2})?$/.test(horaDireta)) return horaDireta.slice(0, 5);
   const janelaCodigo = String(agendamento?.janela?.codigo || agendamento?.janela || agendamento?.janelaCodigo || '').trim();
   const match = janelaCodigo.match(/(\d{2}:\d{2})/);
   return match ? match[1] : '';
 }
 
+
+function isMissingScheduleValue(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return !normalized || ['-', 'invalid date', 'null', 'undefined'].includes(normalized);
+}
+
+function pickFeedbackDateCandidate(source = {}) {
+  return source?.dataAgendada ?? source?.data_agendada ?? source?.dataProgramada ?? source?.data_programada ?? source?.data ?? source?.date ?? '';
+}
+
+function pickFeedbackTimeCandidate(source = {}) {
+  return source?.horaAgendada ?? source?.hora_agendada ?? source?.horaProgramada ?? source?.hora_programada ?? source?.hora ?? source?.time ?? '';
+}
+
+function normalizeLookupIdentity(value = '') {
+  return String(value || '').replace(/[^A-Za-z0-9]/g, '').trim().toUpperCase();
+}
+
+function sameIdentity(a = '', b = '') {
+  const left = normalizeLookupIdentity(a);
+  const right = normalizeLookupIdentity(b);
+  return !!left && !!right && left === right;
+}
+
 function normalizeFeedbackRecordShape(record = {}, fallback = {}) {
   if (!record) return null;
+  const primaryDateCandidate = pickFeedbackDateCandidate(record);
+  const fallbackDateCandidate = pickFeedbackDateCandidate(fallback);
+  const primaryTimeCandidate = pickFeedbackTimeCandidate(record);
+  const fallbackTimeCandidate = pickFeedbackTimeCandidate(fallback);
   const dataAgendada = normalizeDateValue(
-    record?.dataAgendada ?? record?.data_agendada ?? fallback?.dataAgendada ?? fallback?.data_agendada,
-    ''
+    isMissingScheduleValue(primaryDateCandidate) ? fallbackDateCandidate : primaryDateCandidate,
+    normalizeDateValue(fallbackDateCandidate, '')
   );
   const horaAgendada = normalizeTimeValue(
-    record?.horaAgendada ?? record?.hora_agendada ?? fallback?.horaAgendada ?? fallback?.hora_agendada,
-    deriveHoraFromJanela(record) || deriveHoraFromJanela(fallback)
+    isMissingScheduleValue(primaryTimeCandidate) ? fallbackTimeCandidate : primaryTimeCandidate,
+    normalizeTimeValue(fallbackTimeCandidate, deriveHoraFromJanela(record) || deriveHoraFromJanela(fallback))
   );
   return {
     ...fallback,
@@ -114,12 +144,39 @@ async function findAgendamentoById(agendamentoId) {
   }
 }
 
+async function findAgendamentoForFeedback(record = {}) {
+  const byId = await findAgendamentoById(record?.agendamentoId);
+  if (byId) return byId;
+
+  const protocolo = String(record?.protocolo || '').trim();
+  if (protocolo) {
+    try {
+      const byProtocol = await prisma.agendamento.findFirst({ where: { protocolo }, include: { janela: true } });
+      if (byProtocol) return byProtocol;
+    } catch {}
+    const fileProtocol = readAgendamentos().find((item) => sameIdentity(item?.protocolo || '', protocolo));
+    if (fileProtocol) return fileProtocol;
+  }
+
+  const placa = String(record?.placa || '').trim().toUpperCase();
+  const motorista = String(record?.motorista || '').trim();
+  if (placa && motorista) {
+    try {
+      const byIdentity = await prisma.agendamento.findFirst({ where: { placa, motorista }, include: { janela: true } });
+      if (byIdentity) return byIdentity;
+    } catch {}
+    return readAgendamentos().find((item) => sameIdentity(item?.placa || '', placa) && String(item?.motorista || '').trim() === motorista) || null;
+  }
+
+  return null;
+}
+
 async function enrichFeedbackRecord(record = {}) {
   const normalized = normalizeFeedbackRecordShape(record);
   if (!normalized) return null;
-  const needsBackfill = !normalized.dataAgendada || !normalized.horaAgendada || !normalized.emailMotorista;
+  const needsBackfill = isMissingScheduleValue(normalized.dataAgendada) || isMissingScheduleValue(normalized.horaAgendada) || !normalized.emailMotorista;
   if (!needsBackfill) return normalized;
-  const agendamento = await findAgendamentoById(normalized.agendamentoId);
+  const agendamento = await findAgendamentoForFeedback(normalized);
   if (!agendamento) return normalized;
   return normalizeFeedbackRecordShape(normalized, agendamento);
 }
@@ -218,7 +275,7 @@ export async function ensureFeedbackRequest(agendamento) {
     );
     if (Array.isArray(existing) && existing[0]) {
       const normalizedExisting = await enrichFeedbackRecord(existing[0]);
-      if ((!existing[0]?.dataAgendada && normalizedExisting?.dataAgendada) || (!existing[0]?.horaAgendada && normalizedExisting?.horaAgendada) || (!existing[0]?.emailMotorista && normalizedExisting?.emailMotorista)) {
+      if ((isMissingScheduleValue(existing[0]?.dataAgendada) && normalizedExisting?.dataAgendada) || (isMissingScheduleValue(existing[0]?.horaAgendada) && normalizedExisting?.horaAgendada) || (!existing[0]?.emailMotorista && normalizedExisting?.emailMotorista)) {
         await prisma.$executeRawUnsafe(
           'UPDATE AvaliacaoMotorista SET dataAgendada = ?, horaAgendada = ?, emailMotorista = ? WHERE id = ?',
           normalizedExisting.dataAgendada || null,
@@ -257,7 +314,7 @@ export async function ensureFeedbackRequest(agendamento) {
     const existing = items.find((item) => Number(item.agendamentoId) === Number(agendamento.id));
     if (existing) {
       const normalizedExisting = await enrichFeedbackRecord(existing);
-      if ((!existing?.dataAgendada && normalizedExisting?.dataAgendada) || (!existing?.horaAgendada && normalizedExisting?.horaAgendada) || (!existing?.emailMotorista && normalizedExisting?.emailMotorista)) {
+      if ((isMissingScheduleValue(existing?.dataAgendada) && normalizedExisting?.dataAgendada) || (isMissingScheduleValue(existing?.horaAgendada) && normalizedExisting?.horaAgendada) || (!existing?.emailMotorista && normalizedExisting?.emailMotorista)) {
         const index = items.findIndex((item) => Number(item?.id || 0) === Number(existing.id || 0));
         if (index >= 0) {
           items[index] = { ...items[index], dataAgendada: normalizedExisting.dataAgendada, horaAgendada: normalizedExisting.horaAgendada, emailMotorista: normalizedExisting.emailMotorista };
@@ -284,9 +341,30 @@ export async function getFeedbackRequestByToken(token) {
       'SELECT * FROM AvaliacaoMotorista WHERE token = ? LIMIT 1',
       normalizedToken
     );
-    return rows?.[0] ? await enrichFeedbackRecord(rows[0]) : null;
+    const raw = rows?.[0] || null;
+    const enriched = raw ? await enrichFeedbackRecord(raw) : null;
+    if (raw && enriched && ((isMissingScheduleValue(raw?.dataAgendada) && enriched?.dataAgendada) || (isMissingScheduleValue(raw?.horaAgendada) && enriched?.horaAgendada) || (!raw?.emailMotorista && enriched?.emailMotorista))) {
+      await prisma.$executeRawUnsafe(
+        'UPDATE AvaliacaoMotorista SET dataAgendada = ?, horaAgendada = ?, emailMotorista = ? WHERE id = ?',
+        enriched.dataAgendada || null,
+        enriched.horaAgendada || null,
+        enriched.emailMotorista || null,
+        Number(enriched.id)
+      );
+    }
+    return enriched;
   } catch {
-    return await enrichFeedbackRecord(readFileRecords().find((item) => String(item.token) === normalizedToken) || null);
+    const items = readFileRecords();
+    const raw = items.find((item) => String(item.token) === normalizedToken) || null;
+    const enriched = await enrichFeedbackRecord(raw);
+    if (raw && enriched && ((isMissingScheduleValue(raw?.dataAgendada) && enriched?.dataAgendada) || (isMissingScheduleValue(raw?.horaAgendada) && enriched?.horaAgendada) || (!raw?.emailMotorista && enriched?.emailMotorista))) {
+      const index = items.findIndex((item) => Number(item?.id || 0) === Number(raw?.id || 0));
+      if (index >= 0) {
+        items[index] = { ...items[index], dataAgendada: enriched.dataAgendada, horaAgendada: enriched.horaAgendada, emailMotorista: enriched.emailMotorista };
+        writeFileRecords(items);
+      }
+    }
+    return enriched;
   }
 }
 
