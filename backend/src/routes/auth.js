@@ -47,6 +47,7 @@ router.post("/login", loginRateLimit, async (req, res) => {
     }
 
     if (!user.senhaHash) {
+      console.warn(`[SECURITY] User ${user.email} has no hashed password. Rejecting login.`);
       await registerLoginFailure(req, email);
       return res.status(401).json({ message: "Credenciais inválidas." });
     }

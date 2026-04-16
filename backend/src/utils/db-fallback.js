@@ -97,7 +97,7 @@ export async function pingDatabase() {
   if (isPrismaDisabled()) throw new Error(getPrismaDisableReason() || "Prisma desabilitado.");
   const client = await getPrismaClient();
   if (!client) throw new Error("Prisma client indisponível.");
-  const rows = await client.$queryRawUnsafe("SELECT 1 AS ok, DATABASE() AS databaseName");
+  const rows = await client.$queryRaw`SELECT 1 AS ok, DATABASE() AS databaseName`;
   return rows?.[0] || { ok: 1 };
 }
 

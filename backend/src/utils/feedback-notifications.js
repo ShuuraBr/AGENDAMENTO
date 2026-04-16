@@ -1,6 +1,15 @@
 import { ensureFeedbackRequest } from './driver-feedback.js';
 import { sendMail } from './email.js';
 
+function escapeHtml(value = '') {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 export function formatDateBR(value) {
   if (!value) return '-';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -145,12 +154,12 @@ export async function sendDriverFeedbackRequestEmail({ agendamento, baseUrl }) {
       <div style="padding:24px;border:1px solid #dbe2ea;border-radius:18px;background:#ffffff;">
         <h2 style="margin:0 0 12px;color:#16355c;">Avaliação do atendimento</h2>
         <p style="margin:0 0 12px;">Sua operação foi concluída. Queremos ouvir sua avaliação sobre o atendimento recebido no recebimento.</p>
-        <p style="margin:0 0 4px;"><strong>Protocolo:</strong> ${enriched.protocolo}</p>
-        <p style="margin:0 0 4px;"><strong>Data agendada:</strong> ${formatDateBR(enriched.dataAgendada)}</p>
-        <p style="margin:0 0 18px;"><strong>Horário:</strong> ${enriched.horaAgendada || '-'}</p>
+        <p style="margin:0 0 4px;"><strong>Protocolo:</strong> ${escapeHtml(enriched.protocolo)}</p>
+        <p style="margin:0 0 4px;"><strong>Data agendada:</strong> ${escapeHtml(formatDateBR(enriched.dataAgendada))}</p>
+        <p style="margin:0 0 18px;"><strong>Horário:</strong> ${escapeHtml(enriched.horaAgendada || '-')}</p>
         <p style="margin:0 0 18px;">A pesquisa é confidencial e pode ser respondida apenas uma vez.</p>
         <p style="margin:0;">
-          <a href="${feedbackLink}" style="display:inline-block;background:#16355c;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:12px;font-weight:700;">Responder avaliação</a>
+          <a href="${escapeHtml(feedbackLink)}" style="display:inline-block;background:#16355c;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:12px;font-weight:700;">Responder avaliação</a>
         </p>
       </div>
     </div>

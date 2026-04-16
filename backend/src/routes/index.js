@@ -12,14 +12,14 @@ import { getLogFilesHealth } from "../utils/telemetry.js";
 
 const router = Router();
 
-// Public health check — no auth required
-router.get("/health", (_req, res) => res.json({ ok: true, message: "API online" }));
+// Public health check – no sensitive information
+router.get("/health", (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
-// Sensitive health checks — require authentication
+// Detailed health checks require authentication
 router.get("/health/db", authRequired, async (_req, res) => {
   try {
-    const db = await pingDatabase();
-    res.json({ ok: true, message: "Banco online", db });
+    await pingDatabase();
+    res.json({ ok: true, message: "Banco online" });
   } catch (error) {
     console.error("Erro em /health/db:", error);
     res.status(500).json({ ok: false, message: "Falha no banco" });
@@ -28,7 +28,11 @@ router.get("/health/db", authRequired, async (_req, res) => {
 router.get("/health/smtp", authRequired, async (_req, res) => {
   try {
     const smtp = await verifyMailTransport();
-    res.status(smtp.ok ? 200 : 503).json(smtp);
+    res.status(smtp.ok ? 200 : 503).json({
+      ok: smtp.ok,
+      configured: smtp.configured,
+      message: smtp.message,
+    });
   } catch (error) {
     console.error("Erro em /health/smtp:", error);
     res.status(500).json({ ok: false, message: "Falha ao consultar SMTP." });
@@ -38,7 +42,16 @@ router.get("/health/uploads", authRequired, (_req, res) => {
   try {
     const uploads = getUploadDirectoriesHealth();
     const logs = getLogFilesHealth();
-    res.json({ ok: true, uploads, logs });
+    const safeUploads = uploads.map((u) => ({
+      label: u.label,
+      exists: u.exists,
+      writable: u.writable,
+    }));
+    const safeLogs = logs.map((l) => ({
+      file: l.file,
+      exists: l.exists,
+    }));
+    res.json({ ok: true, uploads: safeUploads, logs: safeLogs });
   } catch (error) {
     console.error("Erro em /health/uploads:", error);
     res.status(500).json({ ok: false, message: "Falha ao consultar uploads." });
@@ -48,9 +61,12 @@ router.get("/health/notifications", authRequired, async (_req, res) => {
   try {
     const smtp = await verifyMailTransport();
     const uploads = getUploadDirectoriesHealth();
-    const logs = getLogFilesHealth();
     const ok = !!smtp.ok && uploads.every((item) => item.exists && item.writable && item.readable);
-    res.status(ok ? 200 : 503).json({ ok, smtp, uploads, logs });
+    res.status(ok ? 200 : 503).json({
+      ok,
+      smtpOk: smtp.ok,
+      uploadsOk: uploads.every((item) => item.exists && item.writable),
+    });
   } catch (error) {
     console.error("Erro em /health/notifications:", error);
     res.status(500).json({ ok: false, message: "Falha ao consultar integrações de notificação." });

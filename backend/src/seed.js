@@ -3,31 +3,30 @@ import { prisma } from './config/prisma.js';
 import { hashPassword } from './utils/password.js';
 
 async function main() {
-  const adminEmail = process.env.ADMIN_EMAIL || 'admin@local.com';
-  const adminPassword = process.env.ADMIN_PASSWORD || crypto.randomBytes(16).toString('hex');
+  const seedPassword = process.env.SEED_ADMIN_PASSWORD || crypto.randomBytes(16).toString('hex');
 
   const perfilAdmin = await prisma.perfil.upsert({
     where: { nome: 'ADMIN' },
     update: {},
-    create: { nome: 'ADMIN', descricao: 'Administrador do sistema' }
+    create: { nome: 'ADMIN', descricao: 'Administrador do sistema' },
   });
 
   await prisma.usuario.upsert({
-    where: { email: adminEmail },
+    where: { email: 'admin@local.com' },
     update: {},
     create: {
       nome: 'Administrador',
-      email: adminEmail,
-      senhaHash: await hashPassword(adminPassword),
+      email: 'admin@local.com',
+      senhaHash: await hashPassword(seedPassword),
       perfilId: perfilAdmin.id,
-      status: 'ATIVO'
-    }
+      status: 'ATIVO',
+    },
   });
 
-  console.log(`Seed concluído. Usuário: ${adminEmail}`);
-  if (!process.env.ADMIN_PASSWORD) {
-    console.log(`Senha gerada automaticamente: ${adminPassword}`);
-    console.log('Defina ADMIN_PASSWORD como variável de ambiente para usar uma senha fixa.');
+  console.log(`Seed concluído. Usuário: admin@local.com`);
+  if (!process.env.SEED_ADMIN_PASSWORD) {
+    console.log(`[SECURITY] Generated random password: ${seedPassword}`);
+    console.log('[SECURITY] Set SEED_ADMIN_PASSWORD env var to use a fixed password.');
   }
 }
 

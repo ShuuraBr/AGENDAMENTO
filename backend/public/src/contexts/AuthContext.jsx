@@ -1,6 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { api } from '../services/api';
 
+// SECURITY NOTE: Token is stored in localStorage which is accessible to XSS.
+// For improved security, migrate to httpOnly secure cookies set by the backend.
+// See: https://owasp.org/www-community/HttpOnly
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
