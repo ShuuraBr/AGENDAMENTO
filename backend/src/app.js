@@ -1,9 +1,11 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import path from "path";
 import { fileURLToPath } from "url";
 import routes from "./routes/index.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
+import { authRequired } from "./middlewares/auth.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,9 +13,21 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // Configurações Globais
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+const allowedOrigins = (process.env.CORS_ORIGINS || process.env.FRONTEND_URL || "http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+app.use(helmet());
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error("Origem não permitida pelo CORS."));
+  },
+  credentials: true
+}));
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 // Definir caminhos absolutos robustos
 const rootPath = path.resolve(__dirname, "..");
@@ -23,8 +37,8 @@ const uploadsPath = path.join(rootPath, "uploads");
 // Servir arquivos estáticos do Frontend (Pasta Public)
 app.use(express.static(publicPath));
 
-// Servir arquivos de Upload (Documentos/Fotos)
-app.use("/uploads", express.static(uploadsPath));
+// Servir arquivos de Upload (Documentos/Fotos) — requer autenticação
+app.use("/uploads", authRequired, express.static(uploadsPath));
 
 // Registrar todas as Rotas da API
 app.use("/api", routes);

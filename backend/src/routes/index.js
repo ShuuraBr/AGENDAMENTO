@@ -4,6 +4,7 @@ import dashboardRoutes from "./dashboard.js";
 import cadastrosRoutes from "./cadastros.js";
 import agendamentosRoutes from "./agendamentos.js";
 import publicRoutes from "./public.js";
+import { authRequired } from "../middlewares/auth.js";
 import { pingDatabase } from "../utils/db-fallback.js";
 import { verifyMailTransport } from "../utils/email.js";
 import { getUploadDirectoriesHealth } from "../utils/upload-policy.js";
@@ -11,36 +12,39 @@ import { getLogFilesHealth } from "../utils/telemetry.js";
 
 const router = Router();
 
+// Public health check — no auth required
 router.get("/health", (_req, res) => res.json({ ok: true, message: "API online" }));
-router.get("/health/db", async (_req, res) => {
+
+// Sensitive health checks — require authentication
+router.get("/health/db", authRequired, async (_req, res) => {
   try {
     const db = await pingDatabase();
     res.json({ ok: true, message: "Banco online", db });
   } catch (error) {
     console.error("Erro em /health/db:", error);
-    res.status(500).json({ ok: false, message: error?.message || "Falha no banco" });
+    res.status(500).json({ ok: false, message: "Falha no banco" });
   }
 });
-router.get("/health/smtp", async (_req, res) => {
+router.get("/health/smtp", authRequired, async (_req, res) => {
   try {
     const smtp = await verifyMailTransport();
     res.status(smtp.ok ? 200 : 503).json(smtp);
   } catch (error) {
     console.error("Erro em /health/smtp:", error);
-    res.status(500).json({ ok: false, message: error?.message || "Falha ao consultar SMTP." });
+    res.status(500).json({ ok: false, message: "Falha ao consultar SMTP." });
   }
 });
-router.get("/health/uploads", (_req, res) => {
+router.get("/health/uploads", authRequired, (_req, res) => {
   try {
     const uploads = getUploadDirectoriesHealth();
     const logs = getLogFilesHealth();
     res.json({ ok: true, uploads, logs });
   } catch (error) {
     console.error("Erro em /health/uploads:", error);
-    res.status(500).json({ ok: false, message: error?.message || "Falha ao consultar uploads." });
+    res.status(500).json({ ok: false, message: "Falha ao consultar uploads." });
   }
 });
-router.get("/health/notifications", async (_req, res) => {
+router.get("/health/notifications", authRequired, async (_req, res) => {
   try {
     const smtp = await verifyMailTransport();
     const uploads = getUploadDirectoriesHealth();
@@ -49,7 +53,7 @@ router.get("/health/notifications", async (_req, res) => {
     res.status(ok ? 200 : 503).json({ ok, smtp, uploads, logs });
   } catch (error) {
     console.error("Erro em /health/notifications:", error);
-    res.status(500).json({ ok: false, message: error?.message || "Falha ao consultar integrações de notificação." });
+    res.status(500).json({ ok: false, message: "Falha ao consultar integrações de notificação." });
   }
 });
 router.use("/auth", authRoutes);
