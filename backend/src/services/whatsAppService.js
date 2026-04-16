@@ -55,7 +55,8 @@ function formatDateBR(value) {
 /**
  * Integração com a Duotalk (WhatsApp Business API via 360Dialog).
  * Faz POST para a URL do template configurada em WHATSAPP_API_URL,
- * enviando name, phone e as variáveis do template ({{1}}=data, {{2}}=hora).
+ * enviando name e phone no body, e as variáveis do template como
+ * query params (&queryParams=true&1=data&2=hora).
  */
 async function sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, horaAgendada }) {
   let phone = String(to || '').replace(/\D/g, '');
@@ -71,20 +72,22 @@ async function sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, hor
   console.log(`[WHATSAPP] Telefone formatado: ${phone}`);
 
   const contactName = name || 'Motorista';
-  const apiUrl = env.whatsappApiUrl;
+
+  // Monta a URL com as variáveis do template como query params
+  const baseUrl = env.whatsappApiUrl;
+  const separator = baseUrl.includes('?') ? '&' : '?';
+  const templateParams = new URLSearchParams({
+    queryParams: 'true',
+    '1': dataAgendada || '-',
+    '2': horaAgendada || '-',
+  });
+  const apiUrl = `${baseUrl}${separator}${templateParams.toString()}`;
+  console.log(`[WHATSAPP] URL com query params: ${apiUrl}`);
 
   const body = {
     name: contactName,
     phone,
-    params: [
-      { type: 'text', text: dataAgendada || '-' },
-      { type: 'text', text: horaAgendada || '-' },
-    ],
   };
-
-  if (voucherUrl) {
-    body.document = voucherUrl;
-  }
 
   try {
     const response = await fetch(apiUrl, {
