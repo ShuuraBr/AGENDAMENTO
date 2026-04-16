@@ -74,13 +74,18 @@ async function sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, hor
   const contactName = name || 'Motorista';
 
   // Monta a URL com as variáveis do template como query params
+  // {{1}}=data, {{2}}=hora, {{3}}=link do voucher PDF
   const baseUrl = env.whatsappApiUrl;
   const separator = baseUrl.includes('?') ? '&' : '?';
-  const templateParams = new URLSearchParams({
+  const qp = {
     queryParams: 'true',
     '1': dataAgendada || '-',
     '2': horaAgendada || '-',
-  });
+  };
+  if (voucherUrl) {
+    qp['3'] = voucherUrl;
+  }
+  const templateParams = new URLSearchParams(qp);
   const apiUrl = `${baseUrl}${separator}${templateParams.toString()}`;
   console.log(`[WHATSAPP] URL com query params: ${apiUrl}`);
 
