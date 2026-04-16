@@ -37,5 +37,6 @@ export const env = {
   whatsappEnabled: String(process.env.WHATSAPP_ENABLED || "false") === "true",
   whatsappProvider: process.env.WHATSAPP_PROVIDER || "stub",
   whatsappToken: process.env.WHATSAPP_TOKEN || "",
-  whatsappBaseUrl: process.env.WHATSAPP_BASE_URL || ""
+  whatsappBaseUrl: process.env.WHATSAPP_BASE_URL || "",
+  whatsappApiUrl: process.env.WHATSAPP_API_URL || process.env.WHATSAPP_BASE_URL || ""
 };

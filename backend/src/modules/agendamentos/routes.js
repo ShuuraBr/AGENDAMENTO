@@ -224,14 +224,32 @@ router.post("/:id/enviar-confirmacao", async (req, res) => {
     results.push({ canal: "EMAIL", to, ...result });
   }
 
-  const whatsappTargets = [
-    ag.fornecedor?.whatsapp,
-    ag.transportadora?.whatsapp,
-    ag.motorista?.whatsapp
-  ].filter(Boolean);
+  const whatsappRecipients = [
+    { to: ag.fornecedor?.whatsapp, name: ag.fornecedor?.razaoSocial || ag.fornecedor?.nome || 'Fornecedor' },
+    { to: ag.transportadora?.whatsapp, name: ag.transportadora?.razaoSocial || ag.transportadora?.nome || 'Transportadora' },
+    { to: ag.motorista?.whatsapp, name: ag.motorista?.nome || 'Motorista' },
+  ].filter((r) => r.to);
 
-  for (const to of whatsappTargets) {
-    const result = await sendWhatsApp({ to, message: text });
+  const baseUrl = process.env.FRONTEND_URL
+    ? process.env.FRONTEND_URL.replace(/\/$/, '')
+    : `${req.protocol}://${req.get('host')}`;
+  const voucherUrl = ag.publicTokenFornecedor
+    ? `${baseUrl}/api/public/voucher/${encodeURIComponent(ag.publicTokenFornecedor)}`
+    : '';
+  const dataFormatada = ag.dataAgendada
+    ? new Date(ag.dataAgendada).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+    : '-';
+  const horaFormatada = ag.horaAgendada || '-';
+
+  for (const { to, name } of whatsappRecipients) {
+    const result = await sendWhatsApp({
+      to,
+      message: text,
+      name,
+      voucherUrl,
+      dataAgendada: dataFormatada,
+      horaAgendada: horaFormatada,
+    });
     results.push({ canal: "WHATSAPP", to, ...result });
   }
 
