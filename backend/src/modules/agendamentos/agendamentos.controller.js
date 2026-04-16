@@ -123,13 +123,17 @@ export async function sendVoucher(req, res) {
     : '-';
   const horaFormatada = agendamento.horaAgendada || '-';
 
-  const phoneTargets = [agendamento.fornecedor?.whatsapp, agendamento.transportadora?.whatsapp, agendamento.motorista?.whatsapp].filter(Boolean);
+  const whatsappRecipients = [
+    { to: agendamento.fornecedor?.whatsapp, name: agendamento.fornecedor?.razaoSocial || agendamento.fornecedor?.nome || 'Fornecedor' },
+    { to: agendamento.transportadora?.whatsapp, name: agendamento.transportadora?.razaoSocial || agendamento.transportadora?.nome || 'Transportadora' },
+    { to: agendamento.motorista?.whatsapp, name: agendamento.motorista?.nome || 'Motorista' },
+  ].filter((r) => r.to);
   const whatsappResults = [];
-  for (const to of phoneTargets) {
+  for (const { to, name } of whatsappRecipients) {
     whatsappResults.push(await sendWhatsApp({
       to,
       message: `Agendamento confirmado: ${agendamento.protocolo}`,
-      name: agendamento.motorista?.nome || 'Motorista',
+      name,
       voucherUrl,
       dataAgendada: dataFormatada,
       horaAgendada: horaFormatada,

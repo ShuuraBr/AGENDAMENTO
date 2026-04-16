@@ -224,11 +224,11 @@ router.post("/:id/enviar-confirmacao", async (req, res) => {
     results.push({ canal: "EMAIL", to, ...result });
   }
 
-  const whatsappTargets = [
-    ag.fornecedor?.whatsapp,
-    ag.transportadora?.whatsapp,
-    ag.motorista?.whatsapp
-  ].filter(Boolean);
+  const whatsappRecipients = [
+    { to: ag.fornecedor?.whatsapp, name: ag.fornecedor?.razaoSocial || ag.fornecedor?.nome || 'Fornecedor' },
+    { to: ag.transportadora?.whatsapp, name: ag.transportadora?.razaoSocial || ag.transportadora?.nome || 'Transportadora' },
+    { to: ag.motorista?.whatsapp, name: ag.motorista?.nome || 'Motorista' },
+  ].filter((r) => r.to);
 
   const baseUrl = process.env.FRONTEND_URL
     ? process.env.FRONTEND_URL.replace(/\/$/, '')
@@ -241,11 +241,11 @@ router.post("/:id/enviar-confirmacao", async (req, res) => {
     : '-';
   const horaFormatada = ag.horaAgendada || '-';
 
-  for (const to of whatsappTargets) {
+  for (const { to, name } of whatsappRecipients) {
     const result = await sendWhatsApp({
       to,
       message: text,
-      name: ag.motorista?.nome || 'Motorista',
+      name,
       voucherUrl,
       dataAgendada: dataFormatada,
       horaAgendada: horaFormatada,
