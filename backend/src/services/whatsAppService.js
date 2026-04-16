@@ -58,10 +58,17 @@ function formatDateBR(value) {
  * enviando name, phone e as variáveis do template ({{1}}=data, {{2}}=hora).
  */
 async function sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, horaAgendada }) {
-  const phone = String(to || '').replace(/\D/g, '');
+  let phone = String(to || '').replace(/\D/g, '');
   if (!phone) {
     return { ok: false, simulated: false, provider: 'duotalk', reason: 'Telefone vazio ou inválido' };
   }
+
+  // Garante formato internacional (DDI 55 para Brasil)
+  // Números com 10-11 dígitos sem DDI recebem prefixo 55 automaticamente
+  if (phone.length <= 11) {
+    phone = `55${phone}`;
+  }
+  console.log(`[WHATSAPP] Telefone formatado: ${phone}`);
 
   const contactName = name || 'Motorista';
   const apiUrl = env.whatsappApiUrl;
