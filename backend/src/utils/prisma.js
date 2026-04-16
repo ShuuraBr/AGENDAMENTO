@@ -361,14 +361,28 @@ async function preprocessData(modelName, data = {}, ctx, mode = 'create') {
   const processed = { ...(data || {}) };
 
   if (modelName === 'agendamento') {
-    processed.dataAgendada = formatDateOnly(processed.dataAgendada);
-    processed.horaAgendada = formatTimeOnly(processed.horaAgendada);
+    // Only format dataAgendada / horaAgendada when they were explicitly provided
+    // in the input.  Previously the unconditional assignment introduced `undefined`
+    // (converted to NULL) on every update, wiping the stored schedule.
+    if ('dataAgendada' in processed) {
+      processed.dataAgendada = formatDateOnly(processed.dataAgendada);
+    }
+    if ('horaAgendada' in processed) {
+      processed.horaAgendada = formatTimeOnly(processed.horaAgendada);
+    }
 
-    if (!processed.protocolo) processed.protocolo = `AGD-${Date.now()}`;
-    if (!processed.publicTokenMotorista) processed.publicTokenMotorista = generatePublicToken('MOT', processed.cpfMotorista || processed.placa || processed.motorista || processed.protocolo);
-    if (!processed.publicTokenFornecedor) processed.publicTokenFornecedor = generatePublicToken('FOR', processed.fornecedor || processed.protocolo);
-    if (!processed.checkinToken) processed.checkinToken = generatePublicToken('CHK', processed.cpfMotorista || processed.placa || processed.protocolo);
-    if (!processed.checkoutToken) processed.checkoutToken = generatePublicToken('OUT', processed.cpfMotorista || processed.placa || processed.protocolo);
+    // Auto-generate protocol and tokens only during creation.
+    // On updates these fields are NOT in the payload, so the old code
+    // treated them as missing and generated brand-new values that
+    // overwrote the originals in the database.
+    if (mode === 'create') {
+      if (!processed.protocolo) processed.protocolo = `AGD-${Date.now()}`;
+      if (!processed.publicTokenMotorista) processed.publicTokenMotorista = generatePublicToken('MOT', processed.cpfMotorista || processed.placa || processed.motorista || processed.protocolo);
+      if (!processed.publicTokenFornecedor) processed.publicTokenFornecedor = generatePublicToken('FOR', processed.fornecedor || processed.protocolo);
+      if (!processed.checkinToken) processed.checkinToken = generatePublicToken('CHK', processed.cpfMotorista || processed.placa || processed.protocolo);
+      if (!processed.checkoutToken) processed.checkoutToken = generatePublicToken('OUT', processed.cpfMotorista || processed.placa || processed.protocolo);
+    }
+
     if (processed.lgpdConsentAt) processed.lgpdConsentAt = formatDateTime(processed.lgpdConsentAt);
     if (processed.inicioDescargaEm) processed.inicioDescargaEm = formatDateTime(processed.inicioDescargaEm);
     if (processed.fimDescargaEm) processed.fimDescargaEm = formatDateTime(processed.fimDescargaEm);
