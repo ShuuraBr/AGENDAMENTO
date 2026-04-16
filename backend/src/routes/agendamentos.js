@@ -1042,6 +1042,7 @@ async function sendApprovalNotifications(item, req) {
     if (sent.sent) targets.push("transportadora/fornecedor");
   }
 
+  console.log(`[WHATSAPP-APPROVAL] telefoneMotorista="${normalizedItem.telefoneMotorista || ''}", motorista="${normalizedItem.motorista || ''}", voucherUrl="${links.voucher || ''}"`);
   if (normalizedItem.telefoneMotorista) {
     const sentWhats = await sendWhatsApp({
       to: normalizedItem.telefoneMotorista,
@@ -1052,6 +1053,8 @@ async function sendApprovalNotifications(item, req) {
       horaAgendada: formatHourLabel(normalizedItem?.horaAgendada),
     });
     results.push({ tipo: "whatsapp-motorista", to: normalizedItem.telefoneMotorista, ...sentWhats });
+  } else {
+    console.log('[WHATSAPP-APPROVAL] telefoneMotorista vazio — WhatsApp NÃO enviado.');
   }
 
   if (targets.length) {
