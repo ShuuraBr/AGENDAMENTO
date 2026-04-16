@@ -12,20 +12,28 @@ import { env } from '../config/env.js';
  * @param {string}  [opts.horaAgendada]  – Hora agendada (HH:mm) → variável {{2}} do template
  */
 export async function sendWhatsApp({ to, message, name, voucherUrl, dataAgendada, horaAgendada } = {}) {
+  console.log(`[WHATSAPP] sendWhatsApp chamado → to=${to}, name=${name}, provider=${env.whatsappProvider}, apiUrl=${env.whatsappApiUrl ? 'SET' : 'EMPTY'}`);
+
   if (env.whatsappProvider === 'mock') {
+    console.log('[WHATSAPP] Provider=mock, retornando simulado.');
     return { ok: false, simulated: true, provider: 'mock', to, message };
   }
 
   if (!env.whatsappApiUrl) {
+    console.log('[WHATSAPP] WHATSAPP_API_URL não configurada. Retornando simulado.');
     return { ok: false, simulated: true, reason: 'WhatsApp não configurado (WHATSAPP_API_URL ausente)' };
   }
 
   const provider = String(env.whatsappProvider || '').toLowerCase();
 
   if (provider === 'duotalk') {
-    return sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, horaAgendada });
+    console.log('[WHATSAPP] Chamando sendViaDuotalk...');
+    const result = await sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, horaAgendada });
+    console.log('[WHATSAPP] Resultado Duotalk:', JSON.stringify(result));
+    return result;
   }
 
+  console.log(`[WHATSAPP] Provider "${env.whatsappProvider}" não reconhecido.`);
   return {
     ok: false,
     simulated: true,

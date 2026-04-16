@@ -27,6 +27,9 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// ─── Trust proxy (necessário atrás de reverse proxy / Hostinger / cPanel) ───
+app.set("trust proxy", 1);
+
 // ─── Security Headers (helmet) ───
 if (helmet) {
   app.use(helmet({
