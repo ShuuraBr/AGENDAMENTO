@@ -1043,7 +1043,14 @@ async function sendApprovalNotifications(item, req) {
   }
 
   if (normalizedItem.telefoneMotorista) {
-    const sentWhats = await sendWhatsApp({ to: normalizedItem.telefoneMotorista, message: commonText });
+    const sentWhats = await sendWhatsApp({
+      to: normalizedItem.telefoneMotorista,
+      message: commonText,
+      name: normalizedItem.motorista || normalizedItem.nomeMotorista || 'Motorista',
+      voucherUrl: links.voucher,
+      dataAgendada: formatDateBR(normalizedItem?.dataAgendada),
+      horaAgendada: formatHourLabel(normalizedItem?.horaAgendada),
+    });
     results.push({ tipo: "whatsapp-motorista", to: normalizedItem.telefoneMotorista, ...sentWhats });
   }
 

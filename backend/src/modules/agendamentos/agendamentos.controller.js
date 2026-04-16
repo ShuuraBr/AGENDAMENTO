@@ -112,10 +112,28 @@ export async function sendVoucher(req, res) {
       })
     : { ok: false, simulated: true, reason: 'Sem e-mails cadastrados' };
 
+  const baseUrl = process.env.FRONTEND_URL
+    ? process.env.FRONTEND_URL.replace(/\/$/, '')
+    : `${req.protocol}://${req.get('host')}`;
+  const voucherUrl = agendamento.publicTokenFornecedor
+    ? `${baseUrl}/api/public/voucher/${encodeURIComponent(agendamento.publicTokenFornecedor)}`
+    : '';
+  const dataFormatada = agendamento.dataAgendada
+    ? new Date(agendamento.dataAgendada).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+    : '-';
+  const horaFormatada = agendamento.horaAgendada || '-';
+
   const phoneTargets = [agendamento.fornecedor?.whatsapp, agendamento.transportadora?.whatsapp, agendamento.motorista?.whatsapp].filter(Boolean);
   const whatsappResults = [];
   for (const to of phoneTargets) {
-    whatsappResults.push(await sendWhatsApp({ to, message: `Agendamento confirmado: ${agendamento.protocolo}` }));
+    whatsappResults.push(await sendWhatsApp({
+      to,
+      message: `Agendamento confirmado: ${agendamento.protocolo}`,
+      name: agendamento.motorista?.nome || 'Motorista',
+      voucherUrl,
+      dataAgendada: dataFormatada,
+      horaAgendada: horaFormatada,
+    }));
   }
 
   res.json({ emailResult, whatsappResults });

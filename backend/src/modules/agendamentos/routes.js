@@ -230,8 +230,26 @@ router.post("/:id/enviar-confirmacao", async (req, res) => {
     ag.motorista?.whatsapp
   ].filter(Boolean);
 
+  const baseUrl = process.env.FRONTEND_URL
+    ? process.env.FRONTEND_URL.replace(/\/$/, '')
+    : `${req.protocol}://${req.get('host')}`;
+  const voucherUrl = ag.publicTokenFornecedor
+    ? `${baseUrl}/api/public/voucher/${encodeURIComponent(ag.publicTokenFornecedor)}`
+    : '';
+  const dataFormatada = ag.dataAgendada
+    ? new Date(ag.dataAgendada).toLocaleDateString('pt-BR', { timeZone: 'UTC' })
+    : '-';
+  const horaFormatada = ag.horaAgendada || '-';
+
   for (const to of whatsappTargets) {
-    const result = await sendWhatsApp({ to, message: text });
+    const result = await sendWhatsApp({
+      to,
+      message: text,
+      name: ag.motorista?.nome || 'Motorista',
+      voucherUrl,
+      dataAgendada: dataFormatada,
+      horaAgendada: horaFormatada,
+    });
     results.push({ canal: "WHATSAPP", to, ...result });
   }
 
