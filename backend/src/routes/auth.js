@@ -46,7 +46,12 @@ router.post("/login", loginRateLimit, async (req, res) => {
       return res.status(401).json({ message: "Credenciais inválidas." });
     }
 
-    const ok = user.senhaHash ? await bcrypt.compare(senha, user.senhaHash) : String(senha) === String(user.senha || '');
+    if (!user.senhaHash) {
+      console.warn(`[SECURITY] User ${user.email} has no hashed password. Rejecting login.`);
+      await registerLoginFailure(req, email);
+      return res.status(401).json({ message: "Credenciais inválidas." });
+    }
+    const ok = await bcrypt.compare(senha, user.senhaHash);
     if (!ok) {
       await registerLoginFailure(req, email);
       return res.status(401).json({ message: "Credenciais inválidas." });
@@ -88,8 +93,7 @@ router.post("/login", loginRateLimit, async (req, res) => {
   } catch (err) {
     console.error("Erro no login:", err);
     return res.status(500).json({
-      message: "Erro interno no login.",
-      error: err?.message || "Falha não identificada"
+      message: "Erro interno no login."
     });
   }
 });

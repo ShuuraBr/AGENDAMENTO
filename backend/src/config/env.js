@@ -1,10 +1,31 @@
+import crypto from "crypto";
 import dotenv from "dotenv";
 dotenv.config();
 
+const isProduction = process.env.NODE_ENV === "production";
+
+if (!process.env.JWT_SECRET && isProduction) {
+  throw new Error(
+    "FATAL: JWT_SECRET environment variable is required in production. " +
+    "Generate one with: node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\""
+  );
+}
+
+if (!process.env.JWT_SECRET) {
+  console.warn(
+    "[SECURITY WARNING] JWT_SECRET not set. Using random ephemeral key. " +
+    "Sessions will NOT survive restarts. Set JWT_SECRET in .env for persistence."
+  );
+}
+
+const ephemeralJwtSecret = crypto.randomBytes(64).toString("hex");
+
 export const env = {
   port: Number(process.env.PORT || 3000),
+  nodeEnv: process.env.NODE_ENV || "development",
   frontendUrl: process.env.FRONTEND_URL || "http://localhost:5173",
-  jwtSecret: process.env.JWT_SECRET || "development-secret",
+  jwtSecret: process.env.JWT_SECRET || ephemeralJwtSecret,
+  corsOrigins: process.env.CORS_ORIGINS || process.env.FRONTEND_URL || "http://localhost:5173",
   smtpHost: process.env.SMTP_HOST || "",
   smtpPort: Number(process.env.SMTP_PORT || 465),
   smtpSecure: String(process.env.SMTP_SECURE || "true") === "true",

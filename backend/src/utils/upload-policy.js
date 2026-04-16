@@ -52,9 +52,43 @@ function createImageFileFilter({ allowedMimeTypes, allowedExtensions }) {
   };
 }
 
+const DOCUMENT_ALLOWED_MIME_TYPES = [
+  'application/pdf',
+  'application/xml',
+  'text/xml',
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/webp',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'text/csv',
+];
+
+const DOCUMENT_ALLOWED_EXTENSIONS = [
+  '.pdf', '.xml', '.jpg', '.jpeg', '.png', '.webp', '.xlsx', '.xls', '.csv',
+];
+
+const DOCUMENT_MAX_BYTES = Math.max(
+  1024 * 1024,
+  Number(process.env.DOCUMENT_MAX_BYTES || 10 * 1024 * 1024)
+);
+
 export function createDocumentUpload() {
   return multer({
-    storage: createStorage('documentos')
+    storage: createStorage('documentos'),
+    fileFilter: (_req, file, cb) => {
+      const mime = String(file?.mimetype || '').trim().toLowerCase();
+      const ext = path.extname(String(file?.originalname || '')).trim().toLowerCase();
+      if (!DOCUMENT_ALLOWED_MIME_TYPES.includes(mime) || !DOCUMENT_ALLOWED_EXTENSIONS.includes(ext)) {
+        return cb(new multer.MulterError('LIMIT_UNEXPECTED_FILE', file?.fieldname || 'arquivo'));
+      }
+      cb(null, true);
+    },
+    limits: {
+      fileSize: DOCUMENT_MAX_BYTES,
+      files: 20,
+    },
   });
 }
 
