@@ -77,8 +77,8 @@ async function sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, hor
     name: contactName,
     phone,
     params: [
-      dataAgendada || '-',
-      horaAgendada || '-',
+      { type: 'text', text: dataAgendada || '-' },
+      { type: 'text', text: horaAgendada || '-' },
     ],
   };
 
