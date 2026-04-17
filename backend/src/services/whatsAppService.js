@@ -83,7 +83,8 @@ async function sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, hor
     '2': horaAgendada || '-',
   };
   if (voucherUrl) {
-    qp['3'] = voucherUrl;
+    // Converte URL longa /api/public/voucher/TOKEN para URL curta /voucher/TOKEN
+    qp['3'] = voucherUrl.replace('/api/public/voucher/', '/voucher/');
   }
   const templateParams = new URLSearchParams(qp);
   const apiUrl = `${baseUrl}${separator}${templateParams.toString()}`;

@@ -86,6 +86,11 @@ app.use("/uploads", authRequired, express.static(uploadsPath));
 // Registrar todas as Rotas da API
 app.use("/api", routes);
 
+// ─── Rota curta para voucher (máscara amigável para WhatsApp) ───
+app.get("/voucher/:token", (req, res) => {
+  res.redirect(`/api/public/voucher/${encodeURIComponent(req.params.token)}`);
+});
+
 // Rota para o Frontend (Single Page Application)
 app.get("*", (req, res) => {
   if (req.path.startsWith("/api")) {
