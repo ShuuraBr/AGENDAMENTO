@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 import { prisma } from "../../config/prisma.js";
@@ -14,11 +15,23 @@ const router = Router();
 const uploadDir = path.resolve("uploads", "documentos");
 fs.mkdirSync(uploadDir, { recursive: true });
 
+const ALLOWED_MIMES = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname.replace(/\s+/g, "-")}`)
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const safeName = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}${ext}`;
+    cb(null, safeName);
+  }
 });
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (ALLOWED_MIMES.includes(file.mimetype)) return cb(null, true);
+    cb(new Error("Tipo de arquivo não permitido."));
+  }
+});
 
 router.use(authRequired);
 

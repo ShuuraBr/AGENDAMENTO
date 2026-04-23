@@ -4,11 +4,11 @@ import dashboardRoutes from "./dashboard.js";
 import cadastrosRoutes from "./cadastros.js";
 import agendamentosRoutes from "./agendamentos.js";
 import publicRoutes from "./public.js";
+import { authRequired } from "../middlewares/auth.js";
 import { pingDatabase } from "../utils/db-fallback.js";
 import { verifyMailTransport } from "../utils/email.js";
 import { getUploadDirectoriesHealth } from "../utils/upload-policy.js";
 import { getLogFilesHealth } from "../utils/telemetry.js";
-import { authRequired } from "../middlewares/auth.js";
 
 const router = Router();
 
