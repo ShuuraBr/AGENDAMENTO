@@ -8,9 +8,13 @@
 (function () {
   'use strict';
 
-  var ALERT_MSG = '⚠️ Captura de tela bloqueada!\n\nEste conteúdo é protegido.\nProjeto desenvolvido pela Equipe de Planejamento.';
   var WATERMARK_TEXT = 'Projeto desenvolvido pela Equipe de Planejamento';
   var alertShown = false;
+
+  function isFormElement(el) {
+    var tag = (el && el.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || (el && el.isContentEditable);
+  }
 
   function showProtectionAlert() {
     if (alertShown) return;
@@ -33,7 +37,7 @@
       'animation:spFadeIn .2s ease;';
 
     var icon = document.createElement('div');
-    icon.textContent = '🛡️';
+    icon.textContent = '\uD83D\uDEE1\uFE0F';
     icon.style.cssText = 'font-size:64px;margin-bottom:20px;';
 
     var title = document.createElement('h2');
@@ -42,7 +46,7 @@
       'color:#ff4444;font-family:sans-serif;font-size:28px;margin-bottom:12px;text-align:center;';
 
     var msg = document.createElement('p');
-    msg.textContent = 'Este conteúdo é protegido. A captura de tela não é permitida.';
+    msg.textContent = 'Este conte\u00FAdo \u00E9 protegido. A captura de tela n\u00E3o \u00E9 permitida.';
     msg.style.cssText =
       'color:#fff;font-family:sans-serif;font-size:16px;margin-bottom:8px;text-align:center;';
 
@@ -71,7 +75,7 @@
     style.textContent =
       '@keyframes spFadeIn{from{opacity:0}to{opacity:1}}' +
       '@keyframes spFadeOut{from{opacity:1}to{opacity:0}}' +
-      '@media print{body{display:none!important}html::after{content:"Conteúdo protegido – Equipe de Planejamento";' +
+      '@media print{body{display:none!important}html::after{content:"Conte\u00FAdo protegido \u2013 Equipe de Planejamento";' +
       'display:block;text-align:center;font-size:24px;padding:40px;color:#333;font-family:sans-serif}}' +
       '#screen-protection-watermark{position:fixed;bottom:8px;right:12px;z-index:2147483646;' +
       'font-family:sans-serif;font-size:11px;color:rgba(0,0,0,0.18);pointer-events:none;' +
@@ -93,29 +97,21 @@
     if (e.key === 'PrintScreen' || e.keyCode === 44) {
       e.preventDefault();
       showProtectionAlert();
-      // Limpa o clipboard
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText('').catch(function () {});
       }
       return false;
     }
 
-    // Ctrl+P (imprimir)
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+    // Ctrl+Shift+S (captura de tela do navegador)
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
       e.preventDefault();
       showProtectionAlert();
       return false;
     }
 
-    // Ctrl+S (salvar)
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-      e.preventDefault();
-      showProtectionAlert();
-      return false;
-    }
-
-    // Ctrl+U (ver código-fonte)
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'u') {
+    // Windows + Shift + S (Snipping Tool)
+    if (e.shiftKey && e.key.toLowerCase() === 's' && (e.metaKey || e.getModifierState('OS'))) {
       e.preventDefault();
       showProtectionAlert();
       return false;
@@ -128,15 +124,22 @@
       return false;
     }
 
-    // Ctrl+Shift+S (captura de tela do navegador)
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 's') {
+    // Ctrl+P (imprimir) — apenas sem Shift
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'p') {
       e.preventDefault();
       showProtectionAlert();
       return false;
     }
 
-    // Windows + Shift + S (Snipping Tool) - keyCode 91 = Windows key
-    if (e.shiftKey && e.key.toLowerCase() === 's' && (e.metaKey || e.getModifierState('OS'))) {
+    // Ctrl+S (salvar) — apenas sem Shift
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      showProtectionAlert();
+      return false;
+    }
+
+    // Ctrl+U (ver código-fonte) — apenas sem Shift
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'u') {
       e.preventDefault();
       showProtectionAlert();
       return false;
@@ -145,19 +148,10 @@
 
   /* ---------- Bloqueio do menu de contexto ---------- */
   function blockContextMenu(e) {
+    if (isFormElement(e.target)) return;
     e.preventDefault();
     showProtectionAlert();
     return false;
-  }
-
-  /* ---------- Detecção por visibilidade ---------- */
-  function onVisibilityChange() {
-    if (document.visibilityState === 'hidden') {
-      // Possível captura de tela em andamento
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText('').catch(function () {});
-      }
-    }
   }
 
   /* ---------- Bloqueio de arrastar ---------- */
@@ -168,6 +162,7 @@
 
   /* ---------- Bloqueio de cópia ---------- */
   function blockCopy(e) {
+    if (isFormElement(e.target)) return;
     e.preventDefault();
     showProtectionAlert();
     return false;
@@ -188,17 +183,14 @@
     }, true);
 
     document.addEventListener('contextmenu', blockContextMenu, true);
-    document.addEventListener('visibilitychange', onVisibilityChange);
     document.addEventListener('dragstart', blockDrag, true);
     document.addEventListener('copy', blockCopy, true);
 
-    // Impedir seleção de texto via CSS no body
     document.body.style.userSelect = 'none';
     document.body.style.webkitUserSelect = 'none';
     document.body.style.msUserSelect = 'none';
     document.body.style.MozUserSelect = 'none';
 
-    // Permitir seleção em inputs e textareas para usabilidade
     var style = document.createElement('style');
     style.textContent =
       'input,textarea,select,[contenteditable="true"]{user-select:text!important;-webkit-user-select:text!important}';
