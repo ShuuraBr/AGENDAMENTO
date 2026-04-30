@@ -621,8 +621,7 @@ function filterScheduledNotesFromGroups(groups = []) {
       });
  
     if (!notas.length) return null;
- 
-    // CORREÇÃO: removida a linha duplicada, mantendo apenas totalVolumesFromNotas
+
     const quantidadeVolumes = totalVolumesFromNotas(notas);
     const pesoTotalKg = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0), 3);
     const valorTotalNf = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0), 2);
@@ -1551,7 +1550,6 @@ export async function listFornecedoresPendentesImportados() {
         .filter((row) => row && row['Fornecedor'] && row['Nr. nota']);
  
         if (parsedRows.length) {
-          return filterScheduledNotesFromGroups(normalizeImportedItems(parsedRows));
           const groups = filterScheduledNotesFromGroups(normalizeImportedItems(parsedRows));
           return await enrichGroupsWithEntradaVolumes(groups);
         }
@@ -1564,8 +1562,8 @@ export async function listFornecedoresPendentesImportados() {
  
   try {
     if (!fs.existsSync(fallbackFile)) return [];
-    return filterScheduledNotesFromGroups(JSON.parse(fs.readFileSync(fallbackFile, 'utf8')) || []);
-    return await enrichGroupsWithEntradaVolumes(filterScheduledNotesFromGroups(JSON.parse(fs.readFileSync(fallbackFile, 'utf8')) || []));
+    const groups = filterScheduledNotesFromGroups(JSON.parse(fs.readFileSync(fallbackFile, 'utf8')) || []);
+    return await enrichGroupsWithEntradaVolumes(groups);
   } catch {
     return [];
   }
