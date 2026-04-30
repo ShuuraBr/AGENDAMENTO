@@ -406,8 +406,27 @@ function normalizeSpreadsheetRow(row = {}) {
 function applyEntradaVolumesToNotes(notas = [], volumeByEntrada = new Map()) {
   return (Array.isArray(notas) ? notas : []).map((nota) => {
     const entrada = normalizeCellValue(nota?.entrada || '');
-    if (!entrada || !volumeByEntrada.has(entrada)) return nota;
-    return { ...nota, volumes: volumeByEntrada.get(entrada) };
+    if (!entrada) {
+      return {
+        ...nota,
+        volumes: 0,
+        volumeExibicao: 'Volume não identificado'
+      };
+    }
+    if (volumeByEntrada.has(entrada)) {
+      const volumeDb = volumeByEntrada.get(entrada);
+      return {
+        ...nota,
+        volumes: volumeDb,
+        volumeExibicao: String(volumeDb)
+      };
+    }
+    // Não encontrado na tabela
+    return {
+      ...nota,
+      volumes: 0,
+      volumeExibicao: 'Volume não identificado'
+    };
   });
 }
  
