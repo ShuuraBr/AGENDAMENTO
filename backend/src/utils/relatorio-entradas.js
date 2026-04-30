@@ -622,7 +622,7 @@ function filterScheduledNotesFromGroups(groups = []) {
  
     if (!notas.length) return null;
  
-    const quantidadeVolumes = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0), 3);
+    // CORREÇÃO: removida a linha duplicada, mantendo apenas totalVolumesFromNotas
     const quantidadeVolumes = totalVolumesFromNotas(notas);
     const pesoTotalKg = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0), 3);
     const valorTotalNf = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0), 2);
@@ -729,11 +729,11 @@ export async function canonicalizeNotasSelecionadasComRelatorio(fornecedor, nota
       }
     }
  
-const fornecedorNormalized = normalizeCellValue(fornecedor);
+    const fornecedorNormalized = normalizeCellValue(fornecedor);
     const mergedNotas = normalizedSelection.map((nota) => {
       const fromHash = nota.rowHash ? byHash.get(nota.rowHash) : null;
       if (fromHash) return { ...fromHash, chaveAcesso: nota.chaveAcesso || fromHash.chaveAcesso || '' };
-
+ 
       return {
         ...nota,
         fornecedor: fornecedorNormalized
