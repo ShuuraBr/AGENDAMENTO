@@ -8,7 +8,7 @@ import { prisma, resetPrismaClient, isPrismaDisabled, getPrismaDisableReason } f
 import { auditLog } from './audit.js';
 import { readAgendamentos } from './file-store.js';
 import { computeDueInfo, toIsoDate, formatDateBR } from './nf-monitoring.js';
-
+ 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const backendRoot = path.resolve(__dirname, '../..');
@@ -26,11 +26,12 @@ const importDirCandidates = Array.from(new Set([
 const fallbackFile = path.join(dataDir, 'fornecedores-pendentes.json');
 const rawFallbackFile = path.join(dataDir, 'relatorio-terceirizado-raw.json');
 const stateFile = path.join(dataDir, 'importacao-relatorio-state.json');
-
+ 
 const SUPPORTED_EXTENSIONS = new Set(['.ods', '.csv', '.json', '.xlsx']);
 const TABLE_NAME = 'RelatorioTerceirizado';
+const VOLUMES_TABLE_NAME = 'Entrada_Volumes';
 const WATCH_INTERVAL_MS = 60 * 1000;
-
+ 
 const DATE_COLUMNS = new Set([
   'Data emissão',
   'Data de Entrada',
@@ -39,7 +40,7 @@ const DATE_COLUMNS = new Set([
   'Data de emissão do CT-e',
   'Data de entrada do CT-e'
 ]);
-
+ 
 const SHEET_COLUMNS = [
   'Entrada',
   'Fornecedor',
@@ -105,7 +106,7 @@ const SHEET_COLUMNS = [
   'Fornecedor substituto tributário',
   'Destino'
 ];
-
+ 
 let watcherHandle = null;
 let watcherBusy = false;
 let relatorioDbDisabled = false;
@@ -114,7 +115,9 @@ let relatorioImportPromise = null;
 let relatorioTableColumnsCache = null;
 let relatorioSchemaEnsured = false;
 let relatorioEnsurePromise = null;
-
+let entradaVolumesColumnsCache = null;
+let entradaVolumesLookupDisabled = false;
+ 
 const RELATORIO_BASE_COLUMNS = [
   ['id', 'INT NOT NULL AUTO_INCREMENT'],
   ['rowHash', 'VARCHAR(64) NULL'],
@@ -125,7 +128,7 @@ const RELATORIO_BASE_COLUMNS = [
   ['updatedAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'],
   ['dadosOriginaisJson', 'LONGTEXT NULL']
 ];
-
+ 
 function buildCreateTableSql() {
   const lines = RELATORIO_BASE_COLUMNS.map(([name, definition]) => `${quoteIdentifier(name)} ${definition}`);
   lines.push(`PRIMARY KEY (${quoteIdentifier('id')})`);
@@ -135,7 +138,7 @@ function buildCreateTableSql() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `;
 }
-
+ 
 async function indexExists(indexName) {
   const rows = await prisma.$queryRawUnsafe(`
     SELECT 1
@@ -147,35 +150,35 @@ async function indexExists(indexName) {
   `);
   return Array.isArray(rows) && rows.length > 0;
 }
-
+ 
 async function ensureRelatorioTableSchema({ force = false } = {}) {
   if (relatorioSchemaEnsured && !force) return;
-
+ 
   const tableRows = await prisma.$queryRawUnsafe(`SHOW TABLES LIKE ${sqlLiteral(TABLE_NAME)}`);
   if (!Array.isArray(tableRows) || !tableRows.length) {
     await prisma.$executeRawUnsafe(buildCreateTableSql());
   }
-
+ 
   const currentColumnsRows = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(TABLE_NAME)}`);
   const currentColumns = new Set((currentColumnsRows || []).map((row) => String(row?.Field || row?.COLUMN_NAME || '').trim()).filter(Boolean));
-
+ 
   for (const [name, definition] of RELATORIO_BASE_COLUMNS) {
     if (currentColumns.has(name)) continue;
     await runSqlIgnoringLegacyConstraint(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD COLUMN ${quoteIdentifier(name)} ${definition}`);
   }
-
+ 
   if (!(await indexExists('uk_relatorio_rowhash'))) {
     await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD UNIQUE INDEX ${quoteIdentifier('uk_relatorio_rowhash')} (${quoteIdentifier('rowHash')})`);
   }
-
+ 
   if (!(await indexExists('idx_relatorio_agendamento'))) {
     await runSqlIgnoringDuplicateKeyName(`ALTER TABLE ${quoteIdentifier(TABLE_NAME)} ADD INDEX ${quoteIdentifier('idx_relatorio_agendamento')} (${quoteIdentifier('agendamentoId')})`);
   }
-
+ 
   relatorioTableColumnsCache = null;
   relatorioSchemaEnsured = true;
 }
-
+ 
 function isPrismaPanicLike(error) {
   const message = String(error?.message || error || '');
   return message.includes('PANIC: timer has gone away')
@@ -184,14 +187,14 @@ function isPrismaPanicLike(error) {
     || message.includes('Raw query failed. Code: `N/A`')
     || message.includes('Raw query failed. Code: `N/A`. Message: `N/A`');
 }
-
+ 
 function disableRelatorioDb(error, context = 'operacao_desconhecida') {
   relatorioDbDisabled = true;
   const detail = error?.message || String(error || 'erro_desconhecido');
   relatorioDbDisableReason = `${context}: ${detail}`;
   console.error(`[RELATORIO_DB_FALLBACK] Banco desabilitado para o relatório terceirizado. Motivo: ${relatorioDbDisableReason}`);
 }
-
+ 
 function pathToDisplayName(filePathOrName) {
   if (Buffer.isBuffer(filePathOrName)) {
     const utf8 = filePathOrName.toString('utf8');
@@ -200,7 +203,7 @@ function pathToDisplayName(filePathOrName) {
   }
   return String(filePathOrName || '');
 }
-
+ 
 function joinBufferPath(dir, name) {
   return Buffer.concat([
     Buffer.from(String(dir)),
@@ -208,7 +211,7 @@ function joinBufferPath(dir, name) {
     Buffer.isBuffer(name) ? name : Buffer.from(String(name || ''))
   ]);
 }
-
+ 
 function extnameSafe(filePathOrName) {
   const display = pathToDisplayName(filePathOrName);
   const ext = path.extname(display).toLowerCase();
@@ -216,24 +219,36 @@ function extnameSafe(filePathOrName) {
   const bytes = Buffer.isBuffer(filePathOrName) ? filePathOrName : Buffer.from(String(filePathOrName || ''));
   return path.extname(bytes.toString('latin1')).toLowerCase();
 }
-
+ 
 function buildFileKey(name, stats = {}) {
   return `${pathToDisplayName(name)}:${Number(stats?.mtimeMs || 0)}:${Number(stats?.size || 0)}`;
 }
-
+ 
 function ensureDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
-
+ 
 function quoteIdentifier(value = '') {
   return `\`${String(value).replace(/`/g, '``')}\``;
 }
-
+ 
+function normalizeIdentifier(value = '') {
+  return normalizeCellValue(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '')
+    .toLowerCase();
+}
+ 
 function sqlLiteral(value) {
   if (value === null || value === undefined) return 'NULL';
   return `'${String(value).replace(/\\/g, '\\\\').replace(/'/g, "''")}'`;
 }
-
+ 
+function sqlList(values = []) {
+  return (Array.isArray(values) ? values : []).map(sqlLiteral).join(', ');
+}
+ 
 function xmlUnescape(value = '') {
   return String(value || '')
     .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => String.fromCodePoint(parseInt(hex, 16)))
@@ -244,17 +259,17 @@ function xmlUnescape(value = '') {
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&');
 }
-
+ 
 function trimTrailingEmpty(cells = []) {
   const output = [...cells];
   while (output.length && `${output[output.length - 1] ?? ''}`.trim() === '') output.pop();
   return output;
 }
-
+ 
 function normalizeCellValue(value) {
   return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 }
-
+ 
 function dedupeHeaderNames(headers = []) {
   const counts = new Map();
   return (Array.isArray(headers) ? headers : []).map((header) => {
@@ -265,7 +280,7 @@ function dedupeHeaderNames(headers = []) {
     return current === 1 ? normalized : `${normalized}${current}`;
   });
 }
-
+ 
 function getCaseInsensitiveValue(row = {}, expectedColumn = '') {
   const direct = row?.[expectedColumn];
   if (direct !== undefined && direct !== null) return direct;
@@ -275,38 +290,38 @@ function getCaseInsensitiveValue(row = {}, expectedColumn = '') {
   }
   return '';
 }
-
+ 
 function pickSpreadsheetValue(row = {}, expectedColumn = '') {
   const value = getCaseInsensitiveValue(row, expectedColumn);
   if (value !== undefined && value !== null && String(value).trim() !== '') return value;
   if (expectedColumn === 'Destino') return getCaseInsensitiveValue(row, 'destino');
   return '';
 }
-
+ 
 function parseNumber(value) {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   const raw = normalizeCellValue(value);
   if (!raw) return 0;
-
+ 
   if (/^-?\d+(?:\.\d+)?$/.test(raw)) {
     const num = Number(raw);
     return Number.isFinite(num) ? num : 0;
   }
-
+ 
   const normalized = raw.replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
   const num = Number(normalized);
   return Number.isFinite(num) ? num : 0;
 }
-
+ 
 function toFixedNumber(value, decimals = 3) {
   return Number(Number(value || 0).toFixed(decimals));
 }
-
+ 
 function buildRowHash(row = {}) {
   const payload = SHEET_COLUMNS.map((column) => normalizeCellValue(row[column] ?? '')).join('|');
   return crypto.createHash('sha256').update(payload).digest('hex');
 }
-
+ 
 function buildNoteObservation(row = {}) {
   const parts = [];
   if (row['Entrada']) parts.push(`Entrada ${row['Entrada']}`);
@@ -316,8 +331,8 @@ function buildNoteObservation(row = {}) {
   if (row['Data 1º vencimento']) parts.push(`1º vencimento ${row['Data 1º vencimento']}`);
   return parts.join(' | ');
 }
-
-
+ 
+ 
 function excelSerialToIsoDate(value) {
   const serial = Number(value);
   if (!Number.isFinite(serial)) return '';
@@ -329,20 +344,20 @@ function excelSerialToIsoDate(value) {
   if (Number.isNaN(date.getTime())) return '';
   return date.toISOString().slice(0, 10);
 }
-
+ 
 function normalizeSpreadsheetDateValue(value) {
   if (value === null || value === undefined) return '';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value.toISOString().slice(0, 10);
   }
-
+ 
   const raw = normalizeCellValue(value);
   if (!raw) return '';
-
+ 
   if (/^\d{4}-\d{2}-\d{2}(?:[ T].*)?$/.test(raw)) {
     return raw.slice(0, 10);
   }
-
+ 
   const brMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (brMatch) {
     const day = Number(brMatch[1]);
@@ -352,23 +367,23 @@ function normalizeSpreadsheetDateValue(value) {
       return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     }
   }
-
+ 
   const rawNumber = Number(raw.replace(',', '.'));
   if (Number.isFinite(rawNumber) && rawNumber > 59 && rawNumber < 100000) {
     const iso = excelSerialToIsoDate(rawNumber);
     if (iso) return iso;
   }
-
+ 
   return raw;
 }
-
+ 
 function normalizeSpreadsheetColumnValue(column, value) {
   if (DATE_COLUMNS.has(column)) {
     return normalizeSpreadsheetDateValue(value);
   }
   return normalizeCellValue(value);
 }
-
+ 
 function buildDueFields(dateValue = '') {
   const dueInfo = computeDueInfo({ dueDateValue: dateValue });
   return {
@@ -379,7 +394,7 @@ function buildDueFields(dateValue = '') {
     tooltipVencimento: dueInfo.tooltip || (dueInfo.dueDate ? `1º vencimento em ${formatDateBR(dueInfo.dueDate)}` : '')
   };
 }
-
+ 
 function normalizeSpreadsheetRow(row = {}) {
   const normalized = {};
   for (const column of SHEET_COLUMNS) {
@@ -387,22 +402,99 @@ function normalizeSpreadsheetRow(row = {}) {
   }
   return normalized;
 }
-
+ 
+function applyEntradaVolumesToNotes(notas = [], volumeByEntrada = new Map()) {
+  return (Array.isArray(notas) ? notas : []).map((nota) => {
+    const entrada = normalizeCellValue(nota?.entrada || '');
+    if (!entrada || !volumeByEntrada.has(entrada)) return nota;
+    return { ...nota, volumes: volumeByEntrada.get(entrada) };
+  });
+}
+ 
+function totalVolumesFromNotas(notas = []) {
+  return toFixedNumber((Array.isArray(notas) ? notas : []).reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0), 3);
+}
+ 
+async function tableExists(tableName = '') {
+  const rows = await prisma.$queryRawUnsafe(`SHOW TABLES LIKE ${sqlLiteral(tableName)}`);
+  return Array.isArray(rows) && rows.length > 0;
+}
+ 
+async function getEntradaVolumesColumns() {
+  if (entradaVolumesColumnsCache) return entradaVolumesColumnsCache;
+  if (entradaVolumesLookupDisabled) return null;
+  if (!(await tableExists(VOLUMES_TABLE_NAME))) {
+    entradaVolumesLookupDisabled = true;
+    return null;
+  }
+ 
+  const rows = await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${quoteIdentifier(VOLUMES_TABLE_NAME)}`);
+  const columns = (rows || []).map((row) => String(row?.Field || row?.COLUMN_NAME || '').trim()).filter(Boolean);
+  const columnByNormalized = new Map(columns.map((column) => [normalizeIdentifier(column), column]));
+  const entradaColumn = columnByNormalized.get('entrada');
+  const volumeColumn = [
+    'volumes',
+    'volume',
+    'quantidadevolumes',
+    'qtdvolumes',
+    'qtdvolume',
+    'quantidade',
+    'qtd',
+    'volumetotal',
+    'totalvolumes',
+    'totalvolume'
+  ].map((name) => columnByNormalized.get(name)).find(Boolean);
+ 
+  if (!entradaColumn || !volumeColumn) {
+    entradaVolumesLookupDisabled = true;
+    return null;
+  }
+ 
+  entradaVolumesColumnsCache = { entradaColumn, volumeColumn };
+  return entradaVolumesColumnsCache;
+}
+ 
+async function getVolumesByEntrada(entradas = []) {
+  const uniqueEntradas = [...new Set((Array.isArray(entradas) ? entradas : []).map(normalizeCellValue).filter(Boolean))];
+  if (!uniqueEntradas.length || relatorioDbDisabled || isPrismaDisabled()) return new Map();
+ 
+  try {
+    const columns = await getEntradaVolumesColumns();
+    if (!columns) return new Map();
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT ${quoteIdentifier(columns.entradaColumn)} AS entrada, ${quoteIdentifier(columns.volumeColumn)} AS volumes
+         FROM ${quoteIdentifier(VOLUMES_TABLE_NAME)}
+        WHERE TRIM(${quoteIdentifier(columns.entradaColumn)}) IN (${sqlList(uniqueEntradas)})`
+    );
+    const result = new Map();
+    for (const row of rows || []) {
+      const entrada = normalizeCellValue(row?.entrada || '');
+      if (!entrada) continue;
+      result.set(entrada, toFixedNumber((result.get(entrada) || 0) + parseNumber(row?.volumes), 3));
+    }
+    return result;
+  } catch (error) {
+    entradaVolumesLookupDisabled = true;
+    console.error('[RELATORIO_IMPORT] Falha ao consultar volumes por entrada:', error?.message || error);
+    return new Map();
+  }
+}
+ 
 function filterValidRows(rows = []) {
   return rows
     .map(normalizeSpreadsheetRow)
     .filter((row) => row['Fornecedor'] && row['Nr. nota']);
 }
-
+ 
 function normalizeImportedItems(rows = []) {
   const groups = new Map();
-
+ 
   for (const row of rows) {
     const normalizedRow = normalizeSpreadsheetRow(row);
     const fornecedor = normalizeCellValue(normalizedRow['Fornecedor']);
     const numeroNf = normalizeCellValue(normalizedRow['Nr. nota']);
     if (!fornecedor || !numeroNf) continue;
-
+ 
     if (!groups.has(fornecedor)) {
       groups.set(fornecedor, {
         id: groups.size + 1,
@@ -421,7 +513,7 @@ function normalizeImportedItems(rows = []) {
         _seenNotaKeys: new Set()
       });
     }
-
+ 
     const current = groups.get(fornecedor);
     const dueFields = buildDueFields(normalizedRow['Data 1º vencimento']);
     const isManualNote = normalizeCellValue(normalizedRow['Entrada']).toUpperCase() === 'MANUAL'
@@ -447,11 +539,11 @@ function normalizeImportedItems(rows = []) {
         ? 'NF inserida manualmente; sem pré-lançamento no relatório terceirizado.'
         : dueFields.tooltipVencimento
     };
-
+ 
     const noteKey = note.rowHash || `${note.numeroNf}::${note.serie}::${note.valorNf}::${note.peso}::${note.volumes}`;
     if (!noteKey || current._seenNotaKeys.has(noteKey)) continue;
     current._seenNotaKeys.add(noteKey);
-
+ 
     current.notas.push(note);
     current.notasFiscais = current.notas;
     current.quantidadeNotas += 1;
@@ -463,7 +555,7 @@ function normalizeImportedItems(rows = []) {
       current.possuiVencimentoProximo = true;
     }
   }
-
+ 
   return [...groups.values()]
     .map((item) => {
       delete item._seenNotaKeys;
@@ -489,7 +581,7 @@ function normalizeImportedItems(rows = []) {
       return String(a.fornecedor || '').localeCompare(String(b.fornecedor || ''), 'pt-BR');
     });
 }
-
+ 
 function buildPendingNoteKey(nota = {}) {
   const rowHash = normalizeCellValue(nota?.rowHash || '');
   if (rowHash) return rowHash;
@@ -498,11 +590,11 @@ function buildPendingNoteKey(nota = {}) {
   if (!numeroNf) return '';
   return `${numeroNf}::${serie}`;
 }
-
+ 
 function filterScheduledNotesFromGroups(groups = []) {
   const rescheduleStatuses = new Set(['CANCELADO', 'REPROVADO', 'NO_SHOW']);
   const blockedKeys = new Set();
-
+ 
   for (const agendamento of readAgendamentos()) {
     if (rescheduleStatuses.has(String(agendamento?.status || '').trim().toUpperCase())) continue;
     const notas = Array.isArray(agendamento?.notasFiscais) ? agendamento.notasFiscais : Array.isArray(agendamento?.notas) ? agendamento.notas : [];
@@ -511,7 +603,7 @@ function filterScheduledNotesFromGroups(groups = []) {
       if (key) blockedKeys.add(key);
     }
   }
-
+ 
   return (Array.isArray(groups) ? groups : []).map((group, index) => {
     const notas = (Array.isArray(group?.notas) ? group.notas : Array.isArray(group?.notasFiscais) ? group.notasFiscais : [])
       .filter((nota) => {
@@ -527,14 +619,15 @@ function filterScheduledNotesFromGroups(groups = []) {
         if (dueA !== dueB) return dueA - dueB;
         return String(a.numeroNf || '').localeCompare(String(b.numeroNf || ''), 'pt-BR');
       });
-
+ 
     if (!notas.length) return null;
-
+ 
     const quantidadeVolumes = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0), 3);
+    const quantidadeVolumes = totalVolumesFromNotas(notas);
     const pesoTotalKg = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0), 3);
     const valorTotalNf = toFixedNumber(notas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0), 2);
     const totalNotasVencimentoProximo = notas.filter((nota) => nota?.alertaVencimentoProximo).length;
-
+ 
     return {
       ...group,
       id: group?.id || index + 1,
@@ -557,7 +650,28 @@ function filterScheduledNotesFromGroups(groups = []) {
     return String(a.fornecedor || '').localeCompare(String(b.fornecedor || ''), 'pt-BR');
   });
 }
-
+ 
+async function enrichGroupsWithEntradaVolumes(groups = []) {
+  const normalizedGroups = Array.isArray(groups) ? groups : [];
+  const entradas = normalizedGroups.flatMap((group) => {
+    const notas = Array.isArray(group?.notas) ? group.notas : Array.isArray(group?.notasFiscais) ? group.notasFiscais : [];
+    return notas.map((nota) => nota?.entrada);
+  });
+  const volumeByEntrada = await getVolumesByEntrada(entradas);
+  if (!volumeByEntrada.size) return normalizedGroups;
+ 
+  return normalizedGroups.map((group) => {
+    const sourceNotas = Array.isArray(group?.notas) ? group.notas : Array.isArray(group?.notasFiscais) ? group.notasFiscais : [];
+    const notas = applyEntradaVolumesToNotes(sourceNotas, volumeByEntrada);
+    return {
+      ...group,
+      notas,
+      notasFiscais: notas,
+      quantidadeVolumes: totalVolumesFromNotas(notas)
+    };
+  });
+}
+ 
 function normalizeSelectedNota(nota = {}) {
   return {
     rowHash: normalizeCellValue(nota?.rowHash || ''),
@@ -574,7 +688,7 @@ function normalizeSelectedNota(nota = {}) {
     observacao: normalizeCellValue(nota?.observacao || '')
   };
 }
-
+ 
 function normalizeNoteFromSpreadsheetRow(row = {}) {
   const normalizedRow = normalizeSpreadsheetRow(row);
   return {
@@ -593,20 +707,20 @@ function normalizeNoteFromSpreadsheetRow(row = {}) {
     ...buildDueFields(normalizedRow['Data 1º vencimento'])
   };
 }
-
+ 
 export async function canonicalizeNotasSelecionadasComRelatorio(fornecedor, notas = []) {
   const normalizedSelection = Array.isArray(notas) ? notas.map(normalizeSelectedNota).filter((nota) => nota.numeroNf || nota.rowHash) : [];
   if (!normalizedSelection.length) return [];
-
+ 
   try {
     await ensureRelatorioTable();
-
+ 
     const rowHashes = [...new Set(normalizedSelection.map((nota) => nota.rowHash).filter(Boolean))];
     const byHash = new Map();
-
+ 
     if (rowHashes.length) {
       const rows = await prisma.$queryRawUnsafe(`SELECT rowHash, dadosOriginaisJson FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash IN (${sqlList(rowHashes)})`);
-
+ 
       for (const row of rows || []) {
         try {
           const parsed = row?.dadosOriginaisJson ? JSON.parse(String(row.dadosOriginaisJson)) : {};
@@ -614,9 +728,9 @@ export async function canonicalizeNotasSelecionadasComRelatorio(fornecedor, nota
         } catch {}
       }
     }
-
-    const fornecedorNormalized = normalizeCellValue(fornecedor);
-    return normalizedSelection.map((nota) => {
+ 
+const fornecedorNormalized = normalizeCellValue(fornecedor);
+    const mergedNotas = normalizedSelection.map((nota) => {
       const fromHash = nota.rowHash ? byHash.get(nota.rowHash) : null;
       if (fromHash) return { ...fromHash, chaveAcesso: nota.chaveAcesso || fromHash.chaveAcesso || '' };
 
@@ -625,12 +739,21 @@ export async function canonicalizeNotasSelecionadasComRelatorio(fornecedor, nota
         fornecedor: fornecedorNormalized
       };
     });
+    const volumesByEntrada = await getVolumesByEntrada(mergedNotas.map((nota) => nota?.entrada));
+    return applyEntradaVolumesToNotes(mergedNotas, volumesByEntrada);
   } catch {
-    return normalizedSelection;
+    const volumesByEntrada = await getVolumesByEntrada(normalizedSelection.map((nota) => nota?.entrada));
+    return applyEntradaVolumesToNotes(normalizedSelection, volumesByEntrada);
   }
 }
-
-
+ 
+export async function refreshNotasVolumesFromEntradas(notas = []) {
+  const normalizedNotas = Array.isArray(notas) ? notas : [];
+  const volumesByEntrada = await getVolumesByEntrada(normalizedNotas.map((nota) => nota?.entrada));
+  return applyEntradaVolumesToNotes(normalizedNotas, volumesByEntrada);
+}
+ 
+ 
 function manualNotaRowHash(fornecedor = '', nota = {}) {
   const key = [
     'MANUAL',
@@ -643,7 +766,7 @@ function manualNotaRowHash(fornecedor = '', nota = {}) {
   ].join('|');
   return crypto.createHash('sha256').update(key).digest('hex');
 }
-
+ 
 function buildManualSpreadsheetRow(fornecedor = '', nota = {}, actor = null) {
   const row = {};
   for (const column of SHEET_COLUMNS) row[column] = '';
@@ -662,7 +785,7 @@ function buildManualSpreadsheetRow(fornecedor = '', nota = {}, actor = null) {
   row.rowHash = manualNotaRowHash(fornecedor, nota);
   return row;
 }
-
+ 
 function readFallbackGroups() {
   try {
     if (!fs.existsSync(fallbackFile)) return [];
@@ -671,7 +794,7 @@ function readFallbackGroups() {
     return [];
   }
 }
-
+ 
 function upsertManualNotaIntoFallback(fornecedor = '', nota = {}) {
   const currentGroups = readFallbackGroups();
   const groups = Array.isArray(currentGroups) ? currentGroups : [];
@@ -687,7 +810,7 @@ function upsertManualNotaIntoFallback(fornecedor = '', nota = {}) {
     disponivelNoRelatorio: false,
     tooltipVencimento: 'NF inserida manualmente; sem pré-lançamento no relatório terceirizado.'
   });
-
+ 
   const existingGroup = groups.find((item) => normalizeCellValue(item?.fornecedor || item?.nome || '') === fornecedorNormalized);
   const targetGroup = existingGroup || { id: fornecedorNormalized || `manual-${Date.now()}`, fornecedor: fornecedorNormalized, nome: fornecedorNormalized, notas: [], notasFiscais: [] };
   const notasAtuais = Array.isArray(targetGroup.notas) ? targetGroup.notas : Array.isArray(targetGroup.notasFiscais) ? targetGroup.notasFiscais : [];
@@ -695,7 +818,7 @@ function upsertManualNotaIntoFallback(fornecedor = '', nota = {}) {
   if (duplicate) {
     throw new Error('Esta NF manual já está cadastrada para este fornecedor.');
   }
-
+ 
   const notas = [...notasAtuais, notaNormalizada];
   targetGroup.fornecedor = fornecedorNormalized;
   targetGroup.nome = fornecedorNormalized;
@@ -710,11 +833,11 @@ function upsertManualNotaIntoFallback(fornecedor = '', nota = {}) {
     targetGroup.createdAt = targetGroup.updatedAt;
     groups.unshift(targetGroup);
   }
-
+ 
   writeFallback(groups);
   return notaNormalizada;
 }
-
+ 
 export async function persistManualPendingNota({ fornecedor = '', nota = {}, actor = null } = {}) {
   const fornecedorNormalized = normalizeCellValue(fornecedor);
   const normalizedNota = normalizeSelectedNota({
@@ -728,7 +851,7 @@ export async function persistManualPendingNota({ fornecedor = '', nota = {}, act
     tooltipVencimento: 'NF inserida manualmente; sem pré-lançamento no relatório terceirizado.'
   });
   normalizedNota.rowHash = manualNotaRowHash(fornecedorNormalized, normalizedNota);
-
+ 
   try {
     if (await ensureRelatorioTable()) {
       const duplicateRows = await prisma.$queryRawUnsafe(`
@@ -740,11 +863,11 @@ export async function persistManualPendingNota({ fornecedor = '', nota = {}, act
            AND COALESCE(TRIM(${quoteIdentifier('Série')}), '') = ${sqlLiteral(normalizedNota.serie)}
          LIMIT 1
       `);
-
+ 
       if (Array.isArray(duplicateRows) && duplicateRows.length) {
         throw new Error('Esta NF manual já está cadastrada para este fornecedor.');
       }
-
+ 
       const row = buildManualSpreadsheetRow(fornecedorNormalized, normalizedNota, actor);
       const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
       const values = [
@@ -768,15 +891,15 @@ export async function persistManualPendingNota({ fornecedor = '', nota = {}, act
       console.error('[RELATORIO_IMPORT] Falha ao persistir NF manual no banco, aplicando fallback em arquivo:', error?.message || error);
     }
   }
-
+ 
   return upsertManualNotaIntoFallback(fornecedorNormalized, normalizedNota);
 }
-
+ 
 function parseCsvLine(line = '', delimiter = ';') {
   const fields = [];
   let current = '';
   let inQuotes = false;
-
+ 
   for (let i = 0; i < line.length; i += 1) {
     const char = line[i];
     if (char === '"') {
@@ -788,26 +911,26 @@ function parseCsvLine(line = '', delimiter = ';') {
       }
       continue;
     }
-
+ 
     if (!inQuotes && char === delimiter) {
       fields.push(current);
       current = '';
       continue;
     }
-
+ 
     current += char;
   }
-
+ 
   fields.push(current);
   return fields.map((value) => value.trim());
 }
-
+ 
 function parseCsv(content = '') {
   const lines = String(content || '').replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim() !== '');
   if (!lines.length) return [];
   const delimiter = lines[0].includes(';') ? ';' : ',';
   const headers = dedupeHeaderNames(parseCsvLine(lines[0], delimiter).map(normalizeCellValue));
-
+ 
   return lines.slice(1).map((line) => {
     const cols = parseCsvLine(line, delimiter);
     const row = {};
@@ -817,19 +940,19 @@ function parseCsv(content = '') {
     return row;
   });
 }
-
+ 
 function parseJsonFile(content = '') {
   const parsed = JSON.parse(String(content || '[]'));
   if (Array.isArray(parsed)) return parsed;
   if (Array.isArray(parsed?.items)) return parsed.items;
   return [];
 }
-
+ 
 function getAttr(attrs = '', name = '') {
   const regex = new RegExp(`${name}="([^"]*)"`, 'i');
   return regex.exec(attrs)?.[1] ?? '';
 }
-
+ 
 function cellTextFromXml(inner = '') {
   return xmlUnescape(
     String(inner || '')
@@ -838,30 +961,30 @@ function cellTextFromXml(inner = '') {
       .replace(/<[^>]+>/g, '')
   ).trim();
 }
-
+ 
 function parseOdsContentXml(contentXml = '') {
   const tableMatch = contentXml.match(/<table:table\b[\s\S]*?<\/table:table>/i);
   if (!tableMatch) return [];
-
+ 
   const tableXml = tableMatch[0];
   const rowRegex = /<table:table-row\b([^>]*)>([\s\S]*?)<\/table:table-row>/gi;
   const rows = [];
   let rowMatch;
-
+ 
   while ((rowMatch = rowRegex.exec(tableXml))) {
     const repeatRows = Number(getAttr(rowMatch[1], 'table:number-rows-repeated') || 1);
     const rowInner = rowMatch[2] || '';
     const cellRegex = /<table:(table-cell|covered-table-cell)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/table:\1>)/gi;
     const cells = [];
     let cellMatch;
-
+ 
     while ((cellMatch = cellRegex.exec(rowInner))) {
       const type = cellMatch[1];
       const attrs = cellMatch[2] || '';
       const inner = cellMatch[3] || '';
       const repeatCols = Number(getAttr(attrs, 'table:number-columns-repeated') || 1);
       let value = '';
-
+ 
       if (type !== 'covered-table-cell') {
         value = getAttr(attrs, 'office:string-value')
           || getAttr(attrs, 'office:date-value')
@@ -869,17 +992,17 @@ function parseOdsContentXml(contentXml = '') {
           || cellTextFromXml(inner)
           || '';
       }
-
+ 
       for (let i = 0; i < repeatCols; i += 1) cells.push(value);
     }
-
+ 
     const rowValues = trimTrailingEmpty(cells).map(normalizeCellValue);
     for (let i = 0; i < repeatRows; i += 1) rows.push([...rowValues]);
   }
-
+ 
   const headerIndex = rows.findIndex((row) => row.some((cell) => cell === 'Fornecedor') && row.some((cell) => cell.includes('Nr. nota')));
   if (headerIndex < 0) return [];
-
+ 
   const headers = dedupeHeaderNames(rows[headerIndex].map(normalizeCellValue));
   return rows
     .slice(headerIndex + 1)
@@ -892,27 +1015,27 @@ function parseOdsContentXml(contentXml = '') {
       return item;
     });
 }
-
+ 
 function readZipEntry(filePath, entryName) {
   const buffer = fs.readFileSync(filePath);
   let eocd = -1;
-
+ 
   for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 65557); i -= 1) {
     if (buffer.readUInt32LE(i) === 0x06054b50) {
       eocd = i;
       break;
     }
   }
-
+ 
   if (eocd < 0) throw new Error('Estrutura ZIP inválida.');
-
+ 
   const centralDirectoryOffset = buffer.readUInt32LE(eocd + 16);
   const totalEntries = buffer.readUInt16LE(eocd + 10);
   let offset = centralDirectoryOffset;
-
+ 
   for (let index = 0; index < totalEntries; index += 1) {
     if (buffer.readUInt32LE(offset) !== 0x02014b50) throw new Error('Diretório central ZIP inválido.');
-
+ 
     const compressionMethod = buffer.readUInt16LE(offset + 10);
     const compressedSize = buffer.readUInt32LE(offset + 20);
     const fileNameLength = buffer.readUInt16LE(offset + 28);
@@ -921,30 +1044,30 @@ function readZipEntry(filePath, entryName) {
     const localHeaderOffset = buffer.readUInt32LE(offset + 42);
     const fileName = buffer.toString('utf8', offset + 46, offset + 46 + fileNameLength);
     offset += 46 + fileNameLength + extraLength + commentLength;
-
+ 
     if (fileName !== entryName) continue;
     if (buffer.readUInt32LE(localHeaderOffset) !== 0x04034b50) throw new Error('Cabeçalho local ZIP inválido.');
-
+ 
     const localFileNameLength = buffer.readUInt16LE(localHeaderOffset + 26);
     const localExtraLength = buffer.readUInt16LE(localHeaderOffset + 28);
     const dataStart = localHeaderOffset + 30 + localFileNameLength + localExtraLength;
     const compressedData = buffer.slice(dataStart, dataStart + compressedSize);
-
+ 
     if (compressionMethod === 0) return compressedData;
     if (compressionMethod === 8) return zlib.inflateRawSync(compressedData);
     throw new Error(`Compressão ZIP não suportada: ${compressionMethod}`);
   }
-
+ 
   throw new Error(`Arquivo ${entryName} não encontrado no ZIP.`);
 }
-
+ 
 function xlsxColumnToIndex(ref = '') {
   const letters = String(ref || '').match(/[A-Z]+/i)?.[0] || '';
   let value = 0;
   for (const char of letters.toUpperCase()) value = (value * 26) + (char.charCodeAt(0) - 64);
   return Math.max(0, value - 1);
 }
-
+ 
 function parseXlsxSharedStrings(xml = '') {
   const items = [];
   const matches = String(xml || '').match(/<si\b[\s\S]*?<\/si>/g) || [];
@@ -954,7 +1077,7 @@ function parseXlsxSharedStrings(xml = '') {
   }
   return items;
 }
-
+ 
 function readOptionalZipEntry(filePath, entryName) {
   try {
     return readZipEntry(filePath, entryName);
@@ -962,11 +1085,11 @@ function readOptionalZipEntry(filePath, entryName) {
     return null;
   }
 }
-
+ 
 function escapeRegex(value = '') {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
+ 
 function resolveFirstXlsxSheetPath(filePath) {
   const workbookXml = readOptionalZipEntry(filePath, 'xl/workbook.xml')?.toString('utf8') || '';
   const relsXml = readOptionalZipEntry(filePath, 'xl/_rels/workbook.xml.rels')?.toString('utf8') || '';
@@ -975,7 +1098,7 @@ function resolveFirstXlsxSheetPath(filePath) {
   const target = relsXml.match(relationPattern)?.[1] || 'worksheets/sheet1.xml';
   return target.startsWith('xl/') ? target : `xl/${target.replace(/^\/+/, '')}`;
 }
-
+ 
 function extractXlsxCellValue(cellXml = '', sharedStrings = []) {
   const type = cellXml.match(/\bt="([^"]+)"/i)?.[1] || '';
   if (type === 'inlineStr') {
@@ -990,12 +1113,12 @@ function extractXlsxCellValue(cellXml = '', sharedStrings = []) {
   if (type === 'b') return raw === '1' ? 'TRUE' : 'FALSE';
   return raw;
 }
-
+ 
 function parseXlsxSheetXml(xml = '', sharedStrings = []) {
   const rows = [];
   const rowMatches = String(xml || '').match(/<row\b[\s\S]*?<\/row>/g) || [];
   let headers = [];
-
+ 
   for (const rowXml of rowMatches) {
     const cells = [];
     const cellMatches = rowXml.match(/<c\b[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g) || [];
@@ -1017,10 +1140,10 @@ function parseXlsxSheetXml(xml = '', sharedStrings = []) {
     });
     rows.push(row);
   }
-
+ 
   return rows;
 }
-
+ 
 function parseXlsxFile(filePath) {
   const sharedStringsXml = readOptionalZipEntry(filePath, 'xl/sharedStrings.xml');
   const sharedStrings = sharedStringsXml ? parseXlsxSharedStrings(sharedStringsXml.toString('utf8')) : [];
@@ -1028,13 +1151,13 @@ function parseXlsxFile(filePath) {
   const sheetXml = readZipEntry(filePath, sheetPath).toString('utf8');
   return parseXlsxSheetXml(sheetXml, sharedStrings);
 }
-
+ 
 function parseSpreadsheetFile(filePath) {
   const ext = extnameSafe(filePath).toLowerCase();
   if (!SUPPORTED_EXTENSIONS.has(ext)) {
     throw new Error('Formato de planilha não suportado. Use .ods, .xlsx, .csv ou .json.');
   }
-
+ 
   if (ext === '.csv') return parseCsv(fs.readFileSync(filePath, 'utf8'));
   if (ext === '.json') return parseJsonFile(fs.readFileSync(filePath, 'utf8'));
   if (ext === '.ods') {
@@ -1042,11 +1165,11 @@ function parseSpreadsheetFile(filePath) {
     return parseOdsContentXml(xml);
   }
   if (ext === '.xlsx') return parseXlsxFile(filePath);
-
+ 
   return [];
 }
-
-
+ 
+ 
 async function runSqlIgnoringDuplicateKeyName(sql) {
   try {
     await prisma.$executeRawUnsafe(sql);
@@ -1057,7 +1180,7 @@ async function runSqlIgnoringDuplicateKeyName(sql) {
     throw error;
   }
 }
-
+ 
 async function runSqlIgnoringLegacyConstraint(sql) {
   try {
     await prisma.$executeRawUnsafe(sql);
@@ -1076,7 +1199,7 @@ async function runSqlIgnoringLegacyConstraint(sql) {
     throw error;
   }
 }
-
+ 
 function readState() {
   try {
     if (!fs.existsSync(stateFile)) return {};
@@ -1085,22 +1208,22 @@ function readState() {
     return {};
   }
 }
-
+ 
 function writeState(state = {}) {
   ensureDir(dataDir);
   fs.writeFileSync(stateFile, JSON.stringify(state, null, 2), 'utf8');
 }
-
+ 
 function writeFallback(groups = []) {
   ensureDir(dataDir);
   fs.writeFileSync(fallbackFile, JSON.stringify(groups, null, 2), 'utf8');
 }
-
+ 
 function removePendingNotasFromFallback({ fornecedor = '', notas = [] } = {}) {
   const fornecedorNormalized = normalizeCellValue(fornecedor);
   const selected = new Set((Array.isArray(notas) ? notas : []).map((nota) => buildPendingNoteKey(nota)).filter(Boolean));
   if (!selected.size) return { removed: 0, source: 'arquivo' };
-
+ 
   const groups = readFallbackGroups();
   let removed = 0;
   const updatedGroups = groups.map((group) => {
@@ -1125,21 +1248,21 @@ function removePendingNotasFromFallback({ fornecedor = '', notas = [] } = {}) {
       valorTotalNf
     };
   }).filter((group) => Number(group?.quantidadeNotas || 0) > 0 || (Array.isArray(group?.notas) && group.notas.length > 0) || (Array.isArray(group?.notasFiscais) && group.notasFiscais.length > 0));
-
+ 
   writeFallback(updatedGroups);
   return { removed, source: 'arquivo' };
 }
-
+ 
 export async function removePendingNotasFromRelatorio({ fornecedor = '', notas = [] } = {}) {
   const fornecedorNormalized = normalizeCellValue(fornecedor);
   const selectedNotas = Array.isArray(notas) ? notas.map(normalizeSelectedNota).filter((nota) => nota.numeroNf || nota.rowHash) : [];
   if (!fornecedorNormalized || !selectedNotas.length) return { removed: 0, source: 'none' };
-
+ 
   const fallbackResult = removePendingNotasFromFallback({ fornecedor: fornecedorNormalized, notas: selectedNotas });
-
+ 
   try {
     if (!(await ensureRelatorioTable())) return fallbackResult;
-
+ 
     let removed = 0;
     for (const nota of selectedNotas) {
       if (nota.rowHash) {
@@ -1161,22 +1284,22 @@ export async function removePendingNotasFromRelatorio({ fornecedor = '', notas =
       const count = await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)} WHERE ${conditions.join(' AND ')}`);
       removed += Number(count || 0);
     }
-
+ 
     return { removed, source: 'database' };
   } catch (error) {
     console.error('[RELATORIO_IMPORT] Falha ao remover notas pendentes do relatório:', error?.message || error);
     return { ...fallbackResult, source: fallbackResult.source || 'arquivo', reason: error?.message || String(error || 'erro') };
   }
 }
-
+ 
 function writeRawFallback(rows = []) {
   ensureDir(dataDir);
   fs.writeFileSync(rawFallbackFile, JSON.stringify(rows, null, 2), 'utf8');
 }
-
+ 
 function withRelatorioImportLock(task) {
   if (relatorioImportPromise) return relatorioImportPromise;
-
+ 
   relatorioImportPromise = (async () => {
     try {
       return await task();
@@ -1184,10 +1307,10 @@ function withRelatorioImportLock(task) {
       relatorioImportPromise = null;
     }
   })();
-
+ 
   return relatorioImportPromise;
 }
-
+ 
 async function ensureRelatorioTable() {
   if (relatorioDbDisabled) return false;
   if (isPrismaDisabled()) {
@@ -1195,7 +1318,7 @@ async function ensureRelatorioTable() {
     return false;
   }
   if (relatorioEnsurePromise) return relatorioEnsurePromise;
-
+ 
   const probe = async () => {
     await ensureRelatorioTableSchema();
     await prisma.$queryRawUnsafe(
@@ -1206,7 +1329,7 @@ async function ensureRelatorioTable() {
     await getRelatorioTableColumns();
     return true;
   };
-
+ 
   relatorioEnsurePromise = (async () => {
     try {
       return await probe();
@@ -1228,10 +1351,10 @@ async function ensureRelatorioTable() {
       relatorioEnsurePromise = null;
     }
   })();
-
+ 
   return relatorioEnsurePromise;
 }
-
+ 
 async function getRelatorioTableColumns() {
   if (relatorioTableColumnsCache) return relatorioTableColumnsCache;
   relatorioSchemaEnsured = true;
@@ -1239,7 +1362,7 @@ async function getRelatorioTableColumns() {
   relatorioTableColumnsCache = new Set((rows || []).map((row) => String(row?.Field || row?.COLUMN_NAME || '').trim()).filter(Boolean));
   return relatorioTableColumnsCache;
 }
-
+ 
 async function filterColumnsForRelatorioInsert(columns = [], values = []) {
   const availableColumns = await getRelatorioTableColumns();
   const filteredColumns = [];
@@ -1252,7 +1375,7 @@ async function filterColumnsForRelatorioInsert(columns = [], values = []) {
   });
   return { columns: filteredColumns, values: filteredValues };
 }
-
+ 
 async function countRelatorioRowsInDatabase() {
   if (!(await ensureRelatorioTable())) return 0;
   try {
@@ -1264,24 +1387,24 @@ async function countRelatorioRowsInDatabase() {
     return 0;
   }
 }
-
+ 
 function buildImportKey(file = null) {
   if (!file) return null;
   return `${file.name}:${file.mtimeMs}:${file.size}`;
 }
-
+ 
 export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = true, source = 'sync', actor = null, ip = null } = {}) {
   for (const dir of importDirCandidates) ensureDir(dir);
   const latest = listSupportedImportFiles()[0] || null;
   const state = readState();
-
+ 
   let totalLinhasNoBanco = 0;
   try {
     totalLinhasNoBanco = await countRelatorioRowsInDatabase();
   } catch (error) {
     console.error('Falha ao contar linhas do relatório no banco:', error?.message || error);
   }
-
+ 
   if (!latest) {
     return {
       ok: true,
@@ -1290,12 +1413,12 @@ export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = t
       totalLinhasNoBanco
     };
   }
-
+ 
   const currentKey = buildImportKey(latest);
   const sameFileAlreadyProcessed = state.lastProcessedKey === currentKey;
   const shouldForceBecauseDatabaseEmpty = !relatorioDbDisabled && forceWhenDatabaseEmpty && totalLinhasNoBanco === 0;
   const shouldImport = !sameFileAlreadyProcessed || shouldForceBecauseDatabaseEmpty;
-
+ 
   if (!shouldImport) {
     return {
       ok: true,
@@ -1306,7 +1429,7 @@ export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = t
       lastProcessedKey: state.lastProcessedKey || null
     };
   }
-
+ 
   const summary = await importRelatorioSpreadsheet({
     filePath: latest.filePath,
     originalName: latest.name,
@@ -1314,28 +1437,28 @@ export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = t
     source,
     ip
   });
-
+ 
   let totalDepois = totalLinhasNoBanco;
   try {
     totalDepois = await countRelatorioRowsInDatabase();
   } catch (error) {
     console.error('Falha ao contar linhas do relatório no banco após importação:', error?.message || error);
   }
-
+ 
   return {
     ...summary,
     imported: true,
     totalLinhasNoBanco: totalDepois
   };
 }
-
+ 
 export { countRelatorioRowsInDatabase };
-
+ 
 async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   if (!(await ensureRelatorioTable())) {
     throw new Error(relatorioDbDisableReason || 'Banco do relatório terceirizado indisponível.');
   }
-
+ 
   let existingRows = [];
   try {
     existingRows = await prisma.$queryRawUnsafe(`SELECT rowHash, agendamentoId FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash IS NOT NULL`);
@@ -1344,12 +1467,12 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
     throw error;
   }
   const agendamentoMap = new Map((existingRows || []).map((row) => [String(row.rowHash || ''), row.agendamentoId == null ? null : Number(row.agendamentoId)]));
-
+ 
   await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)}`);
-
+ 
   const deduplicatedRows = [];
   const seenRowHashes = new Set();
-
+ 
   for (const row of rows) {
     const normalizedRow = normalizeSpreadsheetRow(row);
     const rowHash = buildRowHash(normalizedRow);
@@ -1357,9 +1480,9 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
     seenRowHashes.add(rowHash);
     deduplicatedRows.push({ normalizedRow, rowHash });
   }
-
+ 
   const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
-
+ 
   for (const row of deduplicatedRows) {
     const values = [
       row.rowHash,
@@ -1374,7 +1497,7 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
     await prisma.$executeRawUnsafe(`INSERT IGNORE INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${valueSql})`);
   }
 }
-
+ 
 function parseRowFromDatabase(row = {}) {
   const output = {
     rowHash: normalizeCellValue(row.rowHash ?? ''),
@@ -1385,7 +1508,7 @@ function parseRowFromDatabase(row = {}) {
   }
   return output;
 }
-
+ 
 export async function cleanupOrphanRelatorioAgendamentoLinks() {
   try {
     if (!(await ensureRelatorioTable())) return { cleaned: 0, source: 'disabled' };
@@ -1403,7 +1526,7 @@ export async function cleanupOrphanRelatorioAgendamentoLinks() {
     return { cleaned: 0, source: 'error', reason: error?.message || String(error || 'erro') };
   }
 }
-
+ 
 export async function listFornecedoresPendentesImportados() {
   try {
     if (await ensureRelatorioTable()) {
@@ -1414,7 +1537,7 @@ export async function listFornecedoresPendentesImportados() {
         WHERE agendamentoId IS NULL
         ORDER BY importedAt ASC, updatedAt ASC, rowHash ASC`
     );
-
+ 
       if (Array.isArray(rows) && rows.length) {
         const parsedRows = rows
         .map((row) => {
@@ -1426,9 +1549,11 @@ export async function listFornecedoresPendentesImportados() {
           }
         })
         .filter((row) => row && row['Fornecedor'] && row['Nr. nota']);
-
+ 
         if (parsedRows.length) {
           return filterScheduledNotesFromGroups(normalizeImportedItems(parsedRows));
+          const groups = filterScheduledNotesFromGroups(normalizeImportedItems(parsedRows));
+          return await enrichGroupsWithEntradaVolumes(groups);
         }
       }
     }
@@ -1436,19 +1561,20 @@ export async function listFornecedoresPendentesImportados() {
     disableRelatorioDb(error, 'listFornecedoresPendentesImportados');
     console.error('Falha ao listar pendências importadas no banco:', error?.message || error);
   }
-
+ 
   try {
     if (!fs.existsSync(fallbackFile)) return [];
     return filterScheduledNotesFromGroups(JSON.parse(fs.readFileSync(fallbackFile, 'utf8')) || []);
+    return await enrichGroupsWithEntradaVolumes(filterScheduledNotesFromGroups(JSON.parse(fs.readFileSync(fallbackFile, 'utf8')) || []));
   } catch {
     return [];
   }
 }
-
+ 
 export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, notas = []) {
   if (!agendamentoId || !fornecedor || !Array.isArray(notas) || !notas.length) return;
   if (!(await ensureRelatorioTable())) return;
-
+ 
   for (const nota of notas) {
     const rowHash = normalizeCellValue(nota?.rowHash || '');
     const numeroNf = normalizeCellValue(nota?.numeroNf || nota?.numero_nf || '');
@@ -1459,24 +1585,24 @@ export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, 
       );
       continue;
     }
-
+ 
     if (!numeroNf) continue;
-
+ 
     const conditions = [
       `LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(${sqlLiteral(fornecedor)})`,
       `TRIM(${quoteIdentifier('Nr. nota')}) = ${sqlLiteral(numeroNf)}`
     ];
-
+ 
     if (serie) {
       conditions.push(`TRIM(${quoteIdentifier('Série')}) = ${sqlLiteral(serie)}`);
     }
-
+ 
     await prisma.$executeRawUnsafe(
       `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = ${sqlLiteral(Number(agendamentoId))} WHERE ${conditions.join(' AND ')}`
     );
   }
 }
-
+ 
 export async function unlinkRelatorioRowsFromAgendamento(agendamentoId) {
   if (!agendamentoId) return;
   try {
@@ -1486,28 +1612,28 @@ export async function unlinkRelatorioRowsFromAgendamento(agendamentoId) {
     );
   } catch {}
 }
-
+ 
 export async function importRelatorioSpreadsheet({ filePath, originalName = '', actor = null, source = 'manual', ip = null } = {}) {
   return withRelatorioImportLock(async () => {
     const rows = parseSpreadsheetFile(filePath);
     if (!rows.length) throw new Error('Nenhuma linha válida foi encontrada na planilha.');
-
+ 
     const validRows = filterValidRows(rows);
     if (!validRows.length) throw new Error('Nenhum fornecedor com NF válida foi encontrado na planilha.');
-
+ 
     const groups = normalizeImportedItems(validRows);
     let persistedIn = 'arquivo';
-
+ 
     try {
       await replaceDatabaseSnapshot(validRows, originalName || path.basename(filePath));
       persistedIn = 'banco';
     } catch (error) {
       console.error('Falha ao persistir planilha no banco. Mantendo fallback em arquivo:', error?.message || error);
     }
-
+ 
     writeFallback(groups);
     writeRawFallback(validRows);
-
+ 
     const summary = {
       ok: true,
       totalLinhasLidas: rows.length,
@@ -1521,14 +1647,14 @@ export async function importRelatorioSpreadsheet({ filePath, originalName = '', 
       fileName: originalName || path.basename(filePath),
       importedAt: new Date().toISOString()
     };
-
+ 
     const stats = fs.statSync(filePath);
     writeState({
       ...readState(),
       lastImport: summary,
       lastProcessedKey: buildFileKey(summary.fileName, stats)
     });
-
+ 
     if (actor?.sub || actor?.id) {
       await auditLog({
         usuarioId: actor.sub || actor.id,
@@ -1539,16 +1665,16 @@ export async function importRelatorioSpreadsheet({ filePath, originalName = '', 
         ip
       });
     }
-
+ 
     console.log(`[IMPORTACAO_RELATORIO] arquivo=${summary.fileName} validas=${summary.totalLinhasValidas} fornecedores=${summary.totalFornecedores} persistedIn=${summary.persistedIn}`);
     return summary;
   });
 }
-
+ 
 export function getRelatorioImportStatus() {
   return readState().lastImport || null;
 }
-
+ 
 export function getRelatorioImportStatusDetailed() {
   const state = readState();
   return {
@@ -1559,8 +1685,8 @@ export function getRelatorioImportStatusDetailed() {
     motivoBancoDesabilitado: relatorioDbDisableReason
   };
 }
-
-
+ 
+ 
 export async function getRelatorioRowsCount() {
   try {
     if (!(await ensureRelatorioTable())) return 0;
@@ -1573,20 +1699,20 @@ export async function getRelatorioRowsCount() {
     return 0;
   }
 }
-
+ 
 export async function ensureLatestRelatorioImport({ forceIfEmpty = true } = {}) {
   const latest = listSupportedImportFiles()[0];
   if (!latest) {
     console.log(`[RELATORIO_IMPORT] Nenhuma planilha encontrada nas pastas monitoradas: ${importDirCandidates.join(' | ')}`);
     return null;
   }
-
+ 
   const key = buildFileKey(latest.rawName || latest.name, latest);
   const state = readState();
   const totalLinhasNoBanco = await getRelatorioRowsCount();
   const shouldForceBecauseDatabaseEmpty = !relatorioDbDisabled && forceIfEmpty && totalLinhasNoBanco === 0;
   const shouldReimport = state.lastProcessedKey !== key || shouldForceBecauseDatabaseEmpty;
-
+ 
   if (!shouldReimport) {
     return {
       ok: true,
@@ -1596,14 +1722,14 @@ export async function ensureLatestRelatorioImport({ forceIfEmpty = true } = {}) 
       totalLinhasNoBanco
     };
   }
-
+ 
   return importRelatorioSpreadsheet({
     filePath: latest.filePath,
     originalName: latest.name,
     source: forceIfEmpty && totalLinhasNoBanco === 0 ? 'auto-page-empty-db' : 'auto-page'
   });
 }
-
+ 
 export function listSupportedImportFiles() {
   const items = [];
   const seen = new Set();
@@ -1630,7 +1756,7 @@ export function listSupportedImportFiles() {
   }
   return items.sort((a, b) => b.mtimeMs - a.mtimeMs);
 }
-
+ 
 export async function scanImportFolderAndProcess() {
   if (watcherBusy) return null;
   watcherBusy = true;
@@ -1643,25 +1769,25 @@ export async function scanImportFolderAndProcess() {
     watcherBusy = false;
   }
 }
-
+ 
 export function startRelatorioImportWatcher() {
   if (watcherHandle) return watcherHandle;
   for (const dir of importDirCandidates) ensureDir(dir);
-
+ 
   scanImportFolderAndProcess().catch((error) => {
     console.error('Falha na importação automática inicial da planilha:', error?.message || error);
   });
-
+ 
   watcherHandle = setInterval(() => {
     scanImportFolderAndProcess().catch((error) => {
       console.error('Falha na varredura automática da planilha:', error?.message || error);
     });
   }, WATCH_INTERVAL_MS);
-
+ 
   watcherHandle.unref?.();
   return watcherHandle;
 }
-
+ 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     for (const dir of importDirCandidates) ensureDir(dir);
@@ -1672,7 +1798,7 @@ const storage = multer.diskStorage({
     cb(null, `relatorio-${Date.now()}${ext}`);
   }
 });
-
+ 
 export const relatorioSpreadsheetUpload = multer({
   storage,
   fileFilter: (_req, file, cb) => {
@@ -1683,7 +1809,7 @@ export const relatorioSpreadsheetUpload = multer({
     cb(null, true);
   }
 });
-
+ 
 export function getImportDirectory() {
   for (const dir of importDirCandidates) ensureDir(dir);
   return importDir;

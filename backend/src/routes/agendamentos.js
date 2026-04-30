@@ -15,20 +15,21 @@ import { auditLog } from "../utils/audit.js";
 import { generateVoucherPdf } from "../utils/voucher-pdf.js";
 import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
 import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento, persistManualPendingNota, removePendingNotasFromRelatorio } from "../utils/relatorio-entradas.js";
+import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento, persistManualPendingNota, removePendingNotasFromRelatorio, refreshNotasVolumesFromEntradas } from "../utils/relatorio-entradas.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
 import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, sendMonthlyNearDueDigestIfNeeded, searchByNumeroNf } from "../utils/nf-monitoring.js";
 import { encodeNotaObservacao } from "../utils/nota-metadata.js";
 import { createDocumentUpload, createAvariaImageUpload, wrapMulter, AVARIA_IMAGE_MAX_COUNT } from "../utils/upload-policy.js";
 import { logTechnicalEvent } from "../utils/telemetry.js";
-
+ 
 const router = Router();
 router.use(authRequired);
-
+ 
 const upload = createDocumentUpload();
 const uploadMiddleware = wrapMulter(upload.single("arquivo"));
 const avariaUpload = createAvariaImageUpload();
 const uploadAvariaMiddleware = wrapMulter(avariaUpload.fields([{ name: "imagensAvaria", maxCount: AVARIA_IMAGE_MAX_COUNT }]));
-
+ 
 function parseAuditDetalhes(raw) {
   if (!raw) return null;
   if (typeof raw === 'object') return raw;
@@ -38,7 +39,7 @@ function parseAuditDetalhes(raw) {
     return raw;
   }
 }
-
+ 
 function normalizeOccurrenceLog(item = {}) {
   const detalhes = parseAuditDetalhes(item?.detalhes);
   return {
@@ -53,12 +54,12 @@ function normalizeOccurrenceLog(item = {}) {
     detalhes
   };
 }
-
+ 
 function getBaseUrl(req) {
   if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL.replace(/\/$/, "");
   return `${req.protocol}://${req.get("host")}`;
 }
-
+ 
 function buildPublicLinks(req, item) {
   const base = getBaseUrl(req);
   const voucher = canShareVoucher(item)
@@ -72,7 +73,7 @@ function buildPublicLinks(req, item) {
     checkout: `${base}/?view=checkout&id=${encodeURIComponent(item.id)}&token=${encodeURIComponent(item.checkoutToken || "")}`
   };
 }
-
+ 
 function formatDateBR(value) {
   if (!value) return "-";
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -95,7 +96,7 @@ function formatDateBR(value) {
   }
   return raw || "-";
 }
-
+ 
 function formatHourLabel(value) {
   if (!value) return "-";
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -114,18 +115,18 @@ function formatHourLabel(value) {
   }
   return raw || '-';
 }
-
+ 
 function parseJanelaCodigo(codigo = '') {
   const match = String(codigo || '').match(/(\d{2}:\d{2})(?:\s*[-–]\s*(\d{2}:\d{2}))?/);
   return match ? { horaInicio: match[1], horaFim: match[2] || '' } : { horaInicio: '', horaFim: '' };
 }
-
-
+ 
+ 
 function isMissingScheduleValue(value) {
   const normalized = String(value ?? '').trim().toLowerCase();
   return !normalized || ['-', 'invalid date', 'null', 'undefined'].includes(normalized);
 }
-
+ 
 function pickScheduleDateCandidate(source = {}) {
   return source?.dataAgendada
     ?? source?.data_agendada
@@ -141,7 +142,7 @@ function pickScheduleDateCandidate(source = {}) {
     ?? source?.date
     ?? '';
 }
-
+ 
 function pickScheduleTimeCandidate(source = {}) {
   return source?.horaAgendada
     ?? source?.hora_agendada
@@ -157,7 +158,7 @@ function pickScheduleTimeCandidate(source = {}) {
     ?? source?.time
     ?? '';
 }
-
+ 
 function resolveScheduleValues(item = {}, fallback = {}) {
   const primaryDateCandidate = pickScheduleDateCandidate(item);
   const fallbackDateCandidate = pickScheduleDateCandidate(fallback);
@@ -174,9 +175,9 @@ function resolveScheduleValues(item = {}, fallback = {}) {
     || '';
   return { dataAgendada, horaAgendada };
 }
-
-
-
+ 
+ 
+ 
 function buildRecebimentoObservacao(payload = {}) {
   const parts = [`Descarga: ${payload.comoFoiDescarga || 'BOA'}`];
   if (payload.houveAvaria) {
@@ -190,9 +191,9 @@ function buildRecebimentoObservacao(payload = {}) {
   if (payload.observacaoAssistente) parts.push(`Obs. assistente: ${payload.observacaoAssistente}`);
   return `[FINALIZAÇÃO] ${parts.join(' | ')}`;
 }
-
-
-
+ 
+ 
+ 
 function daysUntilDate(value) {
   const raw = String(value || '').trim();
   if (!raw) return null;
@@ -204,11 +205,11 @@ function daysUntilDate(value) {
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   return Math.round((target.getTime() - today.getTime()) / 86400000);
 }
-
+ 
 async function resolveCreateUserMap(agendamentoIds = []) {
   const ids = [...new Set((Array.isArray(agendamentoIds) ? agendamentoIds : []).map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0))];
   if (!ids.length) return new Map();
-
+ 
   try {
     const logs = await prisma.logAuditoria.findMany({
       where: {
@@ -219,7 +220,7 @@ async function resolveCreateUserMap(agendamentoIds = []) {
       include: { usuario: true },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }]
     });
-
+ 
     const map = new Map();
     for (const log of logs || []) {
       const key = Number(log.entidadeId || 0);
@@ -232,11 +233,11 @@ async function resolveCreateUserMap(agendamentoIds = []) {
     return new Map();
   }
 }
-
+ 
 async function countScheduledNotesForDate(dataAgendada = '') {
   const date = String(dataAgendada || '').trim();
   if (!date) return { totalAgendamentosNoDia: 0, totalNotasNoDia: 0 };
-
+ 
   try {
     const items = await prisma.agendamento.findMany({
       where: { dataAgendada: date },
@@ -256,7 +257,7 @@ async function countScheduledNotesForDate(dataAgendada = '') {
     return { totalAgendamentosNoDia: Number(items.length || 0), totalNotasNoDia };
   }
 }
-
+ 
 async function loadAgendamentosForConsulta({ numeroNf = '', dataAgendada = '' } = {}) {
   const nfDigits = String(numeroNf || '').replace(/\D/g, '');
   const targetDate = String(dataAgendada || '').trim();
@@ -266,7 +267,7 @@ async function loadAgendamentosForConsulta({ numeroNf = '', dataAgendada = '' } 
     const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : Array.isArray(item?.notas) ? item.notas : [];
     return notas.some((nota) => String(nota?.numeroNf || '').replace(/\D/g, '').includes(nfDigits));
   };
-
+ 
   try {
     const items = await prisma.agendamento.findMany({
       include: { notasFiscais: true, documentos: true, doca: true, janela: true },
@@ -277,13 +278,13 @@ async function loadAgendamentosForConsulta({ numeroNf = '', dataAgendada = '' } 
     return readAgendamentos().filter(matches);
   }
 }
-
-
+ 
+ 
 function buildScheduleIntro(item) {
   const normalized = normalizeScheduleItem(item);
   return `O agendamento foi efetuado para o dia ${formatDateBR(normalized?.dataAgendada)}, às ${formatHourLabel(normalized?.horaAgendada)}. Solicitamos chegada com 10 minutos de antecedência.`;
 }
-
+ 
 function normalizeScheduleDateValue(value) {
   if (!value) return '';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -300,7 +301,7 @@ function normalizeScheduleDateValue(value) {
   }
   return raw;
 }
-
+ 
 function normalizeScheduleTimeValue(value) {
   if (!value) return '';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
@@ -315,13 +316,13 @@ function normalizeScheduleTimeValue(value) {
   }
   return raw;
 }
-
+ 
 function deriveHourFromJanela(item = {}) {
   const janelaCodigo = String(item?.janela?.codigo || item?.janela || item?.janelaCodigo || '').trim();
   const match = janelaCodigo.match(/(\d{2}:\d{2})/);
   return match?.[1] || '';
 }
-
+ 
 async function resolveJanelaById(janelaId) {
   const numericId = Number(janelaId || 0);
   if (!Number.isFinite(numericId) || numericId <= 0) return null;
@@ -331,7 +332,7 @@ async function resolveJanelaById(janelaId) {
   } catch {}
   return readJanelas().find((item) => Number(item?.id || 0) === numericId) || null;
 }
-
+ 
 async function syncPayloadScheduleWithJanela(payload = {}, fallback = {}) {
   const merged = { ...fallback, ...payload };
   const requestedJanelaId = merged?.janelaId || fallback?.janelaId || merged?.janela?.id;
@@ -347,18 +348,18 @@ async function syncPayloadScheduleWithJanela(payload = {}, fallback = {}) {
     horaAgendada
   };
 }
-
+ 
 function normalizeScheduleItem(item = {}, fallback = null) {
   const resolved = resolveScheduleValues(item, fallback || {});
   return { ...fallback, ...item, ...resolved };
 }
-
+ 
 function parseBooleanLike(value) {
   if (typeof value === 'boolean') return value;
   const normalized = String(value ?? '').trim().toLowerCase();
   return ['1', 'true', 'sim', 's', 'yes', 'y', 'on'].includes(normalized);
 }
-
+ 
 function normalizeAvariaNotas(value) {
   const source = Array.isArray(value)
     ? value
@@ -373,7 +374,7 @@ function normalizeAvariaNotas(value) {
           return [{ numeroNf: raw, label: `NF ${raw}` }];
         }
       })();
-
+ 
   return (Array.isArray(source) ? source : [source])
     .map((entry) => {
       const parsedEntry = typeof entry === 'string'
@@ -390,7 +391,7 @@ function normalizeAvariaNotas(value) {
     })
     .filter(Boolean);
 }
-
+ 
 function formatAvariaNotasInline(notas = []) {
   const items = Array.isArray(notas) ? notas : [];
   if (!items.length) return '';
@@ -407,7 +408,7 @@ function formatAvariaNotasInline(notas = []) {
     .filter(Boolean)
     .join(', ');
 }
-
+ 
 function normalizeAvariaItems(value, fallbackItem = '', fallbackQuantity = '') {
   if (Array.isArray(value)) {
     return value
@@ -424,7 +425,7 @@ function normalizeAvariaItems(value, fallbackItem = '', fallbackQuantity = '') {
       })
       .filter((entry) => entry.produto || entry.quantidade || entry.observacao || entry.notas?.length);
   }
-
+ 
   const parsed = (() => {
     if (typeof value !== 'string') return null;
     const raw = String(value || '').trim();
@@ -435,44 +436,44 @@ function normalizeAvariaItems(value, fallbackItem = '', fallbackQuantity = '') {
       return null;
     }
   })();
-
+ 
   if (Array.isArray(parsed)) return normalizeAvariaItems(parsed, fallbackItem, fallbackQuantity);
   if (parsed && typeof parsed === 'object') return normalizeAvariaItems([parsed], fallbackItem, fallbackQuantity);
-
+ 
   const item = String(fallbackItem || '').trim();
   const quantity = Number(fallbackQuantity || 0) || 0;
   return item || quantity ? [{ produto: item, quantidade: quantity, observacao: '', notas: [] }] : [];
 }
-
+ 
 function normalizeAvariaType(value = '') {
   return String(value || '').trim().toUpperCase();
 }
-
+ 
 function normalizeRecebimentoOrigin(value = '') {
   const normalized = String(value || '').trim().toUpperCase();
   if (normalized === '1') return 'MATRIZ';
   if (normalized === '2') return 'FILIAL';
   return normalized;
 }
-
+ 
 function formatScheduleDateLabel(value) {
   const normalized = normalizeScheduleDateValue(value);
   const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : (normalized || '-');
 }
-
+ 
 function buildAvariaItemsText(avarias = []) {
   const items = Array.isArray(avarias) ? avarias : [];
   if (!items.length) return 'Nenhum produto informado.';
   return items.map((entry) => `- ${entry.produto || '-'} | Quantidade: ${entry.quantidade || '-'}${entry.notas?.length ? ` | Notas: ${formatAvariaNotasInline(entry.notas)}` : ''}${entry.observacao ? ` | Observação: ${entry.observacao}` : ''}`).join('\n');
 }
-
+ 
 function buildAvariaItemsHtml(avarias = []) {
   const items = Array.isArray(avarias) ? avarias : [];
   if (!items.length) return '<li>Nenhum produto informado.</li>';
   return items.map((entry) => `<li><strong>${entry.produto || '-'}</strong> | Quantidade: ${entry.quantidade || '-'}${entry.notas?.length ? ` | Notas: ${formatAvariaNotasInline(entry.notas)}` : ''}${entry.observacao ? ` | Observação: ${entry.observacao}` : ''}</li>`).join('');
 }
-
+ 
 function normalizeFinalizacaoRecebimento(body = {}) {
   const avarias = normalizeAvariaItems(
     body?.avarias,
@@ -501,7 +502,7 @@ function normalizeFinalizacaoRecebimento(body = {}) {
   }
   return payload;
 }
-
+ 
 function mergeOperationalObservations(existing = '', payload = {}) {
   const parts = [];
   if (payload?.comoFoiDescarga) parts.push(`Descarga: ${payload.comoFoiDescarga}`);
@@ -517,7 +518,7 @@ function mergeOperationalObservations(existing = '', payload = {}) {
   }
   return [String(existing || '').trim(), parts.join(' | ')].filter(Boolean).join(' | ');
 }
-
+ 
 function uploadedAvariaFilesFromReq(req) {
   const raw = req?.files;
   if (!raw) return [];
@@ -525,7 +526,7 @@ function uploadedAvariaFilesFromReq(req) {
   if (Array.isArray(raw.imagensAvaria)) return raw.imagensAvaria.filter(Boolean);
   return [];
 }
-
+ 
 function buildAvariaAttachments(files = []) {
   return (Array.isArray(files) ? files : []).map((file) => {
     const filePath = String(file?.path || '').trim();
@@ -537,7 +538,7 @@ function buildAvariaAttachments(files = []) {
     };
   }).filter(Boolean);
 }
-
+ 
 function buildNotasResumo(notas = []) {
   return (Array.isArray(notas) ? notas : []).map((nota) => ({
     numeroNf: String(nota?.numeroNf || '-'),
@@ -547,7 +548,7 @@ function buildNotasResumo(notas = []) {
     itens: Number(nota?.quantidadeItens || nota?.qtdItens || nota?.itens || 0)
   }));
 }
-
+ 
 function renderNotasResumoHtml(notas = []) {
   const rows = buildNotasResumo(notas).map((nota) => `
     <tr>
@@ -561,7 +562,7 @@ function renderNotasResumoHtml(notas = []) {
   if (!rows) return '<p><strong>NFs:</strong> não informadas.</p>';
   return `<table style="border-collapse:collapse;width:100%;margin-top:12px"><thead><tr><th style="padding:8px;border:1px solid #e2e8f0">NF</th><th style="padding:8px;border:1px solid #e2e8f0">Série</th><th style="padding:8px;border:1px solid #e2e8f0">Volumes</th><th style="padding:8px;border:1px solid #e2e8f0">Peso</th><th style="padding:8px;border:1px solid #e2e8f0">Itens</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
-
+ 
 function controladoriaRecipients() {
   return parseEmailList(
     process.env.CONTROLADORIA_EMAIL,
@@ -592,7 +593,7 @@ function controladoriaRecipients() {
     process.env.AVARIAS_EMAILS
   );
 }
-
+ 
 async function notifyControladoriaAvaria({ agendamento, payload, actor = null, files = [] } = {}) {
   if (!payload?.houveAvaria) return { sent: false, to: null, reason: 'Sem avaria informada.' };
   const recipients = controladoriaRecipients();
@@ -636,10 +637,10 @@ async function notifyControladoriaAvaria({ agendamento, payload, actor = null, f
   });
   return { ...sent, to: recipients.join(', '), attachments: attachments.map((item) => item.filename) };
 }
-
+ 
 const MANDATORY_VOUCHER_NOTICE_TEXT = 'Obrigatório: Compareça com 10 minutos de antecedência e apresente este voucher na portaria ou no recebimento. O motorista deve estar utilizando EPI (botina, cinta lombar, luvas e, se necessário, capacete) e acompanhado de um auxiliar para descarregar.';
 const MANDATORY_VOUCHER_NOTICE_HTML = '<strong>Obrigatório:</strong> Compareça com 10 minutos de antecedência e apresente este voucher na portaria ou no recebimento. O motorista deve estar utilizando EPI (botina, cinta lombar, luvas e, se necessário, capacete) e acompanhado de um auxiliar para descarregar.';
-
+ 
 function fiscalRecipient() {
   return String(
     process.env.FISCAL_EMAIL
@@ -651,7 +652,7 @@ function fiscalRecipient() {
     || ''
   ).trim();
 }
-
+ 
 function fiscalCcRecipients() {
   const raw = [
     process.env.FISCAL_CC_EMAILS,
@@ -660,15 +661,15 @@ function fiscalCcRecipients() {
     process.env.SETOR_FISCAL_CC,
     process.env.SETOR_FISCAL_CC_EMAILS
   ].filter(Boolean).join(',');
-
+ 
   const emails = raw
     .split(/[;,]/)
     .map((item) => String(item || '').trim())
     .filter(Boolean);
-
+ 
   return emails.length ? [...new Set(emails)].join(', ') : '';
 }
-
+ 
 function parseEmailList(...values) {
   const emails = values
     .flatMap((value) => String(value || '').split(/[;,]/))
@@ -676,7 +677,7 @@ function parseEmailList(...values) {
     .filter(Boolean);
   return [...new Set(emails)];
 }
-
+ 
 function occurrenceRecipients() {
   return parseEmailList(
     process.env.COMPRADORES_EMAILS,
@@ -687,8 +688,8 @@ function occurrenceRecipients() {
     process.env.URGENCIA_AGENDAMENTO_EMAILS
   );
 }
-
-
+ 
+ 
 function renderNotasTableHtml(notas = []) {
   const rows = (Array.isArray(notas) ? notas : []).map((nota) => `
     <tr>
@@ -700,7 +701,7 @@ function renderNotasTableHtml(notas = []) {
       <td style="border:1px solid #d8dee9;padding:8px;text-align:right;">${Number(nota?.quantidadeItens || nota?.qtdItens || nota?.itens || 0)}</td>
     </tr>
   `).join('');
-
+ 
   return `
     <table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:13px;">
       <thead>
@@ -717,7 +718,7 @@ function renderNotasTableHtml(notas = []) {
     </table>
   `;
 }
-
+ 
 function buildOccurrenceMail({ transportadora = '', fornecedor = '', notas = [] } = {}) {
   const subject = `Urgente: transportadora negou agendamento - ${transportadora || fornecedor || 'sem identificação'}`;
   const text = [
@@ -732,7 +733,7 @@ function buildOccurrenceMail({ transportadora = '', fornecedor = '', notas = [] 
   `;
   return { subject, text, html };
 }
-
+ 
 function buildManualNotaFiscalMail({ fornecedor = '', nota = {}, actor = null } = {}) {
   const operador = String(actor?.nome || actor?.name || actor?.email || actor?.sub || 'Não identificado').trim();
   const numeroNf = String(nota?.numeroNf || '').trim() || '-';
@@ -767,7 +768,7 @@ function buildManualNotaFiscalMail({ fornecedor = '', nota = {}, actor = null } 
     `
   };
 }
-
+ 
 async function sendFiscalMissingPrelaunchEmail({ fornecedor = '', nota = {}, actor = null } = {}) {
   const to = fiscalRecipient();
   if (!to) return { sent: false, reason: 'E-mail do fiscal não configurado.' };
@@ -775,14 +776,14 @@ async function sendFiscalMissingPrelaunchEmail({ fornecedor = '', nota = {}, act
   const mail = buildManualNotaFiscalMail({ fornecedor, nota, actor });
   return sendMail({ to, cc: cc || undefined, subject: mail.subject, text: mail.text, html: mail.html });
 }
-
+ 
 async function dispatchDriverFeedbackSurvey(item, req, actor = req.user) {
   const normalized = await ensureAgendamentoScheduleContext(item);
   const result = await sendDriverFeedbackRequestEmail({
     agendamento: normalized,
     baseUrl: getBaseUrl(req)
   });
-
+ 
   await auditLog({
     usuarioId: actor?.sub || actor?.id || null,
     perfil: actor?.perfil || null,
@@ -799,10 +800,10 @@ async function dispatchDriverFeedbackSurvey(item, req, actor = req.user) {
     },
     ip: req.ip
   });
-
+ 
   return result;
 }
-
+ 
 async function full(id) {
   try {
     return await prisma.agendamento.findUnique({ where: { id: Number(id) }, include: { notasFiscais: true, documentos: true, doca: true, janela: true } });
@@ -810,7 +811,7 @@ async function full(id) {
     return findAgendamentoFile(id);
   }
 }
-
+ 
 async function ensureAgendamentoScheduleContext(item = {}, fallback = null) {
   const normalized = normalizeScheduleItem(item, fallback);
   if (!isMissingScheduleValue(normalized?.dataAgendada) && !isMissingScheduleValue(normalized?.horaAgendada)) {
@@ -819,17 +820,17 @@ async function ensureAgendamentoScheduleContext(item = {}, fallback = null) {
   const persisted = await full(normalized?.id || fallback?.id);
   return normalizeScheduleItem(persisted || normalized, normalized);
 }
-
+ 
 async function mustExist(id) {
   try { return await prisma.agendamento.findUnique({ where: { id: Number(id) } }); } catch { return findAgendamentoFile(id); }
 }
-
+ 
 async function notificationSummary(agendamentoId) {
   const logs = await prisma.logAuditoria.findMany({
     where: { entidade: "AGENDAMENTO", entidadeId: Number(agendamentoId) },
     orderBy: { createdAt: "desc" }
   });
-
+ 
   const findLog = (acao, predicate = () => true) => logs.find((log) => {
     if (log.acao !== acao) return false;
     try {
@@ -839,42 +840,46 @@ async function notificationSummary(agendamentoId) {
       return false;
     }
   });
-
+ 
   return {
     voucherMotorista: !!findLog("ENVIAR_INFORMACOES", (d) => Array.isArray(d.targets) && d.targets.includes("motorista")),
     voucherTransportadoraFornecedor: !!findLog("ENVIAR_INFORMACOES", (d) => Array.isArray(d.targets) && d.targets.includes("transportadora/fornecedor")),
     confirmacaoTransportadoraFornecedor: !!findLog("ENVIAR_CONFIRMACAO", (d) => Array.isArray(d.targets) && d.targets.includes("transportadora/fornecedor"))
   };
 }
-
+ 
 const EMPTY_NOTIFICATIONS = { voucherMotorista: false, voucherTransportadoraFornecedor: false, confirmacaoTransportadoraFornecedor: false };
-
+ 
 const VOUCHER_ALLOWED_STATUSES = new Set(["APROVADO", "CHEGOU", "EM_DESCARGA", "FINALIZADO"]);
-
+ 
 function canShareVoucher(itemOrStatus) {
   const status = typeof itemOrStatus === "string" ? itemOrStatus : itemOrStatus?.status;
   return VOUCHER_ALLOWED_STATUSES.has(String(status || "").trim().toUpperCase());
 }
-
+ 
 async function enrichResponseItem(item) {
   if (!item) return item;
   const normalized = await ensureAgendamentoScheduleContext(item);
+  if (Array.isArray(normalized?.notasFiscais) && normalized.notasFiscais.length) {
+    normalized.notasFiscais = await refreshNotasVolumesFromEntradas(normalized.notasFiscais);
+    normalized.quantidadeVolumes = calculateTotals(normalized.notasFiscais, {}).quantidadeVolumes;
+  }
   try { return await enrichAgendamentoWithMonitoring(normalized); } catch { return normalized; }
 }
-
+ 
 async function buildAwarenessAnalysisFromPayload(base = {}, payload = {}) {
   const notas = Array.isArray(base?.notasFiscais) ? base.notasFiscais : Array.isArray(payload?.notasFiscais) ? payload.notasFiscais : [];
   const fornecedor = payload?.fornecedor || base?.fornecedor || '';
   const dataAgendada = payload?.dataAgendada || base?.dataAgendada || '';
   return analyzeNotesForSchedule({ notas, fornecedor, dataAgendada });
 }
-
+ 
 async function sendFinanceAwarenessIfNeeded({ agendamento, payload, actor }) {
   const analysis = await buildAwarenessAnalysisFromPayload(agendamento, payload);
   if (!analysis?.requiresAwareness || !payload?.confirmarCienciaVencimento) return { sent: false, reason: 'Ciência não necessária ou não confirmada.' };
   return sendFinanceAwarenessEmail({ agendamento, analysis, actor });
 }
-
+ 
 async function safeNotificationSummary(agendamentoId) {
   try {
     return await notificationSummary(agendamentoId);
@@ -882,7 +887,7 @@ async function safeNotificationSummary(agendamentoId) {
     return { ...EMPTY_NOTIFICATIONS };
   }
 }
-
+ 
 async function createAgendamentoInDatabase(payload) {
   const notas = Array.isArray(payload.notasFiscais) ? payload.notasFiscais : [];
   const protocol = generateProtocol();
@@ -890,7 +895,7 @@ async function createAgendamentoInDatabase(payload) {
   const publicTokenFornecedor = generatePublicToken("FOR", payload.fornecedor);
   const checkinToken = generatePublicToken("CHK", payload.cpfMotorista || payload.placa);
   const checkoutToken = generatePublicToken("OUT", payload.cpfMotorista || payload.placa);
-
+ 
   const item = await prisma.$transaction(async (tx) => {
     const created = await tx.agendamento.create({
       data: {
@@ -919,7 +924,7 @@ async function createAgendamentoInDatabase(payload) {
         observacoes: payload.observacoes || ""
       }
     });
-
+ 
     if (notas.length) {
       await tx.notaFiscal.createMany({
         data: notas.map((nota) => ({
@@ -934,19 +939,19 @@ async function createAgendamentoInDatabase(payload) {
         }))
       });
     }
-
+ 
     return created.id;
   });
-
+ 
   return full(item);
 }
-
+ 
 async function sendScheduleCreatedNotice(item, req, actor = req.user) {
   const normalizedItem = normalizeScheduleItem(item);
   if (!normalizedItem?.emailTransportadora) {
     return { sent: false, reason: "Não há e-mail da transportadora/fornecedor cadastrado." };
   }
-
+ 
   const links = buildPublicLinks(req, normalizedItem);
   const textoDoca = normalizedItem.doca?.codigo || normalizedItem.doca || "A DEFINIR";
   const scheduleIntro = buildScheduleIntro(normalizedItem);
@@ -959,11 +964,11 @@ Status atual: ${normalizedItem.status || "PENDENTE_APROVACAO"}
 Doca: ${textoDoca}
 Token de consulta da transportadora: ${normalizedItem.publicTokenFornecedor}
 Consulta do agendamento: ${links.consulta}
-
+ 
 O voucher operacional e o QR Code do motorista serão enviados somente após a aprovação do agendamento.`,
     html: `<p>${scheduleIntro}</p><p><strong>Protocolo:</strong> ${normalizedItem.protocolo}</p><p><strong>Status atual:</strong> ${normalizedItem.status || "PENDENTE_APROVACAO"}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><strong>Token de consulta da transportadora:</strong> ${normalizedItem.publicTokenFornecedor}</p><p><a href="${links.consulta}">Consultar agendamento</a></p><p>O voucher operacional e o QR Code do motorista serão enviados somente após a aprovação do agendamento.</p>`
   });
-
+ 
   await auditLog({
     usuarioId: actor?.sub || actor?.id || null,
     usuarioNome: actor?.nome || actor?.name || null,
@@ -974,10 +979,10 @@ O voucher operacional e o QR Code do motorista serão enviados somente após a a
     detalhes: { to: normalizedItem.emailTransportadora, sent: !!sent?.sent, consulta: links.consulta },
     ip: req.ip
   });
-
+ 
   return { ...sent, to: normalizedItem.emailTransportadora, consulta: links.consulta, tokenConsulta: normalizedItem.publicTokenFornecedor };
 }
-
+ 
 async function sendApprovalNotifications(item, req) {
   const normalizedItem = normalizeScheduleItem(item);
   if (!canShareVoucher(normalizedItem)) {
@@ -988,7 +993,7 @@ async function sendApprovalNotifications(item, req) {
   const results = [];
   const targets = [];
   const scheduleIntro = buildScheduleIntro(normalizedItem);
-
+ 
   const commonText = [
     scheduleIntro,
     `Data: ${formatDateBR(normalizedItem?.dataAgendada)}`,
@@ -1003,7 +1008,7 @@ async function sendApprovalNotifications(item, req) {
     '',
     MANDATORY_VOUCHER_NOTICE_TEXT
   ].join("\n");
-
+ 
   const commonHtml = `
     <p>${scheduleIntro}</p>
     <p><strong>Protocolo:</strong> ${normalizedItem.protocolo}</p>
@@ -1017,7 +1022,7 @@ async function sendApprovalNotifications(item, req) {
     <p><a href="${links.checkout}">Check-out</a></p>
     <p>${MANDATORY_VOUCHER_NOTICE_HTML}</p>
   `;
-
+ 
   if (item.emailMotorista) {
     const sent = await sendMail({
       to: normalizedItem.emailMotorista,
@@ -1029,7 +1034,7 @@ async function sendApprovalNotifications(item, req) {
     results.push({ tipo: "motorista", to: normalizedItem.emailMotorista, ...sent });
     if (sent.sent) targets.push("motorista");
   }
-
+ 
   if (normalizedItem.emailTransportadora) {
     const sent = await sendMail({
       to: normalizedItem.emailTransportadora,
@@ -1041,7 +1046,7 @@ async function sendApprovalNotifications(item, req) {
     results.push({ tipo: "transportadora/fornecedor", to: normalizedItem.emailTransportadora, ...sent });
     if (sent.sent) targets.push("transportadora/fornecedor");
   }
-
+ 
   console.log(`[WHATSAPP-APPROVAL] telefoneMotorista="${normalizedItem.telefoneMotorista || ''}", motorista="${normalizedItem.motorista || ''}", voucherUrl="${links.voucher || ''}"`);
   if (normalizedItem.telefoneMotorista) {
     const sentWhats = await sendWhatsApp({
@@ -1056,7 +1061,7 @@ async function sendApprovalNotifications(item, req) {
   } else {
     console.log('[WHATSAPP-APPROVAL] telefoneMotorista vazio — WhatsApp NÃO enviado.');
   }
-
+ 
   if (targets.length) {
     await auditLog({
       usuarioId: req.user.sub,
@@ -1068,7 +1073,7 @@ async function sendApprovalNotifications(item, req) {
       detalhes: { targets },
       ip: req.ip
     });
-
+ 
     if (targets.includes("transportadora/fornecedor")) {
       await auditLog({
         usuarioId: req.user.sub,
@@ -1081,10 +1086,10 @@ async function sendApprovalNotifications(item, req) {
       });
     }
   }
-
+ 
   return { results, links };
 }
-
+ 
 async function listPendingManualAuthorizationRequests() {
   let requestLogs = [];
   let authLogs = [];
@@ -1102,14 +1107,14 @@ async function listPendingManualAuthorizationRequests() {
     requestLogs = logs.filter((item) => item?.entidade === 'AGENDAMENTO' && item?.acao === 'SOLICITAR_AUTORIZACAO_CHECKIN_ANTECIPADO');
     authLogs = logs.filter((item) => item?.entidade === 'AGENDAMENTO' && item?.acao === 'AUTORIZAR_CHECKIN_FORA_JANELA');
   }
-
+ 
   const latestAuthById = new Map();
   for (const log of authLogs || []) {
     const key = Number(log?.entidadeId || 0);
     if (!key || latestAuthById.has(key)) continue;
     latestAuthById.set(key, String(log?.createdAt || ''));
   }
-
+ 
   const pending = [];
   const seen = new Set();
   for (const log of requestLogs || []) {
@@ -1134,7 +1139,7 @@ async function listPendingManualAuthorizationRequests() {
   }
   return pending.sort((a, b) => String(b.requestedAt || '').localeCompare(String(a.requestedAt || '')));
 }
-
+ 
 router.get('/autorizacoes-pendentes', requirePermission('agendamentos.checkin'), async (req, res) => {
   try {
     const items = await listPendingManualAuthorizationRequests();
@@ -1143,7 +1148,7 @@ router.get('/autorizacoes-pendentes', requirePermission('agendamentos.checkin'),
     res.status(400).json({ message: err.message });
   }
 });
-
+ 
 router.post('/:id(\\d+)/autorizar-checkin-manual', requirePermission('agendamentos.checkin'), async (req, res) => {
   try {
     const found = await full(req.params.id);
@@ -1168,7 +1173,7 @@ router.post('/:id(\\d+)/autorizar-checkin-manual', requirePermission('agendament
     res.status(400).json({ message: err.message });
   }
 });
-
+ 
 router.get("/", requirePermission("agendamentos.view"), async (req, res) => {
   const q = req.query || {};
   const where = {
@@ -1196,7 +1201,7 @@ router.get("/", requirePermission("agendamentos.view"), async (req, res) => {
     return res.json(await Promise.all(items.map((i) => enrichResponseItem({ ...i, semaforo: trafficColor(i.status), notificacoes: { ...EMPTY_NOTIFICATIONS } }))));
   }
 });
-
+ 
 router.get("/consulta-nf", requirePermission("agendamentos.consulta_nf"), async (req, res) => {
   try {
     const numeroNf = String(req.query?.numeroNf || req.query?.nf || '').trim();
@@ -1204,7 +1209,7 @@ router.get("/consulta-nf", requirePermission("agendamentos.consulta_nf"), async 
     if (!numeroNf && !dataAgendada) {
       return res.status(400).json({ message: 'Informe o número da NF, a data da consulta, ou ambos.' });
     }
-
+ 
     const modoConsulta = numeroNf && dataAgendada ? 'NF_DATA' : numeroNf ? 'NF' : 'DATA';
     const result = numeroNf ? await searchByNumeroNf(numeroNf) : { relatorio: [], agendamentos: [] };
     const baseAgendamentos = modoConsulta === 'DATA'
@@ -1212,7 +1217,7 @@ router.get("/consulta-nf", requirePermission("agendamentos.consulta_nf"), async 
       : modoConsulta === 'NF_DATA'
         ? (result.agendamentos || []).filter((item) => String(item?.dataAgendada || '') === dataAgendada)
         : (result.agendamentos || []);
-
+ 
     const agendamentoIds = baseAgendamentos.map((item) => item?.id);
     const createUserMap = await resolveCreateUserMap(agendamentoIds);
     const agendamentos = await Promise.all(baseAgendamentos.map(async (item) => {
@@ -1247,7 +1252,7 @@ router.get("/consulta-nf", requirePermission("agendamentos.consulta_nf"), async 
     return res.status(400).json({ message: err.message });
   }
 });
-
+ 
 router.post("/analise-vencimento", requirePermission("agendamentos.create"), async (req, res) => {
   try {
     const payload = req.body || {};
@@ -1261,7 +1266,7 @@ router.post("/analise-vencimento", requirePermission("agendamentos.create"), asy
     res.status(400).json({ message: err.message });
   }
 });
-
+ 
 router.post("/:id(\\d+)/analise-vencimento", requirePermission("agendamentos.reschedule"), async (req, res) => {
   try {
     const found = await full(req.params.id);
@@ -1277,7 +1282,7 @@ router.post("/:id(\\d+)/analise-vencimento", requirePermission("agendamentos.res
     res.status(400).json({ message: err.message });
   }
 });
-
+ 
 router.post("/notas/manual-alerta", requirePermission("agendamentos.notas"), async (req, res) => {
   try {
     const fornecedor = String(req.body?.fornecedor || '').trim();
@@ -1293,10 +1298,10 @@ router.post("/notas/manual-alerta", requirePermission("agendamentos.notas"), asy
       preLancamentoPendente: true,
       disponivelNoRelatorio: false
     };
-
+ 
     if (!fornecedor) throw new Error('Fornecedor é obrigatório para alertar o fiscal.');
     validateNf(nota);
-
+ 
     const persistedNota = await persistManualPendingNota({ fornecedor, nota, actor: req.user });
     const sent = await sendFiscalMissingPrelaunchEmail({ fornecedor, nota: persistedNota, actor: req.user });
     await auditLog({
@@ -1309,13 +1314,13 @@ router.post("/notas/manual-alerta", requirePermission("agendamentos.notas"), asy
       detalhes: { fornecedor, nota: persistedNota, sent, cc: fiscalCcRecipients() || null },
       ip: req.ip
     });
-
+ 
     res.json({ ok: true, nota: persistedNota, ...sent, cc: fiscalCcRecipients() || '' });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
 });
-
+ 
 router.post("/financeiro/resumo-mensal", requirePermission("financeiro.summary"), async (req, res) => {
   try {
     const result = await sendMonthlyNearDueDigestIfNeeded({
@@ -1337,13 +1342,13 @@ router.post("/financeiro/resumo-mensal", requirePermission("financeiro.summary")
     res.status(400).json({ message: err.message });
   }
 });
-
+ 
 router.get("/:id(\\d+)", async (req, res) => {
   const item = await full(req.params.id);
   if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
   res.json(await enrichResponseItem({ ...item, semaforo: trafficColor(item.status), notificacoes: await safeNotificationSummary(item.id) }));
 });
-
+ 
 router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
   try {
     const payload = req.body || {};
@@ -1353,7 +1358,7 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
     const totals = calculateTotals(Array.isArray(payload.notasFiscais) ? payload.notasFiscais : [], payload);
     Object.assign(payload, totals);
     validateAgendamentoPayload(payload, false);
-
+ 
     const awarenessAnalysis = await buildAwarenessAnalysisFromPayload(null, payload);
     if (awarenessAnalysis?.requiresAwareness && !payload.confirmarCienciaVencimento) {
       return res.status(409).json({
@@ -1362,7 +1367,7 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
         analysis: awarenessAnalysis
       });
     }
-
+ 
     let defaultDoca;
     try {
       defaultDoca = await prisma.doca.findFirst({ where: { codigo: "A DEFINIR" }, orderBy: { id: "asc" } }) || await prisma.doca.findFirst({ orderBy: { id: "asc" } });
@@ -1372,9 +1377,9 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
       defaultDoca = items.find((i) => i.docaId)?.doca ? null : null;
     }
     payload.docaId = Number(payload.docaId || defaultDoca?.id || 1);
-
+ 
     await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada });
-
+ 
     let item;
     try {
       item = await createAgendamentoInDatabase(payload);
@@ -1382,7 +1387,7 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
       console.error('Erro ao criar agendamento no banco. Usando fallback em arquivo:', dbError?.message || dbError);
       item = createAgendamentoFile({ protocolo: generateProtocol(), publicTokenMotorista: generatePublicToken("MOT", payload.cpfMotorista), publicTokenFornecedor: generatePublicToken("FOR", payload.fornecedor), checkinToken: generatePublicToken("CHK", payload.cpfMotorista || payload.placa), checkoutToken: generatePublicToken("OUT", payload.cpfMotorista || payload.placa), fornecedor: payload.fornecedor, transportadora: payload.transportadora, motorista: payload.motorista, cpfMotorista: payload.cpfMotorista || '', telefoneMotorista: payload.telefoneMotorista || '', emailMotorista: payload.emailMotorista || '', emailTransportadora: payload.emailTransportadora || '', placa: payload.placa, docaId: Number(payload.docaId), janelaId: Number(payload.janelaId), dataAgendada: payload.dataAgendada, horaAgendada: payload.horaAgendada, quantidadeNotas: Number(payload.quantidadeNotas || 0), quantidadeVolumes: Number(payload.quantidadeVolumes || 0), pesoTotalKg: Number(payload.pesoTotalKg || 0), valorTotalNf: Number(payload.valorTotalNf || 0), status: 'PENDENTE_APROVACAO', observacoes: payload.observacoes || '', notasFiscais: payload.notasFiscais || [] });
     }
-
+ 
     await auditLog({ usuarioId: req.user.sub, usuarioNome: req.user.nome || req.user.name || null, perfil: req.user.perfil, acao: "CREATE", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: payload, ip: req.ip });
     try {
       await linkRelatorioRowsToAgendamento(item.id, payload.fornecedor, payload.notasFiscais || []);
@@ -1401,8 +1406,8 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
     res.status(400).json({ message: err.message });
   }
 });
-
-
+ 
+ 
 router.get('/ocorrencias', requirePermission('agendamentos.view'), async (req, res) => {
   const limit = Math.max(5, Math.min(100, Number(req.query?.limit || 30)));
   try {
@@ -1422,7 +1427,7 @@ router.get('/ocorrencias', requirePermission('agendamentos.view'), async (req, r
     return res.json(items);
   }
 });
-
+ 
 router.post('/ocorrencia', requirePermission('agendamentos.create'), async (req, res) => {
   try {
     const fornecedor = String(req.body?.fornecedor || '').trim();
@@ -1431,14 +1436,14 @@ router.post('/ocorrencia', requirePermission('agendamentos.create'), async (req,
     const notas = await canonicalizeNotasSelecionadasComRelatorio(fornecedor, Array.isArray(req.body?.notas) ? req.body.notas : []);
     if (!fornecedor) throw new Error('Fornecedor é obrigatório para registrar a ocorrência.');
     if (!notas.length) throw new Error('Selecione ao menos uma NF para registrar a ocorrência.');
-
+ 
     const removal = await removePendingNotasFromRelatorio({ fornecedor, notas });
     const recipients = occurrenceRecipients();
     const mail = buildOccurrenceMail({ transportadora, fornecedor, notas });
     const mailResult = recipients.length
       ? await sendMail({ to: recipients.join(', '), subject: mail.subject, text: mail.text, html: mail.html })
       : { sent: false, reason: 'Destinatários de ocorrência não configurados.' };
-
+ 
     await auditLog({
       usuarioId: req.user.sub,
       usuarioNome: req.user.nome || req.user.name || null,
@@ -1465,7 +1470,7 @@ router.post('/ocorrencia', requirePermission('agendamentos.create'), async (req,
       },
       ip: req.ip
     });
-
+ 
     return res.json({
       ok: true,
       message: mailResult.sent
@@ -1478,7 +1483,7 @@ router.post('/ocorrencia', requirePermission('agendamentos.create'), async (req,
     return res.status(400).json({ message: err.message || 'Falha ao registrar ocorrência.' });
   }
 });
-
+ 
 async function transition(id, target, data = {}, req) {
   const found = await mustExist(id);
   if (!found) throw new Error("Agendamento não encontrado.");
@@ -1490,11 +1495,11 @@ async function transition(id, target, data = {}, req) {
     try { updated = await prisma.agendamento.update({ where: { id: Number(id) }, data: { ...data, status: target } }); }
     catch { updated = updateAgendamentoFile(id, { ...data, status: target }); }
   }
-
+ 
   await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: target, entidade: "AGENDAMENTO", entidadeId: updated.id, detalhes: data, ip: req.ip });
   return updated;
 }
-
+ 
 router.post("/:id(\\d+)/definir-doca", requirePermission("agendamentos.definir_doca"), async (req, res) => {
   try {
     const found = await full(req.params.id);
@@ -1504,7 +1509,7 @@ router.post("/:id(\\d+)/definir-doca", requirePermission("agendamentos.definir_d
     if (["FINALIZADO", "CANCELADO", "REPROVADO", "NO_SHOW"].includes(found.status)) {
       throw new Error("Não é possível alterar a doca para este status.");
     }
-
+ 
     try {
       await assertJanelaDocaDisponivel({
         docaId,
@@ -1513,7 +1518,7 @@ router.post("/:id(\\d+)/definir-doca", requirePermission("agendamentos.definir_d
         ignoreAgendamentoId: found.id
       });
     } catch {}
-
+ 
     let item;
     try { item = await prisma.agendamento.update({ where: { id: found.id }, data: { docaId } }); }
     catch { item = updateAgendamentoFile(found.id, { docaId, doca: undefined }); }
@@ -1523,18 +1528,18 @@ router.post("/:id(\\d+)/definir-doca", requirePermission("agendamentos.definir_d
     res.status(400).json({ message: err.message });
   }
 });
-
+ 
 router.post("/:id(\\d+)/aprovar", requirePermission("agendamentos.approve"), async (req, res) => {
   try {
     const found = await full(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
-
+ 
     const data = {};
     if (req.body?.docaId) data.docaId = Number(req.body.docaId);
     if (req.body?.janelaId) data.janelaId = Number(req.body.janelaId);
     if (req.body?.dataAgendada) data.dataAgendada = String(req.body.dataAgendada);
     if (req.body?.horaAgendada) data.horaAgendada = String(req.body.horaAgendada);
-
+ 
     const merged = await syncPayloadScheduleWithJanela({
       ...found,
       ...data,
@@ -1542,7 +1547,7 @@ router.post("/:id(\\d+)/aprovar", requirePermission("agendamentos.approve"), asy
     }, found);
     if (merged?.horaAgendada) data.horaAgendada = merged.horaAgendada;
     if (merged?.dataAgendada) data.dataAgendada = merged.dataAgendada;
-
+ 
     if (!merged.docaId) throw new Error("Doca é obrigatória para aprovação.");
     if (!merged.janelaId) throw new Error("Janela é obrigatória para aprovação.");
     if (!merged.dataAgendada) throw new Error("Data agendada é obrigatória para aprovação.");
@@ -1550,7 +1555,7 @@ router.post("/:id(\\d+)/aprovar", requirePermission("agendamentos.approve"), asy
     if (!Array.isArray(merged.notasFiscais) || !merged.notasFiscais.length) {
       throw new Error("Selecione ao menos uma NF para o agendamento interno.");
     }
-
+ 
     const awarenessAnalysis = await buildAwarenessAnalysisFromPayload(found, merged);
     if (awarenessAnalysis?.requiresAwareness && !req.body?.confirmarCienciaVencimento) {
       return res.status(409).json({
@@ -1559,9 +1564,9 @@ router.post("/:id(\\d+)/aprovar", requirePermission("agendamentos.approve"), asy
         analysis: awarenessAnalysis
       });
     }
-
+ 
     await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada, ignoreAgendamentoId: found.id });
-
+ 
     const updated = await transition(req.params.id, "APROVADO", data, req);
     let item = await full(updated.id);
     const resolvedSchedule = resolveScheduleValues(item, merged);
@@ -1589,7 +1594,7 @@ router.post("/:id(\\d+)/aprovar", requirePermission("agendamentos.approve"), asy
     res.status(400).json({ message: err.message });
   }
 });
-
+ 
 router.post("/:id(\\d+)/reprovar", requirePermission("agendamentos.reprove"), async (req, res) => {
   try {
     const item = await transition(req.params.id, "REPROVADO", { motivoReprovacao: req.body?.motivo || "Reprovado" }, req);
@@ -1597,13 +1602,13 @@ router.post("/:id(\\d+)/reprovar", requirePermission("agendamentos.reprove"), as
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
-
+ 
 router.post("/:id(\\d+)/reagendar", requirePermission("agendamentos.reschedule"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
     if (["FINALIZADO", "CANCELADO"].includes(found.status)) throw new Error("Não é possível reagendar esse status.");
-
+ 
     const merged = await syncPayloadScheduleWithJanela({
       ...found,
       dataAgendada: req.body?.dataAgendada || found.dataAgendada,
@@ -1621,7 +1626,7 @@ router.post("/:id(\\d+)/reagendar", requirePermission("agendamentos.reschedule")
       });
     }
     await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada, ignoreAgendamentoId: found.id });
-
+ 
     let item;
     try {
       item = await prisma.agendamento.update({
@@ -1637,7 +1642,7 @@ router.post("/:id(\\d+)/reagendar", requirePermission("agendamentos.reschedule")
     res.json(await enrichResponseItem(fullItem || item));
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
-
+ 
 router.post("/:id(\\d+)/cancelar", requirePermission("agendamentos.cancel"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
@@ -1654,11 +1659,11 @@ router.post("/:id(\\d+)/cancelar", requirePermission("agendamentos.cancel"), asy
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
-
+ 
 router.post("/:id(\\d+)/iniciar", requirePermission("agendamentos.start"), async (req, res) => {
   try { res.json(await transition(req.params.id, "EM_DESCARGA", { inicioDescargaEm: new Date() }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
 });
-
+ 
 router.post("/:id(\\d+)/finalizar", requirePermission("agendamentos.finish"), uploadAvariaMiddleware, async (req, res) => {
   try {
     const found = await full(req.params.id);
@@ -1666,13 +1671,13 @@ router.post("/:id(\\d+)/finalizar", requirePermission("agendamentos.finish"), up
     if (found.status === "FINALIZADO") {
       return res.json({ ...found, message: "Agendamento já estava finalizado." });
     }
-
+ 
     const recebimento = normalizeFinalizacaoRecebimento(req.body || {});
     const patch = {
       fimDescargaEm: new Date(),
       observacoes: mergeOperationalObservations(found.observacoes, recebimento)
     };
-
+ 
     const updated = await transition(req.params.id, "FINALIZADO", patch, req);
     const item = await ensureAgendamentoScheduleContext(await full(updated.id), found);
     const ocorrenciaRecebimento = await notifyControladoriaAvaria({ agendamento: item, payload: recebimento, req, actor: req.user, files: uploadedAvariaFilesFromReq(req) });
@@ -1684,7 +1689,7 @@ router.post("/:id(\\d+)/finalizar", requirePermission("agendamentos.finish"), up
     res.status(400).json({ message: err.message });
   }
 });
-
+ 
 router.post("/:id(\\d+)/no-show", requirePermission("agendamentos.no_show"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
@@ -1701,7 +1706,7 @@ router.post("/:id(\\d+)/no-show", requirePermission("agendamentos.no_show"), asy
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
-
+ 
 router.post("/:id(\\d+)/checkin", requirePermission("agendamentos.checkin"), async (req, res) => {
   try {
     const found = await mustExist(req.params.id);
@@ -1714,7 +1719,7 @@ router.post("/:id(\\d+)/checkin", requirePermission("agendamentos.checkin"), asy
     res.status(400).json({ message: err.message });
   }
 });
-
+ 
 router.post("/:id(\\d+)/documentos", requirePermission("agendamentos.documentos"), uploadMiddleware, async (req, res) => {
   try {
     const ag = await mustExist(req.params.id);
@@ -1730,7 +1735,7 @@ router.post("/:id(\\d+)/documentos", requirePermission("agendamentos.documentos"
     res.status(201).json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
-
+ 
 router.post("/:id(\\d+)/notas", requirePermission("agendamentos.notas"), async (req, res) => {
   try {
     const ag = await mustExist(req.params.id);
@@ -1766,7 +1771,7 @@ router.post("/:id(\\d+)/notas", requirePermission("agendamentos.notas"), async (
     res.status(201).json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
-
+ 
 router.post("/:id(\\d+)/enviar-informacoes", requirePermission("agendamentos.notify"), async (req, res) => {
   try {
     const item = await full(req.params.id);
@@ -1776,14 +1781,14 @@ router.post("/:id(\\d+)/enviar-informacoes", requirePermission("agendamentos.not
     res.json({ ok: true, results: out.results, ...out.links, tokenMotorista: item.publicTokenMotorista, tokenConsulta: item.publicTokenFornecedor });
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
-
+ 
 router.post("/:id(\\d+)/enviar-confirmacao", requirePermission("agendamentos.notify"), async (req, res) => {
   try {
     const ag = await full(req.params.id);
     if (!ag) return res.status(404).json({ message: "Agendamento não encontrado." });
     if (!ag.emailTransportadora) return res.status(400).json({ message: "Não há e-mail da transportadora/fornecedor cadastrado." });
     if (!canShareVoucher(ag)) return res.status(400).json({ message: "O voucher só pode ser enviado após a aprovação do agendamento." });
-
+ 
     const normalizedAg = normalizeScheduleItem(ag);
     const links = buildPublicLinks(req, normalizedAg);
     const pdf = await generateVoucherPdf(normalizedAg, { baseUrl: getBaseUrl(req) });
@@ -1796,19 +1801,19 @@ router.post("/:id(\\d+)/enviar-confirmacao", requirePermission("agendamentos.not
 Protocolo: ${normalizedAg.protocolo}
 Doca: ${textoDoca}
 Consulta: ${links.consulta}
-
+ 
 ${MANDATORY_VOUCHER_NOTICE_TEXT}`,
       html: `<p>${scheduleIntro}</p><p><strong>Protocolo:</strong> ${normalizedAg.protocolo}</p><p><strong>Data:</strong> ${formatDateBR(normalizedAg.dataAgendada)}</p><p><strong>Hora:</strong> ${formatHourLabel(normalizedAg.horaAgendada)}</p><p><strong>Doca:</strong> ${textoDoca}</p><p><a href="${links.consulta}">Consulta do agendamento</a></p><p>${MANDATORY_VOUCHER_NOTICE_HTML}</p>`,
       attachments: [{ filename: `voucher-${normalizedAg.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
     });
-
+ 
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "ENVIAR_CONFIRMACAO", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: { targets: ["transportadora/fornecedor"] }, ip: req.ip });
     res.json({ ok: true, sent, to: normalizedAg.emailTransportadora, consulta: links.consulta, voucher: links.voucher });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
 });
-
+ 
 router.get("/:id(\\d+)/qrcode.svg", async (req, res) => {
   const item = await mustExist(req.params.id);
   if (!item) return res.status(404).send("Agendamento não encontrado.");
@@ -1817,7 +1822,7 @@ router.get("/:id(\\d+)/qrcode.svg", async (req, res) => {
   res.setHeader("Content-Type", "image/svg+xml");
   res.send(svg);
 });
-
+ 
 router.get("/:id(\\d+)/voucher", async (req, res) => {
   const item = await full(req.params.id);
   if (!item) return res.status(404).send("Agendamento não encontrado.");
@@ -1826,5 +1831,5 @@ router.get("/:id(\\d+)/voucher", async (req, res) => {
   res.setHeader("Content-Disposition", `inline; filename=voucher-${item.protocolo}.pdf`);
   res.send(pdf);
 });
-
+ 
 export default router;
