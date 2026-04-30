@@ -861,6 +861,18 @@ async function enrichResponseItem(item) {
   if (!item) return item;
   const normalized = await ensureAgendamentoScheduleContext(item);
   if (Array.isArray(normalized?.notasFiscais) && normalized.notasFiscais.length) {
+    // Decodificar observação para obter entrada, se existir
+    normalized.notasFiscais = normalized.notasFiscais.map((nota) => {
+      let entrada = '';
+      try {
+        const decoded = JSON.parse(nota.observacao || '{}');
+        entrada = decoded.entrada || '';
+      } catch {
+        // Se não for JSON, tenta extrair de outro formato?
+      }
+      return { ...nota, entrada };
+    });
+    // Agora enriquece volumes com a tabela Entrada_Volumes
     normalized.notasFiscais = await refreshNotasVolumesFromEntradas(normalized.notasFiscais);
     normalized.quantidadeVolumes = calculateTotals(normalized.notasFiscais, {}).quantidadeVolumes;
   }
