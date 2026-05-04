@@ -93,7 +93,7 @@ def login_sistema():
     pyautogui.write("523")
     pyautogui.press("enter")
 
-    pyautogui.write("928615phsp")
+    pyautogui.write("3201phsp")
     pyautogui.press("enter")
     pyautogui.press("enter")
 
@@ -208,3 +208,13 @@ print(f"\n===== PROCESSO COMPLETO FINALIZADO | Tempo total: {tempo_total}s =====
 # ===================================
 with open(log_path, "w", encoding="utf-8") as f:
     f.write(log_buffer.getvalue())
+
+# Iniciando proxima automação
+
+
+
+
+
+
+
+
