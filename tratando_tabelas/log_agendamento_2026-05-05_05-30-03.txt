@@ -1,0 +1,98 @@
+[07:39:01] Imagem encontrada: bem_vindo.png | Tempo: 7738.14s
+[07:39:14] Imagem encontrada: santri.png | Tempo: 2.25s
+Clicou em: desmarcar.png
+Clicou em: ag_chegada.png
+Clicou em: secundario.png
+Clicou em: observacao.png
+
+===== PROCESSANDO Objetiva | INÍCIO: 07:39:54 =====
+Clicou em: observacao.png
+Clicou em: processar.png
+[07:40:04] Imagem encontrada: entradas_encontradas.png | Tempo: 2.22s
+Clicou em: planilha.png
+[07:41:05] Imagem encontrada: sucesso.png | Tempo: 40.77s
+[07:41:07] Exportação concluída | Tempo: 62.89s
+[07:41:07] Objetiva FINALIZADA | Tempo total: 73.31s
+Clicou em: filtros.png
+Clicou em: observacao.png
+
+===== PROCESSANDO Ac Coelho | INÍCIO: 07:41:11 =====
+Clicou em: observacao.png
+Clicou em: processar.png
+[07:41:20] Imagem encontrada: entradas_encontradas.png | Tempo: 0.07s
+Clicou em: planilha.png
+[07:42:00] Imagem encontrada: sucesso.png | Tempo: 20.51s
+[07:42:02] Exportação concluída | Tempo: 42.66s
+[07:42:02] Ac Coelho FINALIZADA | Tempo total: 50.9s
+Clicou em: filtros.png
+Clicou em: observacao.png
+
+===== PROCESSANDO Finitura | INÍCIO: 07:42:06 =====
+Clicou em: observacao.png
+Clicou em: processar.png
+[07:42:15] Imagem encontrada: entradas_encontradas.png | Tempo: 0.08s
+Clicou em: planilha.png
+[07:42:49] Imagem encontrada: sucesso.png | Tempo: 14.02s
+[07:42:51] Exportação concluída | Tempo: 36.16s
+[07:42:51] Finitura FINALIZADA | Tempo total: 44.43s
+Clicou em: filtros.png
+Clicou em: observacao.png
+
+===== PROCESSANDO Sr acabamentos | INÍCIO: 07:42:55 =====
+Clicou em: observacao.png
+Clicou em: processar.png
+[07:43:03] Imagem encontrada: entradas_encontradas.png | Tempo: 0.09s
+Clicou em: planilha.png
+[07:43:42] Imagem encontrada: sucesso.png | Tempo: 18.29s
+[07:43:44] Exportação concluída | Tempo: 40.41s
+[07:43:44] Sr acabamentos FINALIZADA | Tempo total: 48.69s
+Clicou em: filtros.png
+Clicou em: observacao.png
+
+===== AUTOMAÇÃO FINALIZADA | Tempo total: 8024.82s =====
+
+Iniciando tratamento dos arquivos...
+Tratamento finalizado com sucesso!
+
+Processando: H:\00 - HTML\AGENDAMENTO\tratando_tabelas\objetiva\entradas_objetiva.ods
+Erro no ODS: could not convert string to float: ''
+Convertendo para XLSX...
+Leitura XLSX OK
+
+Processando: H:\00 - HTML\AGENDAMENTO\tratando_tabelas\ac_coelho\entradas_ac_coelho.ods
+Erro no ODS: could not convert string to float: ''
+Convertendo para XLSX...
+Leitura XLSX OK
+
+Processando: H:\00 - HTML\AGENDAMENTO\tratando_tabelas\finitura\entradas_finitura.ods
+Erro no ODS: could not convert string to float: ''
+Convertendo para XLSX...
+Leitura XLSX OK
+
+Processando: H:\00 - HTML\AGENDAMENTO\tratando_tabelas\sr_acabamentos\entradas_sr_acabamentos.ods
+Erro no ODS: could not convert string to float: ''
+Convertendo para XLSX...
+Leitura XLSX OK
+
+===== RESULTADO FILTRADO =====
+0 Entrada  ...   destino
+0  292401  ...  objetiva
+1  299145  ...  objetiva
+2  302520  ...  objetiva
+3  302535  ...  objetiva
+4  304224  ...  objetiva
+5  304397  ...  objetiva
+6  304411  ...  objetiva
+7  304555  ...  objetiva
+8  304646  ...  objetiva
+9  304849  ...  objetiva
+
+[10 rows x 66 columns]
+
+Total de registros: 488
+
+Arquivo salvo em:
+H:\00 - HTML\AGENDAMENTO\backend\uploads\importacao-relatorio\entradas_lojas.xlsx
+
+
+===== PROCESSO COMPLETO FINALIZADO | Tempo total: 8042.95s =====
