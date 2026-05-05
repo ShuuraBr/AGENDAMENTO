@@ -112,4 +112,48 @@ router.put("/:tipo/:id", requirePermission("cadastros.manage"), async (req, res)
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /transportadoras/:id/vincular-fornecedores
+// Atribui uma transportadora a um ou mais fornecedores (salvo no JSON local)
+// para pré-preencher o campo de transportadora ao agendar.
+// Body: { fornecedores: ["Fornecedor A", "Fornecedor B"] }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post("/transportadoras/:id/vincular-fornecedores", requirePermission("cadastros.manage"), async (req, res) => {
+  try {
+    const fornecedores = Array.isArray(req.body?.fornecedores) ? req.body.fornecedores.map((f) => String(f).trim()).filter(Boolean) : [];
+    if (!fornecedores.length) return res.status(400).json({ message: "Informe ao menos um fornecedor." });
+
+    const id = req.params.id;
+    // Read current transportadoras
+    const items = readCadastroFile("transportadoras");
+    const idx = items.findIndex((t) => String(t.id) === String(id));
+    if (idx < 0) return res.status(404).json({ message: "Transportadora não encontrada." });
+
+    // Merge fornecedores list
+    const existing = Array.isArray(items[idx].fornecedoresVinculados) ? items[idx].fornecedoresVinculados : [];
+    const merged = [...new Set([...existing, ...fornecedores])];
+    items[idx] = { ...items[idx], fornecedoresVinculados: merged };
+    upsertCadastroFile("transportadoras", items[idx], id);
+
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "VINCULAR_TRANSPORTADORA_FORNECEDOR", entidade: "TRANSPORTADORA", entidadeId: id, detalhes: { fornecedores }, ip: req.ip });
+    res.json({ ok: true, id, fornecedoresVinculados: merged });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// GET /transportadoras/por-fornecedor?nome=X
+// Retorna a transportadora padrão vinculada ao fornecedor
+router.get("/transportadoras/por-fornecedor", requirePermission("cadastros.view"), async (req, res) => {
+  try {
+    const nome = String(req.query?.nome || "").trim().toLowerCase();
+    if (!nome) return res.status(400).json({ message: "Informe o nome do fornecedor." });
+    const items = readCadastroFile("transportadoras");
+    const match = items.find((t) => Array.isArray(t.fornecedoresVinculados) && t.fornecedoresVinculados.some((f) => String(f).trim().toLowerCase() === nome));
+    res.json(match || null);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
 export default router;

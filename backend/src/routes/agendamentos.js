@@ -1844,4 +1844,81 @@ router.get("/:id(\\d+)/voucher", async (req, res) => {
   res.send(pdf);
 });
  
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /:id — editar agendamento (sem aprovação)
+// Permite alterar dados como transportadora, motorista, placa, data/hora, doca
+// e janela enquanto o agendamento ainda não está aprovado.
+// Se aprovado, o chamador deve cancelar primeiro (feito no front via confirm).
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch("/:id(\\d+)", requirePermission("agendamentos.create"), async (req, res) => {
+  try {
+    const found = await mustExist(req.params.id);
+    if (!found) return res.status(404).json({ message: "Agendamento não encontrado." });
+
+    const BLOCKED_STATUSES = ["APROVADO", "CHEGOU", "EM_DESCARGA", "FINALIZADO", "CANCELADO", "REPROVADO", "NO_SHOW"];
+    if (BLOCKED_STATUSES.includes(found.status)) {
+      return res.status(400).json({ message: `Não é possível editar um agendamento com status ${found.status}. Cancele-o primeiro.` });
+    }
+
+    const allowed = ["transportadora", "motorista", "cpfMotorista", "telefoneMotorista", "emailMotorista", "emailTransportadora", "placa", "dataAgendada", "horaAgendada", "docaId", "janelaId", "observacoes"];
+    const patch = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        patch[key] = key === "docaId" || key === "janelaId" ? Number(req.body[key]) : String(req.body[key] ?? "").trim();
+      }
+    }
+    if (!Object.keys(patch).length) return res.status(400).json({ message: "Nenhum campo válido para atualizar." });
+
+    let updated;
+    try { updated = await prisma.agendamento.update({ where: { id: Number(found.id) }, data: patch }); }
+    catch { updated = updateAgendamentoFile(found.id, patch); }
+
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "EDITAR", entidade: "AGENDAMENTO", entidadeId: found.id, detalhes: patch, ip: req.ip });
+    res.json(await full(updated.id));
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /:id/notas/:numeroNf/volumes — editar volumes de uma NF específica
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch("/:id(\\d+)/notas/:numeroNf/volumes", requirePermission("agendamentos.notas"), async (req, res) => {
+  try {
+    const found = await full(req.params.id);
+    if (!found) return res.status(404).json({ message: "Agendamento não encontrado." });
+
+    const numeroNf = decodeURIComponent(req.params.numeroNf || "").trim();
+    const serie = String(req.body?.serie || "").trim();
+    const volumes = Number(req.body?.volumes);
+    if (!Number.isFinite(volumes) || volumes < 0) return res.status(400).json({ message: "Volume inválido." });
+
+    const notas = Array.isArray(found.notasFiscais) ? found.notasFiscais : [];
+    let matched = false;
+    const updatedNotas = notas.map((nota) => {
+      const nMatch = String(nota.numeroNf || "").trim() === numeroNf;
+      const sMatch = !serie || !nota.serie || String(nota.serie).trim() === serie;
+      if (nMatch && sMatch) { matched = true; return { ...nota, volumes }; }
+      return nota;
+    });
+    if (!matched) return res.status(404).json({ message: `NF ${numeroNf} não encontrada no agendamento.` });
+
+    // recalculate total volumes
+    const totalVolumes = updatedNotas.reduce((acc, n) => acc + Number(n.volumes || 0), 0);
+    const patch = { notasFiscais: updatedNotas, quantidadeVolumes: totalVolumes };
+
+    let updated;
+    try {
+      await prisma.notaFiscal?.updateMany({ where: { agendamentoId: Number(found.id), numeroNf }, data: { volumes } }).catch(() => {});
+      updated = await prisma.agendamento.update({ where: { id: Number(found.id) }, data: { quantidadeVolumes: totalVolumes } });
+    } catch { updated = found; }
+    updateAgendamentoFile(found.id, patch);
+
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "EDITAR_VOLUMES_NF", entidade: "AGENDAMENTO", entidadeId: found.id, detalhes: { numeroNf, serie, volumes, totalVolumes }, ip: req.ip });
+    res.json({ ok: true, numeroNf, volumes, totalVolumes });
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
 export default router;

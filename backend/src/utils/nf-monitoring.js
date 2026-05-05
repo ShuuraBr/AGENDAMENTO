@@ -404,12 +404,22 @@ function enrichNoteWithRelatorio(nota = {}, row = null, scheduledDateValue = nul
   };
 }
 
+// Suporta fornecedor simples ou múltiplos separados por " | "
+function fornecedorMatch(itemFornecedor = '', agendFornecedor = '') {
+  if (!agendFornecedor || !itemFornecedor) return true;
+  const itemNorm = normalizeText(itemFornecedor).toLowerCase();
+  const agendNorm = normalizeText(agendFornecedor).toLowerCase();
+  if (itemNorm === agendNorm) return true;
+  // suporte a múltiplos fornecedores separados por " | "
+  return agendNorm.split('|').map((s) => s.trim()).some((part) => part && (itemNorm === part || itemNorm.includes(part) || part.includes(itemNorm)));
+}
+
 export async function analyzeNotesForSchedule({ notas = [], dataAgendada = '', fornecedor = '' } = {}) {
   const selected = normalizeAgendamentoNotas(Array.isArray(notas) ? notas : []);
   const rows = await getRelatorioRowsSnapshot();
   const matchedRows = [];
   const enrichedNotas = selected.map((nota) => {
-    const row = rows.find((item) => noteMatch(item, nota) && (!fornecedor || !item.fornecedor || normalizeText(item.fornecedor).toLowerCase() === normalizeText(fornecedor).toLowerCase()));
+    const row = rows.find((item) => noteMatch(item, nota) && fornecedorMatch(item.fornecedor, fornecedor));
     if (row) matchedRows.push(row);
     return enrichNoteWithRelatorio(nota, row, dataAgendada);
   });

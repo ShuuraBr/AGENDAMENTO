@@ -2389,7 +2389,9 @@
   }
 
   async function maybeShowMissingRelatorioAlerts(items = []) {
+    const statusTerminais = new Set(['FINALIZADO', 'CANCELADO', 'REPROVADO', 'NO_SHOW']);
     for (const item of Array.isArray(items) ? items : []) {
+      if (statusTerminais.has(String(item?.status || '').toUpperCase())) continue;
       const missing = item?.monitoramentoNf?.notasAusentesNoRelatorio || [];
       if (!missing.length) continue;
       const key = `${item.id}:${missing.map((nota) => `${nota.numeroNf || ''}-${nota.serie || ''}`).join('|')}`;
@@ -2402,10 +2404,10 @@
           '',
           ...missing.map((nota) => `NF ${nota.numeroNf || '-'} / Série ${nota.serie || '-'}`),
           '',
-          'Verifique a situação da nota antes de prosseguir com a operação.'
+          'Este aviso é informativo. Você pode prosseguir com a operação.'
         ].join('\n'),
         confirmText: 'Entendi',
-        tone: 'danger'
+        tone: 'warning'
       });
     }
   }
