@@ -7,6 +7,7 @@ import os
 import sys
 from io import StringIO
 from datetime import datetime
+import tkinter as tk
 
 # =========================
 # PARA GERAR OS LOGS DO PROCESSO
@@ -26,6 +27,18 @@ log_path = rf'H:\00 - HTML\AGENDAMENTO\tratando_tabelas\log_agendamento_{data_ho
 pyscreeze.USE_IMAGE_NOT_FOUND_EXCEPTION = False
 pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 2
+
+def mostrar_aviso(mensagem, tempo=3000):
+    root = tk.Tk()
+    root.title("Automação em execução")
+
+    label = tk.Label(root, text=mensagem, font=("Arial", 12))
+    label.pack(padx=20, pady=20)
+
+    # fecha sozinho após X milissegundos
+    root.after(tempo, root.destroy)
+
+    root.mainloop()
 
 def agora(): # inserir agora 16:27 - 27/04/2026
     return datetime.now().strftime("%H:%M:%S") # inserir agora 16:27 - 27/04/2026
@@ -51,18 +64,21 @@ EMPRESAS = [
 def caminho_imagem(nome_arquivo):
     return rf'{BASE_PATH}\{nome_arquivo}'
 
-def esperar_imagem(nome_imagem, confidence=0.8):
+def esperar_imagem(nome_imagem, timeout=5,confidence=0.8):
     inicio = time.time()
 
-    while not pyautogui.locateOnScreen(
+    while time.time() - inicio < timeout: 
+        local = pyautogui.locateOnScreen(
         caminho_imagem(nome_imagem),
         grayscale=True,
         confidence=confidence
-    ):
-        time.sleep(1)
+    )
 
-    duracao = round(time.time() - inicio, 2)
-    print(f"[{agora()}] Imagem encontrada: {nome_imagem} | Tempo: {duracao}s")
+    if local:
+        duracao = round(time.time() - inicio, 2)
+        print(f"[{agora()}] Imagem encontrada: {nome_imagem} | Tempo: {duracao}s")
+        return local
+    time.sleep(1)
 
 def esperar_e_clicar(nome_imagem, duplo=False, confidence=0.7):
     while True:
@@ -86,16 +102,24 @@ def esperar_e_clicar(nome_imagem, duplo=False, confidence=0.7):
         time.sleep(1)
 
 def login_sistema():
+    print("Abrindo ADM")
     subprocess.Popen([r"C:\Santri\adm.exe"])
 
-    esperar_imagem("bem_vindo.png")
+    if esperar_imagem("atualizar.png"):
+        pyautogui.press("enter")
+        
+    else:
+        print("Imagem atualizar não foi encontrada",file=sys.__stdout__)
 
-    pyautogui.write("523")
-    pyautogui.press("enter")
+    if esperar_imagem("bem_vindo.png"):
+        pyautogui.write("523")
+        pyautogui.press("enter")
 
-    pyautogui.write("3201phsp")
-    pyautogui.press("enter")
-    pyautogui.press("enter")
+        pyautogui.write("3201phsp")
+        pyautogui.press("enter")
+        pyautogui.press("enter")
+    else:
+        print("Imagem bem vindo não encontrada", file=sys.__stdout__)
 
     esperar_imagem("santri.png")
 
@@ -169,6 +193,7 @@ def processar_empresa(nome_empresa, pasta_destino, nome_arquivo):
 # EXECUÇÃO PRINCIPAL
 # =========================
 inicio_geral = time.time()
+mostrar_aviso("Automação iniciando...\nNão utilize o computador", 3000)
 login_sistema()
 navegar_ate_filtros()
 
@@ -208,6 +233,8 @@ print(f"\n===== PROCESSO COMPLETO FINALIZADO | Tempo total: {tempo_total}s =====
 # ===================================
 with open(log_path, "w", encoding="utf-8") as f:
     f.write(log_buffer.getvalue())
+
+mostrar_aviso("Automação finalizada...\npode utilizar o computador", 3000)
 
 # Iniciando proxima automação
 
