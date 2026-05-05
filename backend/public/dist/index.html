@@ -3,24 +3,42 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agendamento de Descarga V3.1</title>
+  <title>Agendamento de Descarga V3.2</title>
   <link rel="icon" href="/assets/Favicon-DGDsBImO.png" type="image">
-  <link rel="stylesheet" crossorigin href="/assets/index-D5iJSa7y.css">
+
+  <style>
+    #site-watermark {
+      position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+      overflow: hidden; display: none;
+    }
+    #site-watermark.wm-active { display: block; }
+    .wm-tile {
+      position: absolute; transform: rotate(-30deg);
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      opacity: 0.055; user-select: none; white-space: nowrap;
+    }
+    .wm-tile img { width: 28px; height: 28px; object-fit: contain; }
+    .wm-tile span {
+      font-size: 11px; font-weight: 700; color: #0f172a;
+      letter-spacing: 0.04em; font-family: Arial, sans-serif;
+    }
+  </style>
+  <link rel="stylesheet" crossorigin href="/assets/index-Besa_KCv.css">
 </head>
 <body>
+  <div id="site-watermark" aria-hidden="true"></div>
+
   <header class="topbar">
     <div class="brand">
       <div>
         <h1>Agendamento de Descarga</h1>
         <small>Controle Operacional</small>
       </div>
-      <img src="/assets/objetiva-Bh7DIJBa.png" alt="Logo Objetiva" class="logo" />
+      <img src="/assets/objetiva.png" alt="Logo Objetiva" class="logo" />
     </div>
 
     <nav id="publicNav" class="nav-menu">
       <button type="button" class="nav-btn active" data-view="public-home" onclick="return window.__agendamentoShowView && window.__agendamentoShowView('public-home');">Início</button>
-      <button type="button" class="nav-btn" data-view="fornecedor" onclick="return window.__agendamentoShowView && window.__agendamentoShowView('fornecedor');">Fornecedor/Transportadora</button>
-      <button type="button" class="nav-btn" data-view="motorista" onclick="return window.__agendamentoShowView && window.__agendamentoShowView('motorista');">Motorista</button>
       <button type="button" class="nav-btn" data-view="login" onclick="return window.__agendamentoShowView && window.__agendamentoShowView('login');">Área do Colaborador</button>
     </nav>
 
@@ -29,7 +47,8 @@
       <button type="button" class="nav-btn" data-view="docas">Painel de Docas</button>
       <button type="button" class="nav-btn" data-view="cadastros">Cadastros</button>
       <button type="button" class="nav-btn" data-view="agendamentos">Agendamentos</button>
-      <button type="button" class="nav-btn" data-view="checkin">Check-in QR</button>
+      <button type="button" class="nav-btn" data-view="consulta-nf">Consulta por NF</button>
+      <button type="button" class="nav-btn" data-view="checkin">Check-in / Check-out QR</button>
       <button type="button" id="btnLogout">Sair</button>
     </nav>
   </header>
@@ -39,15 +58,25 @@
       <div class="card">
         <h2>Portais disponíveis</h2>
         <p>Acesso segregado entre área pública e área interna. O colaborador acessa com login direto e permissões por perfil.</p>
+        <div class="portal-links mt12">
+                    <button type="button" class="nav-btn" data-view="consulta" onclick="return window.__agendamentoShowView && window.__agendamentoShowView('consulta');">Consulta da transportadora/fornecedor</button>
+          <button type="button" class="nav-btn" data-view="motorista" onclick="return window.__agendamentoShowView && window.__agendamentoShowView('motorista');">Acompanhamento do motorista</button>
+        </div>
       </div>
     </section>
 
     <section id="login" class="view">
       <div class="card narrow login-card">
         <h2>Login do colaborador</h2>
-        <form id="loginForm">
-          <label>Email<input name="email" value="admin@local.test" /></label>
-          <label>Senha<input name="senha" type="password" value="123456" /></label>
+        <form id="loginForm" autocomplete="off">
+          <label>Login / E-mail<input name="email" type="text" value="" placeholder="Digite seu login" autocomplete="off" /></label>
+          <label>
+            Senha
+            <div class="password-input-wrap">
+              <input id="loginSenha" name="senha" type="password" value="" placeholder="Digite sua senha" autocomplete="new-password" />
+              <button type="button" class="password-toggle-btn" id="toggleLoginPassword" aria-label="Visualizar senha" aria-pressed="false">Mostrar</button>
+            </div>
+          </label>
           <button type="submit">Entrar</button>
         </form>
         <p id="loginMsg" class="msg"></p>
@@ -63,17 +92,22 @@
               <label>Fornecedor<input name="fornecedor" value="Fornecedor Externo" /></label>
               <label>Transportadora<input name="transportadora" value="Transportadora Externa" /></label>
               <label>Motorista<input name="motorista" value="Motorista Externo" /></label>
-              <label>Telefone do motorista<input name="telefoneMotorista" value="61999998888" /></label>
+              <label>CPF do motorista<input name="cpfMotorista" type="text" inputmode="numeric" placeholder="000.000.000-00" /></label>
+              <label>Telefone do motorista<input name="telefoneMotorista" type="text" inputmode="numeric" value="(61) 99999-8888" /></label>
               <label>E-mail do motorista<input name="emailMotorista" value="motorista@teste.com" /></label>
               <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@teste.com" /></label>
               <label>Placa<input name="placa" value="DEF4G56" /></label>
             </div>
             <div>
               <div class="info-box"><strong>Doca:</strong> definida pelo operador do recebimento conforme disponibilidade operacional.</div>
+              <label>Buscar fornecedor pendente<input id="publicPendingFornecedorSearch" type="text" placeholder="Digite para localizar o fornecedor" /></label>
+              <label>Fornecedor pendente<select name="fornecedorPendenteSelect"><option value="">Selecionar manualmente</option></select></label>
               <label>Data<select name="dataAgendada" id="publicDataSelect"></select></label>
               <label>Horário disponível<select name="janelaId" id="publicJanelaSelect"></select></label>
-              <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" /></label>
-              <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="8" /></label>
+              <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" readonly /></label>
+              <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="8" readonly /></label>
+              <label>Peso total (kg)<input name="pesoTotalKg" type="number" step="0.001" value="0" readonly /></label>
+              <label>Valor total (R$)<input name="valorTotalNf" type="number" step="0.01" value="0" readonly /></label>
               <label>Observações<textarea name="observacoes"></textarea></label>
               <label class="check">
                 <input name="lgpdConsent" type="checkbox" />
@@ -92,6 +126,18 @@
       </div>
     </section>
 
+    <section id="consulta" class="view">
+      <div class="card">
+        <h2>Consulta da transportadora / fornecedor</h2>
+        <form id="consultaForm">
+          <label>Token de consulta<input name="token" placeholder="FOR-..." /></label>
+          <button type="submit">Consultar agendamento</button>
+        </form>
+        <p id="consultaMsg" class="msg"></p>
+        <div id="consultaResult" class="mt16"></div>
+      </div>
+    </section>
+
     <section id="motorista" class="view">
       <div class="card">
         <h2>Portal do motorista</h2>
@@ -99,13 +145,13 @@
           <label>Token do motorista<input name="token" placeholder="MOT-..." /></label>
           <button type="submit">Consultar</button>
         </form>
-        <pre id="motoristaResult"></pre>
+        <p id="motoristaMsg" class="msg"></p>
+        <div id="motoristaResult" class="mt16"></div>
       </div>
     </section>
-
     <section id="checkin" class="view">
       <div class="card">
-        <h2>Check-in por QR Code</h2>
+        <h2>Check-in e check-out por QR Code</h2>
         <div class="grid2">
           <div>
             <video id="qrVideo" autoplay muted playsinline class="video"></video>
@@ -116,8 +162,9 @@
           </div>
           <div>
             <form id="checkinForm">
-              <label>Token do check-in<input name="token" placeholder="CHK-..." /></label>
-              <button type="submit">Validar check-in</button>
+              <label>Operação<select name="modo"><option value="checkin">Check-in</option><option value="checkout">Check-out</option></select></label>
+              <label>Token da operação<input name="token" placeholder="CHK-... ou OUT-..." /></label>
+              <button type="submit">Validar operação</button>
             </form>
             <p id="checkinMsg" class="msg"></p>
             <pre id="checkinResult"></pre>
@@ -138,11 +185,11 @@
       <div class="card mt16">
         <h3>Filtros</h3>
         <div class="filters">
-          <input id="fStatus" placeholder="Status" />
-          <input id="fFornecedor" placeholder="Fornecedor" />
-          <input id="fTransportadora" placeholder="Transportadora" />
-          <input id="fMotorista" placeholder="Motorista" />
-          <input id="fPlaca" placeholder="Placa" />
+          <select id="fStatus"><option value="">Status</option></select>
+          <select id="fFornecedor"><option value="">Fornecedor</option></select>
+          <select id="fTransportadora"><option value="">Transportadora</option></select>
+          <select id="fMotorista"><option value="">Motorista</option></select>
+          <select id="fPlaca"><option value="">Placa</option></select>
           <input id="fData" type="date" />
           <button id="applyFilters">Aplicar filtros</button>
           <button id="clearFilters">Limpar</button>
@@ -153,6 +200,7 @@
         <h3>Agendamentos</h3>
         <div id="dashboardTable"></div>
       </div>
+
     </section>
 
     <section id="docas" class="view">
@@ -205,26 +253,62 @@
       </div>
     </section>
 
+    <!-- Aba Agendamentos sem painel de consulta por NF -->
     <section id="agendamentos" class="view">
-      <div class="grid2">
-        <div class="card">
+      <div class="agendamentos-layout">
+        <div class="card agendamento-form-card">
           <h2>Novo agendamento interno</h2>
-          <form id="agendamentoForm">
-            <label>Fornecedor<input name="fornecedor" value="Fornecedor Exemplo LTDA" /></label>
-            <label>Transportadora<input name="transportadora" value="Transportadora Exemplo" /></label>
-            <label>Motorista<input name="motorista" value="Motorista Exemplo" /></label>
-            <label>Telefone do motorista<input name="telefoneMotorista" value="61999999999" /></label>
-            <label>E-mail do motorista<input name="emailMotorista" value="motorista@test.com" /></label>
-            <label>E-mail da transportadora<input name="emailTransportadora" value="transportadora@test.com" /></label>
-            <label>Placa<input name="placa" value="ABC1D23" /></label>
-            <label>Doca<select name="docaId" id="internalDocaSelect"></select></label>
-            <label>Janela<select name="janelaId" id="internalJanelaSelect"></select></label>
-            <label>Data<input name="dataAgendada" type="date" /></label>
-            <label>Hora<input name="horaAgendada" value="08:00" /></label>
-            <label>Quantidade de notas<input name="quantidadeNotas" type="number" value="1" /></label>
-            <label>Quantidade de volumes<input name="quantidadeVolumes" type="number" value="10" /></label>
-            <label>Observações<textarea name="observacoes"></textarea></label>
-            <button type="submit">Salvar agendamento</button>
+          <form id="agendamentoForm" class="operator-form" autocomplete="off">
+            <div class="card inner">
+              <h3>Dados da operação</h3>
+              <div class="form-grid operator-grid mt12">
+                <label>Fornecedor pendente
+                  <input type="hidden" name="fornecedorPendenteInterno" id="internalFornecedorPendenteSelect" value="" />
+                  <div class="multi-select-control"><div class="multi-select" id="internalFornecedorDropdown">
+                    <button type="button" class="multi-select-trigger" id="internalFornecedorDropdownTrigger" aria-expanded="false">Selecione o fornecedor pendente</button>
+                    <div class="multi-select-menu hidden" id="internalFornecedorDropdownMenu"></div>
+                  </div><button type="button" id="btnClearInternalFornecedorSelection" class="icon-clear-btn" title="Limpar seleção">X</button></div>
+                </label>
+                <label>Transportadora<input name="transportadora" value="" required /></label>
+                <label>Placa<input name="placa" value="" /></label>
+                <label>Janela<select name="janelaId" id="internalJanelaSelect" required></select></label>
+                <label>Data<input name="dataAgendada" type="date" required /></label>
+                <label>Hora<input name="horaAgendada" type="text" inputmode="numeric" value="" placeholder="08:00" required /></label>
+              </div>
+            </div>
+            <div class="card inner mt16">
+              <h3>Dados do motorista</h3>
+              <div class="form-grid operator-grid mt12">
+                <label>Motorista<input name="motorista" value="" /></label>
+                <label>CPF do motorista<input name="cpfMotorista" type="text" inputmode="numeric" value="" placeholder="000.000.000-00" /></label>
+                <label>Telefone do motorista<input name="telefoneMotorista" type="text" inputmode="numeric" value="" placeholder="(00) 00000-0000" /></label>
+                <label>E-mail do motorista<input name="emailMotorista" value="" /></label>
+                <label>E-mail da transportadora<input name="emailTransportadora" value="" required /></label>
+              </div>
+            </div>
+            <div class="card inner mt16">
+              <h3>Notas pendentes do fornecedor</h3>
+              <p class="hint">Após selecionar o fornecedor pendente, marque as NF que farão parte deste agendamento. Notas com 1º vencimento próximo ficam agrupadas no início para facilitar a identificação.</p>
+              <div class="pending-search-toolbar mt12">
+                <label class="pending-search-field">Buscar NF
+                  <input id="internalPendingSearch" type="text" placeholder="Pesquisar número da NF ou série" />
+                </label>
+                <button type="button" id="btnClearPendingSearch" class="btn-secondary">Limpar busca</button>
+              </div>
+              <div id="internalPendingNotas" class="mt12"></div>
+            </div>
+            <div class="card inner mt16">
+              <h3>Totais do agendamento</h3>
+              <div class="form-grid operator-grid mt12">
+                <label>Quantidade de notas<input name="quantidadeNotas" id="internalQuantidadeNotas" type="text" value="0" readonly required /></label>
+                <label>Quantidade de volumes<input name="quantidadeVolumes" id="internalQuantidadeVolumes" type="text" value="0,000" readonly required /></label>
+                <label>Peso total (kg)<input name="pesoTotalKg" id="internalPesoTotalKg" type="text" value="0,000" readonly required /></label>
+                <input type="hidden" name="valorTotalNf" id="internalValorTotalNf" value="0,00" />
+                <input type="hidden" name="fornecedor" id="internalFornecedorNome" value="" />
+                <label class="form-group-full">Observações<textarea name="observacoes" required></textarea></label>
+              </div>
+            </div>
+            <div class="form-actions mt16"><button type="submit">Salvar agendamento</button><button type="button" id="btnRegistrarOcorrencia" class="btn-secondary btn-danger-soft">Ocorrência</button></div>
           </form>
           <p id="agendamentoMsg" class="msg"></p>
         </div>
@@ -246,34 +330,88 @@
             <button id="btnVoucher">Voucher</button>
             <button id="btnQr">QR Code</button>
             <button id="btnEnviarInfos">Enviar informações</button>
+            <button id="btnResumoFinanceiro" class="btn-secondary">Enviar resumo financeiro</button>
           </div>
-
-          <div class="card inner mt16">
-            <h3>Anexar documento</h3>
-            <label>Arquivo<input id="docFile" type="file" /></label>
-            <button id="btnUploadDoc">Enviar documento</button>
-          </div>
-
-          <div class="card inner mt16">
-            <h3>Adicionar NF</h3>
-            <form id="notaForm">
-              <label>Número NF<input name="numeroNf" /></label>
-              <label>Série<input name="serie" /></label>
-              <label>Chave de acesso<input name="chaveAcesso" /></label>
-              <label>Volumes<input name="volumes" type="number" value="0" /></label>
-              <label>Peso<input name="peso" type="number" value="0" /></label>
-              <label>Valor NF<input name="valorNf" type="number" value="0" /></label>
-              <label>Observação<textarea name="observacao"></textarea></label>
-              <button type="submit">Salvar NF</button>
-            </form>
-          </div>
-
           <p id="operacaoMsg" class="msg"></p>
+          <div class="card inner mt16">
+            <h3>Histórico de ocorrências</h3>
+            <p class="hint">As NF marcadas como ocorrência ficam registradas aqui para acompanhamento operacional.</p>
+            <div id="ocorrenciasWorkflowList" class="mt12"></div>
+          </div>
           <div id="agendamentosList" class="mt16"></div>
         </div>
       </div>
     </section>
+
+    <section id="consulta-nf" class="view">
+      <div class="card consulta-nf-page-card">
+        <h2>Consulta por NF</h2>
+        <form id="consultaNfForm" class="consulta-nf-form mt12">
+          <div class="consulta-nf-toolbar">
+            <label>Número da NF (opcional)<input name="numeroNf" type="text" inputmode="numeric" placeholder="Digite o número da NF" /></label>
+            <label>Data para conferência<input name="dataAgendada" type="date" /></label>
+            <button type="submit">Consultar NF</button>
+          </div>
+        </form>
+        <p class="hint mt12">A consulta pode ser feita pela NF, apenas pela data, ou pelos dois campos. Quando a pesquisa for somente por data, o sistema listará todas as NFs agendadas no dia informado.</p>
+        <div id="consultaNfResult" class="mt16"></div>
+      </div>
+    </section>
+
+    <section id="avaliacao" class="view">
+      <div class="card avaliacao-card">
+        <div class="avaliacao-header">
+          <img src="/assets/Logotipo-cores-institucionais-vetorizada-removebg-preview-BA7E1YO-.png" alt="Logo Objetiva" class="avaliacao-logo" />
+          <div>
+            <h2>Avaliação do atendimento</h2>
+            <p>Pesquisa confidencial destinada ao motorista. Esta avaliação pode ser respondida uma única vez.</p>
+          </div>
+        </div>
+        <div id="avaliacaoIntro" class="avaliacao-identificacao mt12"></div>
+        <form id="avaliacaoForm" class="mt16">
+          <div class="form-grid">
+            <label>Nota para o atendimento geral (1 a 5)<input name="atendimentoNota" type="number" min="1" max="5" required /></label>
+            <label>Nota para a equipe de recebimento (1 a 5)<input name="equipeNota" type="number" min="1" max="5" required /></label>
+            <label>Nota para rapidez e eficácia (1 a 5)<input name="rapidezNota" type="number" min="1" max="5" required /></label>
+            <label>O processo correu tranquilo?
+              <select name="processoTranquilo" required>
+                <option value="">Selecione</option>
+                <option value="SIM">Sim</option>
+                <option value="PARCIAL">Parcialmente</option>
+                <option value="NAO">Não</option>
+              </select>
+            </label>
+            <label class="form-group-full">Comentários adicionais<textarea name="comentario" maxlength="4000" placeholder="Descreva como foi o atendimento e o processo de recebimento."></textarea></label>
+          </div>
+          <button type="submit">Enviar avaliação</button>
+        </form>
+        <p id="avaliacaoMsg" class="msg"></p>
+      </div>
+    </section>
   </main>
+
+  <div id="manualNotaModal" class="app-modal hidden">
+    <div class="app-modal-backdrop" data-manual-nota-close></div>
+    <div class="app-modal-card manual-nota-modal-card">
+      <div class="app-modal-header">
+        <h3>Inserir nota fiscal manualmente</h3>
+      </div>
+      <form id="manualNotaForm" class="manual-nota-form mt16">
+        <div class="form-grid operator-grid">
+          <label>Número da nota<input name="numeroNf" type="text" inputmode="numeric" required /></label>
+          <label>Série<input name="serie" type="text" required /></label>
+          <label>Qtd. volumes<input name="volumes" type="number" min="0" step="1" required /></label>
+          <label>Peso<input name="peso" type="number" min="0" step="0.001" required /></label>
+          <label class="form-group-full">Empresa<input name="destino" type="text" required /></label>
+        </div>
+        <p id="manualNotaMsg" class="msg"></p>
+        <div class="app-modal-actions">
+          <button type="button" class="btn-secondary" data-manual-nota-close>Cancelar</button>
+          <button type="submit">Confirmar inserção</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <script>
 (function () {
@@ -310,6 +448,38 @@
     }
   });
 })();
+
+  // ── Site watermark ──────────────────────────────────────────────────────
+  function buildSiteWatermark(label) {
+    var el = document.getElementById('site-watermark');
+    if (!el) return;
+    el.innerHTML = '';
+    if (!label) { el.classList.remove('wm-active'); return; }
+    var cols = 6, rows = 10;
+    for (var i = 0; i < cols * rows; i++) {
+      var col = i % cols, row = Math.floor(i / cols);
+      var tile = document.createElement('div');
+      tile.className = 'wm-tile';
+      tile.style.left = (col * 18) + '%';
+      tile.style.top  = (row * 11) + '%';
+      tile.innerHTML = '<img src="/assets/Favicon.png" alt=""><span>' + label.replace(/</g,'&lt;') + '</span>';
+      el.appendChild(tile);
+    }
+    el.classList.add('wm-active');
+  }
+
+  function refreshWatermark() {
+    var token = localStorage.getItem('token');
+    if (!token) { buildSiteWatermark(''); return; }
+    try {
+      var parts = token.split('.');
+      if (parts.length < 2) { buildSiteWatermark(''); return; }
+      var payload = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
+      var label = payload.email || payload.nome || payload.sub || '';
+      buildSiteWatermark(label);
+    } catch(e) { buildSiteWatermark(''); }
+  }
+  // ── end watermark ────────────────────────────────────────────────────────
 </script>
 <script src="/assets/app.js"></script>
 </body>

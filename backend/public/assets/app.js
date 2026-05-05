@@ -709,6 +709,7 @@
     localStorage.removeItem("token");
     state.token = "";
     state.currentUser = null;
+    if (typeof refreshWatermark === 'function') refreshWatermark();
     updateNav();
     showView("public-home");
   }
@@ -2389,27 +2390,8 @@
   }
 
   async function maybeShowMissingRelatorioAlerts(items = []) {
-    const statusTerminais = new Set(['FINALIZADO', 'CANCELADO', 'REPROVADO', 'NO_SHOW']);
-    for (const item of Array.isArray(items) ? items : []) {
-      if (statusTerminais.has(String(item?.status || '').toUpperCase())) continue;
-      const missing = item?.monitoramentoNf?.notasAusentesNoRelatorio || [];
-      if (!missing.length) continue;
-      const key = `${item.id}:${missing.map((nota) => `${nota.numeroNf || ''}-${nota.serie || ''}`).join('|')}`;
-      if (state.missingRelatorioAlertKeys.has(key)) continue;
-      state.missingRelatorioAlertKeys.add(key);
-      await showAppModal({
-        title: 'NF não disponível no relatório',
-        message: [
-          `O agendamento ${item.protocolo || item.id || ''} possui nota(s) que não constam mais no relatório terceirizado atual.`,
-          '',
-          ...missing.map((nota) => `NF ${nota.numeroNf || '-'} / Série ${nota.serie || '-'}`),
-          '',
-          'Este aviso é informativo. Você pode prosseguir com a operação.'
-        ].join('\n'),
-        confirmText: 'Entendi',
-        tone: 'warning'
-      });
-    }
+    // Notificação desabilitada: notas manuais ou fora do relatório são permitidas
+    return;
   }
 
   function renderConsultaAgendamentoNotas(item, { targetDigits = '', searchByDateOnly = false } = {}) {
@@ -2613,6 +2595,7 @@
     bindViewNavigation();
 
     try { syncCurrentUserFromToken(); } catch (err) { console.error('[INIT] syncCurrentUserFromToken falhou:', err); }
+    try { if (typeof refreshWatermark === 'function') refreshWatermark(); } catch (err) {}
     try { updateNav(); } catch (err) { console.error('[INIT] updateNav falhou:', err); }
     try { renderNfRows(); } catch (err) { console.error('[INIT] renderNfRows falhou:', err); }
     try { renderCadastroForm(); } catch (err) { console.error('[INIT] renderCadastroForm falhou:', err); }
@@ -2623,6 +2606,21 @@
     if (internalDateInput && !internalDateInput.value) internalDateInput.value = new Date().toISOString().slice(0, 10);
 
     byId("btnLogout")?.addEventListener("click", logout);
+
+    // Add React Admin link to private nav if not already there
+    (function() {
+      const nav = document.getElementById('privateNav');
+      if (!nav || nav.querySelector('[data-admin-react]')) return;
+      const link = document.createElement('a');
+      link.href = '/admin';
+      link.target = '_blank';
+      link.setAttribute('data-admin-react', '1');
+      link.textContent = 'Admin (React)';
+      link.style.cssText = 'padding:6px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:13px;font-weight:600;text-decoration:none;margin-left:8px';
+      const logoutBtn = nav.querySelector('#btnLogout');
+      if (logoutBtn) nav.insertBefore(link, logoutBtn);
+      else nav.appendChild(link);
+    })();
 
     byId('toggleLoginPassword')?.addEventListener('click', () => {
       const input = byId('loginSenha');
@@ -2653,6 +2651,7 @@
         localStorage.setItem("token", data.token);
         state.currentUser = data.user || null;
         syncCurrentUserFromToken();
+        if (typeof refreshWatermark === 'function') refreshWatermark();
         updateNav();
         await fillSelects();
         if (!applyCheckinRouteContext({ autoValidate: true })) {

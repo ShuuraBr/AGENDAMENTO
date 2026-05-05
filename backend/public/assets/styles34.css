@@ -381,3 +381,11 @@ body.modal-open{overflow:hidden}
 .checkout-avaria-item-grid{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:12px;align-items:start}
 @media (max-width:1180px){.checkout-form-grid-main{grid-template-columns:1fr 1fr}.checkout-field-textarea{grid-column:1 / -1}}
 @media (max-width:760px){.checkout-form-section{padding:14px}.checkout-form-grid-main,.checkout-form-grid-secondary,.checkout-avaria-item-grid{grid-template-columns:1fr}.checkout-field-compact{max-width:none}.checkout-inline-action{width:100%}.checkout-avaria-item-header .checkout-remove-avaria-item{width:100%}.checkout-note-chip{min-width:100%}}
+
+/* ── Site Watermark ─────────────────────────────────────────────── */
+#site-watermark{position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden;display:none}
+#site-watermark.wm-active{display:block}
+.wm-tile{position:absolute;transform:rotate(-30deg);display:flex;flex-direction:column;align-items:center;gap:4px;opacity:.055;user-select:none;white-space:nowrap}
+.wm-tile img{width:28px;height:28px;object-fit:contain}
+.wm-tile span{font-size:11px;font-weight:700;color:#0f172a;letter-spacing:.04em;font-family:Arial,sans-serif}
+/* ── End Watermark ──────────────────────────────────────────────── */

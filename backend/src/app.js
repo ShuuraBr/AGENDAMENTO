@@ -76,9 +76,13 @@ if (rateLimit) {
 const rootPath = path.resolve(__dirname, "..");
 const publicPath = path.join(rootPath, "public");
 const uploadsPath = path.join(rootPath, "uploads");
+const adminDistPath = path.join(rootPath, "dist-admin");
 
 // Servir arquivos estáticos do Frontend (Pasta Public)
 app.use(express.static(publicPath));
+
+// Servir React Admin SPA em /admin/*
+app.use("/admin", express.static(adminDistPath));
 
 // Servir arquivos de Upload – require authentication
 app.use("/uploads", authRequired, express.static(uploadsPath));
@@ -90,6 +94,14 @@ app.use("/api", routes);
 app.get("*", (req, res) => {
   if (req.path.startsWith("/api")) {
     return res.status(404).json({ message: "Rota de API não encontrada" });
+  }
+
+  // React Admin SPA — serve admin.html para qualquer sub-rota de /admin
+  if (req.path.startsWith("/admin")) {
+    const adminIndex = path.join(adminDistPath, "admin.html");
+    return res.sendFile(adminIndex, (err) => {
+      if (err) res.status(500).send("Erro ao carregar o painel admin.");
+    });
   }
 
   const indexPath = path.join(publicPath, "index.html");

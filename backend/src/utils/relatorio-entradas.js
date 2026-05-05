@@ -126,7 +126,8 @@ const RELATORIO_BASE_COLUMNS = [
   ['origemArquivo', 'VARCHAR(255) NULL'],
   ['importedAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP'],
   ['updatedAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'],
-  ['dadosOriginaisJson', 'LONGTEXT NULL']
+  ['dadosOriginaisJson', 'LONGTEXT NULL'],
+  ['inseridoManualmente', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Flag: 1 = inserida manualmente pelo operador'"]
 ];
  
 function buildCreateTableSql() {
@@ -887,13 +888,14 @@ export async function persistManualPendingNota({ fornecedor = '', nota = {}, act
       }
  
       const row = buildManualSpreadsheetRow(fornecedorNormalized, normalizedNota, actor);
-      const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
+      const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson', 'inseridoManualmente'];
       const values = [
         row.rowHash,
         null,
         ...SHEET_COLUMNS.map((column) => row[column] ?? ''),
         'manual-ui',
-        JSON.stringify(row)
+        JSON.stringify(row),
+        1
       ];
       const filtered = await filterColumnsForRelatorioInsert(columns, values);
       const valueSql = filtered.values.map((value) => sqlLiteral(value)).join(', ');
@@ -1476,21 +1478,13 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
   if (!(await ensureRelatorioTable())) {
     throw new Error(relatorioDbDisableReason || 'Banco do relatório terceirizado indisponível.');
   }
- 
-  let existingRows = [];
-  try {
-    existingRows = await prisma.$queryRawUnsafe(`SELECT rowHash, agendamentoId FROM ${quoteIdentifier(TABLE_NAME)} WHERE rowHash IS NOT NULL`);
-  } catch (error) {
-    disableRelatorioDb(error, 'replaceDatabaseSnapshot:readExistingRows');
-    throw error;
-  }
-  const agendamentoMap = new Map((existingRows || []).map((row) => [String(row.rowHash || ''), row.agendamentoId == null ? null : Number(row.agendamentoId)]));
- 
-  await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)}`);
- 
+
+  // APPEND MODE: preserva linhas antigas (mantém histórico e vínculos de agendamentoId).
+  // Linhas que já existem (mesmo rowHash) têm apenas origemArquivo e colunas de planilha atualizadas.
+  // Linhas inseridas manualmente (origemArquivo = 'manual-ui') NUNCA são sobrescritas.
   const deduplicatedRows = [];
   const seenRowHashes = new Set();
- 
+
   for (const row of rows) {
     const normalizedRow = normalizeSpreadsheetRow(row);
     const rowHash = buildRowHash(normalizedRow);
@@ -1498,21 +1492,27 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
     seenRowHashes.add(rowHash);
     deduplicatedRows.push({ normalizedRow, rowHash });
   }
- 
+
   const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
- 
+  const updateAssignments = [...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson']
+    .map((col) => `${quoteIdentifier(col)} = IF(${quoteIdentifier('origemArquivo')} = 'manual-ui', ${quoteIdentifier(col)}, VALUES(${quoteIdentifier(col)}))`)
+    .join(', ');
+
   for (const row of deduplicatedRows) {
     const values = [
       row.rowHash,
-      agendamentoMap.get(row.rowHash) ?? null,
-      ...SHEET_COLUMNS.map((column) => row.normalizedRow[column]),
+      null, // agendamentoId null para novas entradas; ON DUPLICATE KEY não altera agendamentoId
+      ...SHEET_COLUMNS.map((col) => row.normalizedRow[col]),
       sourceFileName || null,
       JSON.stringify(row.normalizedRow)
     ];
     const filtered = await filterColumnsForRelatorioInsert(columns, values);
-    const columnSql = filtered.columns.map((column) => quoteIdentifier(column)).join(', ');
+    const columnSql = filtered.columns.map((col) => quoteIdentifier(col)).join(', ');
     const valueSql = filtered.values.map((value) => sqlLiteral(value)).join(', ');
-    await prisma.$executeRawUnsafe(`INSERT IGNORE INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${valueSql})`);
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO ${quoteIdentifier(TABLE_NAME)} (${columnSql}) VALUES (${valueSql})
+       ON DUPLICATE KEY UPDATE ${updateAssignments}, ${quoteIdentifier('updatedAt')} = CURRENT_TIMESTAMP`
+    );
   }
 }
  

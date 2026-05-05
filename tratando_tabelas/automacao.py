@@ -8,6 +8,8 @@ import sys
 from io import StringIO
 from datetime import datetime
 import tkinter as tk
+from PIL import Image, ImageTk  # precisa: pip install pillow
+import threading
 
 # =========================
 # PARA GERAR OS LOGS DO PROCESSO
@@ -31,13 +33,9 @@ pyautogui.PAUSE = 2
 def mostrar_aviso(mensagem, tempo=3000):
     root = tk.Tk()
     root.title("Automação em execução")
-
-    label = tk.Label(root, text=mensagem, font=("Arial", 12))
-    label.pack(padx=20, pady=20)
-
-    # fecha sozinho após X milissegundos
-    root.after(tempo, root.destroy)
-
+    label=tk.Label(root, text=mensagem,font=("Poppins",12))
+    label.pack(padx=20,pady=20)
+    root.after(tempo,root.destroy)
     root.mainloop()
 
 def agora(): # inserir agora 16:27 - 27/04/2026
@@ -69,16 +67,17 @@ def esperar_imagem(nome_imagem, timeout=5,confidence=0.8):
 
     while time.time() - inicio < timeout: 
         local = pyautogui.locateOnScreen(
-        caminho_imagem(nome_imagem),
-        grayscale=True,
-        confidence=confidence
-    )
+            caminho_imagem(nome_imagem),
+            grayscale=True,
+            confidence=confidence
+        )
 
     if local:
         duracao = round(time.time() - inicio, 2)
         print(f"[{agora()}] Imagem encontrada: {nome_imagem} | Tempo: {duracao}s")
         return local
     time.sleep(1)
+    return None
 
 def esperar_e_clicar(nome_imagem, duplo=False, confidence=0.7):
     while True:

@@ -6,8 +6,28 @@
   <title>Agendamento de Descarga V3.2</title>
   <link rel="stylesheet" href="/assets/styles34.css" />
   <link rel="icon" href="assets/Favicon.png" type="image">
+
+  <style>
+    #site-watermark {
+      position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+      overflow: hidden; display: none;
+    }
+    #site-watermark.wm-active { display: block; }
+    .wm-tile {
+      position: absolute; transform: rotate(-30deg);
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      opacity: 0.055; user-select: none; white-space: nowrap;
+    }
+    .wm-tile img { width: 28px; height: 28px; object-fit: contain; }
+    .wm-tile span {
+      font-size: 11px; font-weight: 700; color: #0f172a;
+      letter-spacing: 0.04em; font-family: Arial, sans-serif;
+    }
+  </style>
 </head>
 <body>
+  <div id="site-watermark" aria-hidden="true"></div>
+
   <header class="topbar">
     <div class="brand">
       <div>
@@ -428,6 +448,38 @@
     }
   });
 })();
+
+  // ── Site watermark ──────────────────────────────────────────────────────
+  function buildSiteWatermark(label) {
+    var el = document.getElementById('site-watermark');
+    if (!el) return;
+    el.innerHTML = '';
+    if (!label) { el.classList.remove('wm-active'); return; }
+    var cols = 6, rows = 10;
+    for (var i = 0; i < cols * rows; i++) {
+      var col = i % cols, row = Math.floor(i / cols);
+      var tile = document.createElement('div');
+      tile.className = 'wm-tile';
+      tile.style.left = (col * 18) + '%';
+      tile.style.top  = (row * 11) + '%';
+      tile.innerHTML = '<img src="/assets/Favicon.png" alt=""><span>' + label.replace(/</g,'&lt;') + '</span>';
+      el.appendChild(tile);
+    }
+    el.classList.add('wm-active');
+  }
+
+  function refreshWatermark() {
+    var token = localStorage.getItem('token');
+    if (!token) { buildSiteWatermark(''); return; }
+    try {
+      var parts = token.split('.');
+      if (parts.length < 2) { buildSiteWatermark(''); return; }
+      var payload = JSON.parse(atob(parts[1].replace(/-/g,'+').replace(/_/g,'/')));
+      var label = payload.email || payload.nome || payload.sub || '';
+      buildSiteWatermark(label);
+    } catch(e) { buildSiteWatermark(''); }
+  }
+  // ── end watermark ────────────────────────────────────────────────────────
 </script>
 <script src="/assets/app.js"></script>
 </body>
