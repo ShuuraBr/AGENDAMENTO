@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agendamento de Descarga V3.2</title>
+  <title>Agendamento de Descarga</title>
   <link rel="stylesheet" href="/assets/styles34.css" />
   <link rel="icon" href="assets/Favicon.png" type="image">
 
@@ -15,12 +15,12 @@
     #site-watermark.wm-active { display: block; }
     .wm-tile {
       position: absolute; transform: rotate(-30deg);
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
-      opacity: 0.055; user-select: none; white-space: nowrap;
+      display: flex; flex-direction: column; align-items: center; gap: 7px;
+      opacity: 0.08; user-select: none; white-space: nowrap;
     }
-    .wm-tile img { width: 28px; height: 28px; object-fit: contain; }
+    .wm-tile img { width: 30px; height: 30px; object-fit: contain; }
     .wm-tile span {
-      font-size: 11px; font-weight: 700; color: #0f172a;
+      font-size: 13px; font-weight: 700; color: #0f172a;
       letter-spacing: 0.04em; font-family: Arial, sans-serif;
     }
   </style>
@@ -174,42 +174,103 @@
     </section>
 
     <section id="dashboard" class="view">
+      <!-- KPIs -->
       <div class="card">
-        <div class="row between">
-          <h2>Painel operacional interno</h2>
-          <button id="loadDashboard">Atualizar</button>
+        <div class="row between" style="margin-bottom:12px">
+          <h2 style="margin:0">Dashboard</h2>
+          <button id="loadDashboard">↻ Atualizar</button>
         </div>
         <div id="kpis" class="grid"></div>
       </div>
 
-      <div class="card mt16">
-        <h3>Filtros</h3>
-        <div class="filters">
-          <select id="fStatus"><option value="">Status</option></select>
-          <select id="fFornecedor"><option value="">Fornecedor</option></select>
-          <select id="fTransportadora"><option value="">Transportadora</option></select>
-          <select id="fMotorista"><option value="">Motorista</option></select>
-          <select id="fPlaca"><option value="">Placa</option></select>
-          <input id="fData" type="date" />
-          <button id="applyFilters">Aplicar filtros</button>
-          <button id="clearFilters">Limpar</button>
+      <!-- Calendário -->
+      <div class="card mt16" id="calendarCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <button id="calPrev" style="padding:6px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;cursor:pointer">‹ Anterior</button>
+          <h3 id="calMonthLabel" style="margin:0;font-size:18px"></h3>
+          <button id="calNext" style="padding:6px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;cursor:pointer">Próximo ›</button>
+        </div>
+        <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div>
+      </div>
+
+      <!-- Gráficos -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px" id="chartsRow">
+        <div class="card">
+          <h4 style="margin:0 0 12px">Peso recebido por dia (kg)</h4>
+          <canvas id="chartPeso" height="200"></canvas>
+        </div>
+        <div class="card">
+          <h4 style="margin:0 0 12px">Ranking — ocorrências por transportadora</h4>
+          <canvas id="chartOcorrencias" height="200"></canvas>
+        </div>
+        <div class="card">
+          <h4 style="margin:0 0 12px">Tempo médio de descarga (min)</h4>
+          <canvas id="chartDescarga" height="200"></canvas>
+        </div>
+        <div class="card">
+          <h4 style="margin:0 0 12px">Tempo médio agendamento → chegada (dias)</h4>
+          <canvas id="chartAgendaChegada" height="200"></canvas>
         </div>
       </div>
 
-      <div class="card mt16">
-        <h3>Agendamentos</h3>
-        <div id="dashboardTable"></div>
+      <!-- Rankings -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+        <div class="card">
+          <h4 style="margin:0 0 12px">🏆 Melhores transportadoras</h4>
+          <div id="rankingMelhores"></div>
+        </div>
+        <div class="card">
+          <h4 style="margin:0 0 12px">⚠️ Mais cancelamentos / no-show / atrasos</h4>
+          <div id="rankingOcorrencias"></div>
+        </div>
       </div>
 
+      <!-- Tabela de agendamentos pendentes -->
+      <div class="card mt16" id="pendingTableCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <h3 style="margin:0">Agendamentos pendentes / em andamento</h3>
+          <div style="display:flex;gap:8px">
+            <input id="pendingSearch" placeholder="Buscar..." style="padding:7px 12px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;width:200px" />
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table id="dashboardTable" style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:#f8fafc">
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Protocolo</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Status</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Data</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Hora</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Fornecedor</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Transportadora</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Doca</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">NFs</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Peso</th>
+              </tr>
+            </thead>
+            <tbody id="dashboardTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- hidden compatibility stubs -->
+      <div style="display:none">
+        <select id="fStatus"></select><select id="fFornecedor"></select>
+        <select id="fTransportadora"></select><select id="fMotorista"></select>
+        <select id="fPlaca"></select><input id="fData" type="date" />
+        <button id="applyFilters"></button><button id="clearFilters"></button>
+      </div>
     </section>
 
     <section id="docas" class="view">
       <div class="card">
         <div class="row between">
-          <h2>Painel de docas e fila de caminhões</h2>
-          <button id="loadDocas">Atualizar painel</button>
+          <h2>Painel de docas</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <label style="margin:0;font-size:13px">Data <input id="docaData" type="date" style="padding:6px 8px;border-radius:8px;border:1px solid #cbd5e1" /></label>
+            <button id="loadDocas">↻ Atualizar</button>
+          </div>
         </div>
-        <label class="mt12">Data<input id="docaData" type="date" /></label>
         <div id="docaPainel" class="grid mt16"></div>
       </div>
     </section>
@@ -324,6 +385,7 @@
             <button id="btnReprovar">Reprovar</button>
             <button id="btnReagendar">Reagendar</button>
             <button id="btnCancelar">Cancelar</button>
+            <button id="btnEditarAgendamento">✏️ Editar</button>
             <button id="btnIniciar">Iniciar descarga</button>
             <button id="btnFinalizar">Finalizar</button>
             <button id="btnNoShow">No-show</button>
@@ -481,6 +543,7 @@
   }
   // ── end watermark ────────────────────────────────────────────────────────
 </script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="/assets/app.js"></script>
 </body>
 </html>

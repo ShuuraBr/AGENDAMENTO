@@ -119,6 +119,77 @@ router.get("/docas", requirePermission("docas.view"), async (req, res) => {
   }
 });
 
+// ── Métricas para o novo dashboard ────────────────────────────────────────
+router.get("/metricas", requirePermission("dashboard.view"), async (req, res) => {
+  try {
+    const all = await (async () => {
+      try { return await prisma.agendamento.findMany({ include: { notasFiscais: true, doca: true } }); }
+      catch { return readAgendamentos(); }
+    })();
+
+    // Peso recebido por dia (apenas FINALIZADO)
+    const pesoMap = {};
+    for (const ag of all) {
+      if (String(ag.status || '').toUpperCase() !== 'FINALIZADO') continue;
+      const d = String(ag.dataAgendada || '').slice(0, 10);
+      if (!d) continue;
+      const peso = Number(ag.pesoTotalKg || ag.quantidadePeso || 0);
+      pesoMap[d] = (pesoMap[d] || 0) + peso;
+    }
+    const pesoPorDia = Object.entries(pesoMap).sort(([a], [b]) => a.localeCompare(b)).slice(-30).map(([data, peso]) => ({ data, peso }));
+
+    // Ranking transportadoras: cancelamentos + no-show + atrasos
+    const transpStats = {};
+    for (const ag of all) {
+      const transp = String(ag.transportadora || 'Desconhecida').trim();
+      if (!transp) continue;
+      if (!transpStats[transp]) transpStats[transp] = { nome: transp, cancelamentos: 0, noShow: 0, atrasos: 0, finalizados: 0, tempoDescargaMin: [], tempoAgendaChegadaMin: [] };
+      const s = String(ag.status || '').toUpperCase();
+      if (s === 'CANCELADO') transpStats[transp].cancelamentos++;
+      if (s === 'NO_SHOW') transpStats[transp].noShow++;
+      if (s === 'FINALIZADO') {
+        transpStats[transp].finalizados++;
+        if (ag.checkinEm && ag.inicioDescargaEm) {
+          const chegada = new Date(ag.checkinEm);
+          const inicio = new Date(ag.inicioDescargaEm);
+          const fim = ag.fimDescargaEm ? new Date(ag.fimDescargaEm) : null;
+          if (fim && !isNaN(fim) && !isNaN(inicio)) transpStats[transp].tempoDescargaMin.push((fim - inicio) / 60000);
+        }
+        if (ag.criadoEm && ag.checkinEm) {
+          const criado = new Date(ag.criadoEm || ag.createdAt);
+          const chegada = new Date(ag.checkinEm);
+          if (!isNaN(criado) && !isNaN(chegada)) transpStats[transp].tempoAgendaChegadaMin.push((chegada - criado) / 60000);
+        }
+        // atraso: checkin depois da horaAgendada
+        if (ag.horaAgendada && ag.dataAgendada && ag.checkinEm) {
+          const scheduled = new Date(`${ag.dataAgendada}T${ag.horaAgendada}`);
+          const chegada = new Date(ag.checkinEm);
+          if (!isNaN(scheduled) && !isNaN(chegada) && chegada > scheduled) transpStats[transp].atrasos++;
+        }
+      }
+    }
+    const avg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+    const rankingOcorrencias = Object.values(transpStats)
+      .map((t) => ({ ...t, ocorrencias: t.cancelamentos + t.noShow + t.atrasos, mediaDescargaMin: avg(t.tempoDescargaMin), mediaAgendaChegadaMin: avg(t.tempoAgendaChegadaMin) }))
+      .filter((t) => t.cancelamentos + t.noShow + t.finalizados + t.atrasos > 0)
+      .sort((a, b) => b.ocorrencias - a.ocorrencias);
+
+    const rankingMelhores = [...rankingOcorrencias]
+      .filter((t) => t.finalizados > 0)
+      .sort((a, b) => (a.ocorrencias / Math.max(a.finalizados, 1)) - (b.ocorrencias / Math.max(b.finalizados, 1)));
+
+    // Média de tempo de recebimento geral (chegou → finalizado)
+    const temposRecebimento = all.filter((ag) => ag.checkinEm && ag.fimDescargaEm).map((ag) => {
+      return (new Date(ag.fimDescargaEm) - new Date(ag.checkinEm)) / 60000;
+    }).filter((v) => v > 0 && v < 600);
+    const mediaRecebimentoMin = avg(temposRecebimento);
+
+    res.json({ pesoPorDia, rankingOcorrencias: rankingOcorrencias.slice(0, 10), rankingMelhores: rankingMelhores.slice(0, 10), mediaRecebimentoMin });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.get("/logs", requirePermission("logs.view"), async (req, res) => {
   const limit = Math.max(10, Math.min(300, Number(req.query?.limit || 80)));
   const entidade = String(req.query?.entidade || "").trim();

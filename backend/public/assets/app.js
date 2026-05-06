@@ -1534,6 +1534,7 @@
       <div class="multi-select-search">
         <input type="text" id="internalFornecedorSearchInput" placeholder="Buscar fornecedor pendente" value="${escapeHtml(state.internalFornecedorSearchTerm || '')}" />
       </div>
+      <div style="padding:6px 10px;font-size:11px;color:#64748b;border-bottom:1px solid #f1f5f9">Não encontrou? Adicione manualmente abaixo ↓</div>
       ${fornecedoresVisiveis.map((item) => {
       const id = String(item?.id || '').trim();
       const checked = selectedIds.has(id) ? 'checked' : '';
@@ -1541,7 +1542,35 @@
       return `<label class="multi-select-option" data-fornecedor-id="${escapeHtml(id)}"><input type="checkbox" data-fornecedor-id="${escapeHtml(id)}" ${checked} /><span class="multi-select-option-text">${escapeHtml(label)}</span></label>`;
     }).join('')}
       ${fornecedoresVisiveis.length ? '' : '<div class="multi-select-empty">Nenhum fornecedor encontrado para esta busca.</div>'}
+      <div style="padding:8px 10px;border-top:1px solid #e2e8f0;display:flex;gap:6px;align-items:center">
+        <input id="internalManualFornecedorInput" style="flex:1;padding:6px 8px;border-radius:8px;border:1px solid #cbd5e1;font-size:13px" placeholder="Adicionar fornecedor manual..." />
+        <button type="button" id="btnAddManualFornecedor" style="padding:6px 10px;border-radius:8px;border:1px solid #10b981;background:#ecfdf5;color:#065f46;cursor:pointer;font-size:13px;white-space:nowrap">+ Adicionar</button>
+      </div>
     `;
+
+    menu.querySelector('#btnAddManualFornecedor')?.addEventListener('click', () => {
+      const inp = menu.querySelector('#internalManualFornecedorInput');
+      const nome = String(inp?.value || '').trim();
+      if (!nome) return;
+      // Create a synthetic fornecedor entry
+      const existente = state.pendingFornecedores.find((f) => String(f.fornecedor || f.nome || '').toLowerCase() === nome.toLowerCase());
+      if (!existente) {
+        const synth = normalizePendingFornecedor({ id: `manual-${Date.now()}`, fornecedor: nome, nome, notas: [], notasFiscais: [], quantidadeNotas: 0, quantidadeVolumes: 0, pesoTotalKg: 0, origemManual: true });
+        state.pendingFornecedores.push(synth);
+        const selectedFornecedores = getSelectedInternalFornecedores();
+        selectedFornecedores.push(synth);
+        applyPendingFornecedoresInterno(selectedFornecedores);
+        renderInternalFornecedorDropdown();
+        return;
+      }
+      // Already in list — just select
+      const selected = getSelectedInternalFornecedores();
+      if (!selected.find((f) => String(f.id) === String(existente.id))) {
+        selected.push(existente);
+        applyPendingFornecedoresInterno(selected);
+        renderInternalFornecedorDropdown();
+      }
+    });
 
     menu.querySelector('#internalFornecedorSearchInput')?.addEventListener('input', (event) => {
       state.internalFornecedorSearchTerm = String(event.target.value || '');
@@ -1554,7 +1583,10 @@
       input.addEventListener('change', () => {
         const checkedIds = [...menu.querySelectorAll('input[type="checkbox"][data-fornecedor-id]:checked')].map((el) => String(el.dataset.fornecedorId || '').trim()).filter(Boolean);
         clearInternalPendingSelectionState({ keepFornecedor: true });
-        applyPendingFornecedoresInterno(checkedIds.map((id) => getPendingFornecedorById(id)).filter(Boolean));
+        const selectedFornecedores = checkedIds.map((id) => getPendingFornecedorById(id)).filter(Boolean);
+        applyPendingFornecedoresInterno(selectedFornecedores);
+        // FIX 5: Auto-fill transportadora
+        autoFillTransportadoraForFornecedores(selectedFornecedores);
       });
     });
 
@@ -1726,7 +1758,9 @@
             const destinoLogo = renderStoreLogo(nota.destino || nota.empresa, { showEmpty: false });
             const dataEntrada = nota.dataEntradaBr || nota.dataEntrada || '-';
             const checked = state.internalSelectedNotaKeys.has(key) ? 'checked' : '';
-            return `<div class="pending-nota-item${dueClass}${manualClass}" title="${escapeHtml(tooltip)}"><label class="pending-nota-card"><div class="pending-nota-check"><input type="checkbox" data-internal-key="${escapeHtml(key)}" ${checked} /><span>${escapeHtml(label)}</span><div class="pending-note-tags">${empresa}${destinoLogo}${manualBadge}${dueBadge}</div></div><div class="pending-nota-meta"><span><strong>Entrada:</strong> ${escapeHtml(dataEntrada)}</span><span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(nota.peso || 0, 3))} kg</span><span><strong>Volumes:</strong> ${escapeHtml(formatDecimalBR(nota.volumes || 0, 3))}</span></div></label></div>`;
+            const volumeValor = Number(nota.volumes ?? 0);
+            const volumeDisplay = Number.isFinite(volumeValor) ? formatDecimalBR(volumeValor, 3) : '0,000';
+            return `<div class="pending-nota-item${dueClass}${manualClass}" title="${escapeHtml(tooltip)}"><label class="pending-nota-card"><div class="pending-nota-check"><input type="checkbox" data-internal-key="${escapeHtml(key)}" ${checked} /><span>${escapeHtml(label)}</span><div class="pending-note-tags">${empresa}${destinoLogo}${manualBadge}${dueBadge}</div></div><div class="pending-nota-meta"><span><strong>Entrada:</strong> ${escapeHtml(dataEntrada)}</span><span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(Number(nota.peso || 0), 3))} kg</span><span><strong>Volumes:</strong> <span class="nota-volume-val" data-nota-key="${escapeHtml(key)}">${escapeHtml(volumeDisplay)}</span> <button type="button" class="btn-edit-volume" data-nota-key="${escapeHtml(key)}" title="Editar volumes">✏️</button></span></div></label></div>`;
           }).join('')}</div></div>`).join('')}
         </div>
       `;
@@ -1741,6 +1775,74 @@
     };
 
     wrap.querySelectorAll('[data-internal-key]').forEach((el) => el.addEventListener('change', sync));
+
+    // Wire up volume edit buttons
+    wrap.querySelectorAll('.btn-edit-volume').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const notaKey = btn.dataset.notaKey;
+        const nota = getCurrentInternalNotas().find((n) => buildInternalNotaKey(normalizePendingNota(n)) === notaKey);
+        if (!nota) return;
+        const currentVol = Number(nota.volumes ?? 0);
+
+        // Clean modal instead of window.prompt
+        const existing = byId('volumeEditModal'); if (existing) existing.remove();
+        const modal = document.createElement('div');
+        modal.id = 'volumeEditModal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.5);display:flex;align-items:center;justify-content:center;z-index:500;padding:16px';
+        modal.innerHTML = `
+          <div style="background:#fff;border-radius:20px;padding:28px 32px;width:100%;max-width:380px;box-shadow:0 24px 64px rgba(15,23,42,0.18);font-family:inherit">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+              <h3 style="margin:0;font-size:17px;color:#0f172a">Editar volumes</h3>
+              <button id="volModalClose" style="background:none;border:none;font-size:22px;cursor:pointer;color:#94a3b8;line-height:1">✕</button>
+            </div>
+            <div style="background:#f8fafc;border-radius:12px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#475569">
+              NF <strong style="color:#0f172a">${escapeHtml(String(nota.numeroNf||'-'))}</strong> · Série <strong style="color:#0f172a">${escapeHtml(String(nota.serie||'-'))}</strong>
+            </div>
+            <label style="display:block;margin-bottom:6px;font-size:13px;font-weight:600;color:#374151">Volumes</label>
+            <input id="volModalInput" type="number" min="0" step="0.001"
+              value="${currentVol}"
+              style="width:100%;padding:12px 14px;border-radius:12px;border:2px solid #e2e8f0;font-size:16px;box-sizing:border-box;outline:none;transition:border .15s"
+              onfocus="this.style.borderColor='#3b82f6'"
+              onblur="this.style.borderColor='#e2e8f0'"
+            />
+            <p id="volModalErr" style="color:#ef4444;font-size:12px;margin:6px 0 0;min-height:18px"></p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px">
+              <button id="volModalSave" style="padding:12px;border-radius:12px;border:none;background:#0f172a;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Salvar</button>
+              <button id="volModalCancel" style="padding:12px;border-radius:12px;border:2px solid #e2e8f0;background:#fff;color:#0f172a;font-weight:600;font-size:14px;cursor:pointer">Cancelar</button>
+            </div>
+          </div>`;
+        document.body.appendChild(modal);
+        const inp = modal.querySelector('#volModalInput');
+        setTimeout(() => { inp?.focus(); inp?.select(); }, 50);
+
+        const closeModal = () => modal.remove();
+        modal.querySelector('#volModalClose').onclick = closeModal;
+        modal.querySelector('#volModalCancel').onclick = closeModal;
+        modal.onclick = (ev) => { if (ev.target === modal) closeModal(); };
+
+        modal.querySelector('#volModalSave').onclick = () => {
+          const raw = String(inp.value).replace(',', '.');
+          const parsed = parseFloat(raw);
+          const errEl = modal.querySelector('#volModalErr');
+          if (!Number.isFinite(parsed) || parsed < 0) { errEl.textContent = 'Informe um número válido.'; return; }
+          nota.volumes = parsed;
+          const fornecedores = getSelectedInternalFornecedores();
+          for (const forn of fornecedores) {
+            const src = Array.isArray(forn.notas) ? forn.notas : (Array.isArray(forn.notasFiscais) ? forn.notasFiscais : []);
+            const idx = src.findIndex((n) => buildInternalNotaKey(normalizePendingNota(n)) === notaKey);
+            if (idx > -1) { src[idx].volumes = parsed; forn.quantidadeVolumes = src.reduce((a, n) => a + Number(n.volumes || 0), 0); }
+          }
+          const span = wrap.querySelector(`.nota-volume-val[data-nota-key="${CSS.escape(notaKey)}"]`);
+          if (span) span.textContent = formatDecimalBR(parsed, 3);
+          updateInternalTotals();
+          closeModal();
+        };
+        // Enter key saves
+        inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') modal.querySelector('#volModalSave').click(); });
+      });
+    });
+
     wrap.querySelector('#btnSelectAllPendingNotas')?.addEventListener('click', () => {
       const checkboxes = [...wrap.querySelectorAll('[data-internal-key]')];
       const allChecked = checkboxes.length > 0 && checkboxes.every((el) => el.checked);
@@ -1868,6 +1970,89 @@
     renderInternalFornecedorDropdown();
     renderPendingNotasInterno();
     await Promise.allSettled([loadFornecedoresPendentesInterno(), loadFornecedoresPendentes(), loadDashboard(), loadDocas(), loadFilterOptions(), loadAuditoria()]);
+  }
+
+  // FIX 5&7: Auto-fill or show per-supplier transportadora fields
+  function autoFillTransportadoraForFornecedores(fornecedores = []) {
+    const form = byId('agendamentoForm');
+    if (!form) return;
+    const transpInput = form.querySelector('[name="transportadora"]');
+    if (!transpInput) return;
+
+    if (fornecedores.length === 0) return;
+    if (fornecedores.length === 1) {
+      // Single supplier: fill from their data or from cadastro link
+      const transp = fornecedores[0]?.transportadora || '';
+      if (transp) transpInput.value = transp;
+      // Hide per-supplier table
+      const perTable = byId('perSupplierTranspContainer');
+      if (perTable) perTable.style.display = 'none';
+      return;
+    }
+
+    // Multi-supplier: check if all share same transportadora
+    const transpValues = fornecedores.map((f) => String(f.transportadora || '').trim()).filter(Boolean);
+    const uniqueTransps = [...new Set(transpValues)];
+    if (uniqueTransps.length === 1) {
+      transpInput.value = uniqueTransps[0];
+      const perTable = byId('perSupplierTranspContainer');
+      if (perTable) perTable.style.display = 'none';
+      return;
+    }
+
+    // Different transportadoras: show per-supplier inputs
+    renderPerSupplierTranspFields(fornecedores);
+  }
+
+  function renderPerSupplierTranspFields(fornecedores = []) {
+    let container = byId('perSupplierTranspContainer');
+    if (!container) {
+      const form = byId('agendamentoForm');
+      const transpLabel = form?.querySelector('[name="transportadora"]')?.closest('label');
+      if (!transpLabel) return;
+      container = document.createElement('div');
+      container.id = 'perSupplierTranspContainer';
+      container.style.cssText = 'grid-column:1/-1;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:12px;margin-top:4px;display:grid;gap:8px';
+      transpLabel.parentNode.insertBefore(container, transpLabel.nextSibling);
+    }
+    container.style.display = 'grid';
+    container.innerHTML = `<strong style="font-size:13px;color:#92400e">Transportadora por fornecedor</strong><p style="margin:0;font-size:12px;color:#78716c">Transportadoras diferentes por fornecedor — preencha individualmente. O campo global será preenchido automaticamente se forem iguais.</p>` +
+      fornecedores.map((forn) => {
+        const nome = String(forn.fornecedor || forn.nome || '').trim();
+        const transp = String(forn.transportadora || '').trim();
+        return `<div style="display:flex;gap:8px;align-items:center"><span style="min-width:140px;font-size:12px;font-weight:600;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(nome)}">${escapeHtml(nome)}</span><input data-per-supplier-transp="${escapeHtml(nome)}" style="flex:1;padding:7px 10px;border-radius:8px;border:1px solid #cbd5e1;font-size:13px" placeholder="Transportadora" value="${escapeHtml(transp)}" /></div>`;
+      }).join('');
+
+    // Wire inputs: if all equal, fill global input
+    container.querySelectorAll('[data-per-supplier-transp]').forEach((inp) => {
+      inp.addEventListener('input', () => {
+        const all = [...container.querySelectorAll('[data-per-supplier-transp]')].map((el) => el.value.trim()).filter(Boolean);
+        const unique = [...new Set(all)];
+        const globalInput = byId('agendamentoForm')?.querySelector('[name="transportadora"]');
+        if (unique.length === 1 && globalInput) globalInput.value = unique[0];
+        // Store per-supplier values back into state
+        container.querySelectorAll('[data-per-supplier-transp]').forEach((el) => {
+          const fornNome = el.dataset.perSupplierTransp;
+          const forn = getSelectedInternalFornecedores().find((f) => String(f.fornecedor || f.nome || '').trim() === fornNome);
+          if (forn) forn.transportadora = el.value.trim();
+        });
+      });
+    });
+  }
+
+  function openKpiModal(titulo, items = []) {
+    const existing = byId('kpiStatusModal');
+    if (existing) existing.remove();
+    const cols = ['protocolo','status','dataAgendada','horaAgendada','fornecedor','transportadora'];
+    const colLabels = { protocolo:'Protocolo', status:'Status', dataAgendada:'Data', horaAgendada:'Hora', fornecedor:'Fornecedor', transportadora:'Transportadora' };
+    const rows = items.map((ag) => `<tr>${cols.map((c) => `<td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:13px;white-space:nowrap">${escapeHtml(String(ag[c] || '-'))}</td>`).join('')}</tr>`).join('');
+    const modal = document.createElement('div');
+    modal.id = 'kpiStatusModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px';
+    modal.innerHTML = `<div style="background:#fff;border-radius:18px;padding:24px;max-width:860px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><h3 style="margin:0">${escapeHtml(titulo)} <span style="font-size:14px;font-weight:400;color:#64748b">(${items.length})</span></h3><button id="kpiModalClose" style="background:none;border:none;font-size:20px;cursor:pointer">✕</button></div>${items.length===0?'<p style="color:#64748b">Nenhum agendamento neste status.</p>':`<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr>${cols.map((c)=>`<th style="text-align:left;padding:8px 10px;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b">${escapeHtml(colLabels[c]||c)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`}</div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('#kpiModalClose').onclick = () => modal.remove();
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
   }
 
   async function loadFornecedoresPendentesInterno() {
@@ -2046,31 +2231,187 @@
     } catch {}
   }
 
+  // ── Calendar state ──────────────────────────────────────────────────────
+  const calState = { year: new Date().getFullYear(), month: new Date().getMonth(), allAgendamentos: [] };
+
+  function renderCalendar() {
+    const { year, month, allAgendamentos } = calState;
+    const label = byId('calMonthLabel');
+    if (label) label.textContent = new Date(year, month, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).replace(/^./, (c) => c.toUpperCase());
+    const grid = byId('calendarGrid');
+    if (!grid) return;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const dayNames = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    const agByDay = {};
+    for (const ag of allAgendamentos) {
+      const d = String(ag.dataAgendada || '').slice(0, 10);
+      if (!d) continue;
+      const [y, m, dd] = d.split('-').map(Number);
+      if (y === year && m - 1 === month) { if (!agByDay[dd]) agByDay[dd] = []; agByDay[dd].push(ag); }
+    }
+    let html = dayNames.map((d) => `<div style="text-align:center;font-size:11px;font-weight:700;color:#64748b;padding:4px 0">${d}</div>`).join('');
+    for (let i = 0; i < firstDay; i++) html += '<div></div>';
+    for (let day = 1; day <= daysInMonth; day++) {
+      const cellDate = new Date(year, month, day); cellDate.setHours(0,0,0,0);
+      const isPast = cellDate < today;
+      const isToday = cellDate.getTime() === today.getTime();
+      const ags = agByDay[day] || [];
+      const dot = ags.length ? `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#3b82f6;margin-top:2px"></span>` : '';
+      html += `<div data-cal-day="${day}" style="min-height:52px;padding:6px;border-radius:10px;border:1px solid ${isToday?'#3b82f6':'#e2e8f0'};background:${isPast?'#f8fafc':'#fff'};cursor:${ags.length?'pointer':'default'};opacity:${isPast&&!isToday?0.55:1};text-align:center">
+        <span style="font-size:14px;font-weight:${isToday?700:400};color:${isToday?'#1d4ed8':'#0f172a'}">${day}</span>
+        ${ags.length ? `<div style="font-size:10px;color:#475569;margin-top:2px">${ags.length} ag.</div>` : ''}
+        <div>${dot}</div>
+      </div>`;
+    }
+    grid.innerHTML = html;
+    grid.querySelectorAll('[data-cal-day]').forEach((cell) => {
+      const day = Number(cell.dataset.calDay);
+      const ags = agByDay[day] || [];
+      if (!ags.length) return;
+      cell.addEventListener('click', () => openDayModal(year, month, day, ags));
+    });
+  }
+
+  function openDayModal(year, month, day, ags = []) {
+    const dateLabel = new Date(year, month, day).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+    const totalNf = ags.reduce((a, ag) => a + Number(ag.quantidadeNotas || 0), 0);
+    const totalVol = ags.reduce((a, ag) => a + Number(ag.quantidadeVolumes || 0), 0);
+    const totalPeso = ags.reduce((a, ag) => a + Number(ag.pesoTotalKg || ag.quantidadePeso || 0), 0);
+    const rows = ags.map((ag) => `<tr>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(ag.protocolo||'-')}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(ag.horaAgendada||'-')}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(ag.fornecedor||'-')}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(ag.transportadora||'-')}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:12px"><span style="padding:2px 8px;border-radius:99px;font-size:11px;background:${statusColor2(ag.status)}20;color:${statusColor2(ag.status)}">${escapeHtml(ag.status||'-')}</span></td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(formatIntegerBR(ag.quantidadeNotas||0))}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(formatDecimalBR(ag.quantidadeVolumes||0,3))}</td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(formatDecimalBR(ag.pesoTotalKg||ag.quantidadePeso||0,3))}</td>
+    </tr>`).join('');
+    const existing = byId('dayModal'); if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'dayModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px';
+    modal.innerHTML = `<div style="background:#fff;border-radius:18px;padding:24px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h3 style="margin:0;text-transform:capitalize">${escapeHtml(dateLabel)}</h3>
+        <button id="dayModalClose" style="background:none;border:none;font-size:20px;cursor:pointer">✕</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+        ${[['Agendamentos',ags.length],['Notas',totalNf],['Volumes',formatDecimalBR(totalVol,3)],['Peso (kg)',formatDecimalBR(totalPeso,3)]].map(([l,v])=>`<div style="background:#f8fafc;border-radius:10px;padding:12px;text-align:center"><div style="font-size:11px;color:#64748b;text-transform:uppercase">${l}</div><div style="font-size:22px;font-weight:700;color:#0f172a">${v}</div></div>`).join('')}
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>${['Protocolo','Hora','Fornecedor','Transportadora','Status','NFs','Volumes','Peso'].map((h)=>`<th style="text-align:left;padding:8px;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b">${h}</th>`).join('')}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('#dayModalClose').onclick = () => modal.remove();
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  }
+
+  function statusColor2(s=''){const m={PENDENTE_APROVACAO:'#f59e0b',APROVADO:'#10b981',CANCELADO:'#ef4444',NO_SHOW:'#8b5cf6',REAGENDADO:'#3b82f6',FINALIZADO:'#64748b',CHEGOU:'#06b6d4',EM_DESCARGA:'#f97316'};return m[s]||'#94a3b8';}
+
+  let _chartInstances = {};
+  function destroyChart(id) { if (_chartInstances[id]) { _chartInstances[id].destroy(); delete _chartInstances[id]; } }
+
+  function renderCharts(metricas = {}) {
+    const { pesoPorDia = [], rankingOcorrencias = [], rankingMelhores = [], mediaRecebimentoMin } = metricas;
+
+    // Peso por dia
+    destroyChart('chartPeso');
+    const ctxPeso = byId('chartPeso')?.getContext('2d');
+    if (ctxPeso && pesoPorDia.length) {
+      _chartInstances['chartPeso'] = new Chart(ctxPeso, {
+        type: 'bar',
+        data: { labels: pesoPorDia.map((d) => d.data.slice(5)), datasets: [{ label: 'Peso (kg)', data: pesoPorDia.map((d) => d.peso), backgroundColor: '#3b82f620', borderColor: '#3b82f6', borderWidth: 2 }] },
+        options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    // Ocorrências por transportadora
+    destroyChart('chartOcorrencias');
+    const ctxOc = byId('chartOcorrencias')?.getContext('2d');
+    if (ctxOc && rankingOcorrencias.length) {
+      const top = rankingOcorrencias.slice(0, 8);
+      _chartInstances['chartOcorrencias'] = new Chart(ctxOc, {
+        type: 'bar',
+        data: { labels: top.map((t) => t.nome.length > 14 ? t.nome.slice(0,14)+'…' : t.nome), datasets: [
+          { label: 'Cancelamentos', data: top.map((t) => t.cancelamentos), backgroundColor: '#ef444440', borderColor: '#ef4444', borderWidth: 2 },
+          { label: 'No-show', data: top.map((t) => t.noShow), backgroundColor: '#8b5cf640', borderColor: '#8b5cf6', borderWidth: 2 },
+          { label: 'Atrasos', data: top.map((t) => t.atrasos), backgroundColor: '#f59e0b40', borderColor: '#f59e0b', borderWidth: 2 },
+        ]},
+        options: { responsive: true, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } }
+      });
+    }
+
+    // Tempo médio de descarga
+    destroyChart('chartDescarga');
+    const ctxDesc = byId('chartDescarga')?.getContext('2d');
+    if (ctxDesc && rankingOcorrencias.length) {
+      const withData = rankingOcorrencias.filter((t) => t.mediaDescargaMin != null).slice(0, 8);
+      _chartInstances['chartDescarga'] = new Chart(ctxDesc, {
+        type: 'horizontalBar',
+        data: { labels: withData.map((t) => t.nome.length > 16 ? t.nome.slice(0,16)+'…' : t.nome), datasets: [{ label: 'Minutos', data: withData.map((t) => t.mediaDescargaMin), backgroundColor: '#10b98140', borderColor: '#10b981', borderWidth: 2 }] },
+        options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+      });
+    }
+
+    // Tempo agendamento → chegada
+    destroyChart('chartAgendaChegada');
+    const ctxAC = byId('chartAgendaChegada')?.getContext('2d');
+    if (ctxAC && rankingOcorrencias.length) {
+      const withData = rankingOcorrencias.filter((t) => t.mediaAgendaChegadaMin != null).slice(0, 8);
+      _chartInstances['chartAgendaChegada'] = new Chart(ctxAC, {
+        type: 'horizontalBar',
+        data: { labels: withData.map((t) => t.nome.length > 16 ? t.nome.slice(0,16)+'…' : t.nome), datasets: [{ label: 'Min desde agendamento', data: withData.map((t) => Math.round(t.mediaAgendaChegadaMin / 60 * 10) / 10), backgroundColor: '#6366f140', borderColor: '#6366f1', borderWidth: 2 }] },
+        options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } } }
+      });
+    }
+
+    // Rankings HTML
+    const mkRanking = (id, items, fields) => {
+      const el = byId(id); if (!el) return;
+      if (!items.length) { el.innerHTML = '<p style="color:#64748b;font-size:13px">Sem dados suficientes.</p>'; return; }
+      el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">${items.map((t, i) => `<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:8px 4px;font-weight:700;color:#64748b;width:24px">${i+1}</td><td style="padding:8px 4px;font-weight:600">${escapeHtml(t.nome)}</td>${fields.map((f) => `<td style="padding:8px 4px;color:#475569;text-align:right">${escapeHtml(String(t[f.key] ?? '-'))} <small style="color:#94a3b8">${f.label}</small></td>`).join('')}</tr>`).join('')}</table>`;
+    };
+    mkRanking('rankingMelhores', rankingMelhores, [{ key: 'finalizados', label: 'finalizados' }, { key: 'ocorrencias', label: 'ocorrências' }]);
+    mkRanking('rankingOcorrencias', rankingOcorrencias, [{ key: 'cancelamentos', label: 'cancel.' }, { key: 'noShow', label: 'no-show' }, { key: 'atrasos', label: 'atrasos' }]);
+
+    // Media recebimento
+    const mediaEl = byId('mediaRecebimento');
+    if (mediaEl) mediaEl.textContent = mediaRecebimentoMin != null ? `${mediaRecebimentoMin} min` : '-';
+  }
+
   async function loadDashboard() {
     if (!hasPermission('dashboard.view')) return;
-    const params = new URLSearchParams();
-    Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
-    const data = await api(`/api/dashboard/operacional?${params.toString()}`);
-    const kpis = byId("kpis");
+    const [data, metricas] = await Promise.all([
+      api('/api/dashboard/operacional'),
+      api('/api/dashboard/metricas').catch(() => ({}))
+    ]);
+    const kpis = byId('kpis');
     const hiddenKpis = new Set(['documentos', 'volumes', 'origem', 'valorTotal']);
-    const labels = {
-      total: 'Total',
-      pendentes: 'Pendentes',
-      aprovados: 'Aprovados',
-      chegou: 'Chegou',
-      emDescarga: 'Em descarga',
-      finalizados: 'Finalizados',
-      cancelados: 'Cancelados',
-      noShow: 'No-show',
-      pesoKg: 'Peso (kg)'
-    };
+    const labels = { total:'Total', pendentes:'Pendentes', aprovados:'Aprovados', chegou:'Chegou', emDescarga:'Em descarga', finalizados:'Finalizados', cancelados:'Cancelados', noShow:'No-show', pesoKg:'Peso (kg)' };
+    const allAgendamentos = data.agendamentos || [];
+    const kpiModalStatuses = new Set(['CANCELADO','NO_SHOW','REAGENDADO','FINALIZADO']);
+    const extraKpiKeys = { cancelados: 'CANCELADO', noShow: 'NO_SHOW', reagendados: 'REAGENDADO', finalizados: 'FINALIZADO' };
+    const kpiData = { ...data.kpis };
+    for (const [kpiKey, status] of Object.entries(extraKpiKeys)) {
+      kpiData[kpiKey] = allAgendamentos.filter((ag) => String(ag.status || '').toUpperCase() === status).length;
+    }
     if (kpis) {
       kpis.className = 'grid kpi-grid';
       kpis.innerHTML = '';
-      Object.entries(data.kpis || {}).forEach(([k, v]) => {
+      const kpiModalMap = { finalizados: 'FINALIZADO', cancelados: 'CANCELADO', noShow: 'NO_SHOW', reagendados: 'REAGENDADO' };
+      Object.entries(kpiData || {}).forEach(([k, v]) => {
         if (hiddenKpis.has(String(k || ''))) return;
         const div = document.createElement('div');
-        div.className = 'kpi';
+        const modalStatus = kpiModalMap[k];
+        div.className = 'kpi' + (modalStatus ? ' kpi-clickable' : '');
+        if (modalStatus) div.title = `Clique para ver ${labels[k] || k}`;
         const key = String(k || '');
         let formatted = v;
         if (key.includes('valor')) formatted = Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -2078,13 +2419,79 @@
         else if (typeof v === 'number') formatted = formatIntegerBR(v);
         const length = String(formatted ?? '').length;
         const valueClass = length > 16 ? 'kpi-value kpi-value-compact' : length > 11 ? 'kpi-value kpi-value-tight' : 'kpi-value';
-        const label = labels[key] || statusLabel(key);
+        const label = labels[k] || statusLabel(k);
         div.innerHTML = `<span class="kpi-label" title="${escapeHtml(label)}">${escapeHtml(label)}</span><span class="${valueClass}" title="${escapeHtml(formatted)}">${escapeHtml(formatted)}</span>`;
+        if (modalStatus) {
+          div.addEventListener('click', () => {
+            const items = allAgendamentos.filter((ag) => String(ag.status || '').toUpperCase() === modalStatus);
+            openKpiModal(labels[k] || k, items);
+          });
+        }
         kpis.appendChild(div);
       });
     }
-    renderOperationalTable(data.agendamentos || [], { targetId: 'dashboardTable', includeActions: true });
+    // Update calendar
+    calState.allAgendamentos = allAgendamentos;
+    renderCalendar();
+    // Charts
+    renderCharts(metricas);
+    // Wire calendar nav every time dashboard loads (re-clone to avoid duplicate listeners)
+    const prevBtn = byId('calPrev'); const nextBtn = byId('calNext');
+    if (prevBtn) {
+      const pClone = prevBtn.cloneNode(true); prevBtn.parentNode.replaceChild(pClone, prevBtn);
+      pClone.addEventListener('click', () => { calState.month--; if (calState.month < 0) { calState.month = 11; calState.year--; } renderCalendar(); });
+    }
+    if (nextBtn) {
+      const nClone = nextBtn.cloneNode(true); nextBtn.parentNode.replaceChild(nClone, nextBtn);
+      nClone.addEventListener('click', () => { calState.month++; if (calState.month > 11) { calState.month = 0; calState.year++; } renderCalendar(); });
+    }
+    // Render pending table
+    const activeStatuses = new Set(['PENDENTE_APROVACAO','APROVADO','CHEGOU','EM_DESCARGA']);
+    const pending = allAgendamentos.filter((ag) => activeStatuses.has(String(ag.status||'').toUpperCase()));
+    renderPendingTable(pending);
+
+    // Wire search
+    const searchInput = byId('pendingSearch');
+    if (searchInput && !searchInput.dataset.bound) {
+      searchInput.dataset.bound = '1';
+      searchInput.addEventListener('input', () => {
+        const term = searchInput.value.trim().toLowerCase();
+        const filtered = term ? pending.filter((ag) => JSON.stringify(ag).toLowerCase().includes(term)) : pending;
+        renderPendingTable(filtered);
+      });
+    }
+
     await maybeShowMissingRelatorioAlerts(data.agendamentos || []);
+  }
+
+  const STATUS_COLORS = { PENDENTE_APROVACAO:'#f59e0b', APROVADO:'#10b981', CANCELADO:'#ef4444', NO_SHOW:'#8b5cf6', REAGENDADO:'#3b82f6', FINALIZADO:'#64748b', CHEGOU:'#06b6d4', EM_DESCARGA:'#f97316' };
+  const STATUS_LABELS = { PENDENTE_APROVACAO:'Pendente', APROVADO:'Aprovado', CANCELADO:'Cancelado', NO_SHOW:'No-show', REAGENDADO:'Reagendado', FINALIZADO:'Finalizado', CHEGOU:'Chegou', EM_DESCARGA:'Em descarga' };
+
+  function renderPendingTable(items = []) {
+    const tbody = byId('dashboardTableBody');
+    if (!tbody) return;
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="padding:24px;text-align:center;color:#94a3b8;font-size:13px">Nenhum agendamento pendente.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map((ag, i) => {
+      const color = STATUS_COLORS[ag.status] || '#94a3b8';
+      const label = STATUS_LABELS[ag.status] || ag.status || '-';
+      const bg = i % 2 === 0 ? '#fff' : '#fafafa';
+      return `<tr style="background:${bg};transition:background .1s" onmouseenter="this.style.background='#f0f9ff'" onmouseleave="this.style.background='${bg}'">
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;white-space:nowrap">${escapeHtml(ag.protocolo||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9">
+          <span style="padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;background:${color}18;color:${color};white-space:nowrap">${escapeHtml(label)}</span>
+        </td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;white-space:nowrap">${escapeHtml(ag.dataAgendada||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;white-space:nowrap">${escapeHtml(ag.horaAgendada||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#334155;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(ag.fornecedor||'')}">${escapeHtml(ag.fornecedor||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#334155;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(ag.transportadora||'')}">${escapeHtml(ag.transportadora||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;white-space:nowrap">${escapeHtml(ag.doca?.codigo || ag.docaCodigo || String(ag.docaId||'-'))}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;text-align:right">${escapeHtml(formatIntegerBR(ag.quantidadeNotas||0))}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;text-align:right;white-space:nowrap">${escapeHtml(formatDecimalBR(ag.pesoTotalKg||ag.quantidadePeso||0,3))} kg</td>
+      </tr>`;
+    }).join('');
   }
 
   function formatAuditDate(value) {
@@ -2146,85 +2553,106 @@
     }
   }
 
-  function buildDocaModalHtml(doca = {}) {
+  function buildDocaModalHtml(doca = {}, { isADefinir = false, docaOptions = [] } = {}) {
     const fila = Array.isArray(doca?.fila) ? doca.fila : [];
     const linhas = fila.map((item) => {
       const notas = Array.isArray(item?.notasDetalhes) ? item.notasDetalhes : [];
-      const nfList = notas.length
-        ? notas.map((nota) => escapeHtml(nota.numeroNf || '-')).join(', ')
-        : '-';
+      const nfList = notas.length ? notas.map((nota) => escapeHtml(nota.numeroNf || '-')).join(', ') : '-';
       const destinos = Array.isArray(item?.destinos) && item.destinos.length ? item.destinos.join(', ') : '-';
-      return `
-        <tr>
-          <td>${escapeHtml(item.protocolo || '-')}</td>
-          <td>${nfList}</td>
-          <td>${escapeHtml(destinos)}</td>
-          <td>${escapeHtml(formatDecimalBR(item.totalVolumes || 0, 3))}</td>
-          <td>${escapeHtml(formatDecimalBR(item.pesoTotalKg || 0, 3))} kg</td>
-        </tr>
-      `;
+      const definirBtn = isADefinir
+        ? `<td style="padding:8px"><button type="button" class="btn-definir-doca" data-ag-id="${escapeHtml(String(item.agendamentoId||item.id||''))}" style="padding:5px 10px;border-radius:7px;border:1px solid #3b82f6;background:#eff6ff;color:#1d4ed8;font-size:12px;cursor:pointer">📍 Definir doca</button></td>`
+        : '';
+      return `<tr>
+        <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(String(item.horaAgendada||'-'))}</td>
+        <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(item.protocolo || '-')}</td>
+        <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(item.fornecedor||'-')}</td>
+        <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(item.transportadora||'-')}</td>
+        <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${nfList}</td>
+        <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(destinos)}</td>
+        <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(formatDecimalBR(item.totalVolumes || 0, 3))}</td>
+        <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(formatDecimalBR(item.pesoTotalKg || 0, 3))} kg</td>
+        ${definirBtn}
+      </tr>`;
     }).join('');
-
+    const thDefinir = isADefinir ? '<th style="padding:8px">Ação</th>' : '';
     return `
-      <div class="doca-modal-summary">
-        <div><strong>Doca:</strong> ${escapeHtml(doca.codigo || '-')}</div>
-        <div><strong>Agendamentos:</strong> ${escapeHtml(formatIntegerBR(doca.totalAgendamentos || fila.length || 0))}</div>
-        <div><strong>Total de NF:</strong> ${escapeHtml(formatIntegerBR(doca.totalNotas || 0))}</div>
-        <div><strong>Total de volumes:</strong> ${escapeHtml(formatDecimalBR(doca.totalVolumes || 0, 3))}</div>
-        <div><strong>Total de peso:</strong> ${escapeHtml(formatDecimalBR(doca.totalPesoKg || 0, 3))} kg</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">
+        ${[['Agendamentos',formatIntegerBR(doca.totalAgendamentos||fila.length||0)],['NFs',formatIntegerBR(doca.totalNotas||0)],['Volumes',formatDecimalBR(doca.totalVolumes||0,3)],['Peso',formatDecimalBR(doca.totalPesoKg||0,3)+' kg']].map(([l,v])=>`<div style="background:#f8fafc;border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:#64748b;text-transform:uppercase">${l}</div><div style="font-size:18px;font-weight:700">${escapeHtml(v)}</div></div>`).join('')}
       </div>
-      <table class="table doca-modal-table">
-        <thead>
-          <tr>
-            <th>Agendamento</th>
-            <th>NF(s)</th>
-            <th>Destino(s)</th>
-            <th>Volumes</th>
-            <th>Peso</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${linhas || '<tr><td colspan="5">Sem fila para a data selecionada.</td></tr>'}
-        </tbody>
-      </table>
+      <div style="overflow-x:auto" id="docaFilaWrap">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>${['Hora','Agendamento','Fornecedor','Transportadora','NF(s)','Destino(s)','Volumes','Peso',thDefinir?'Ação':''].filter(Boolean).map((h)=>`<th style="text-align:left;padding:8px;border-bottom:2px solid #e2e8f0;font-size:12px;color:#64748b;white-space:nowrap">${h}</th>`).join('')}</tr></thead>
+          <tbody id="docaFilaBody">${linhas || '<tr><td colspan="8" style="padding:12px;text-align:center;color:#64748b">Sem agendamentos para esta data.</td></tr>'}</tbody>
+        </table>
+      </div>
     `;
   }
 
   async function loadDocas() {
     if (!hasPermission('docas.view')) return;
-    const date = byId("docaData")?.value || "";
-    const data = await api(`/api/dashboard/docas${date ? `?dataAgendada=${encodeURIComponent(date)}` : ""}`);
-    const wrap = byId("docaPainel");
+    const date = byId('docaData')?.value || '';
+    const [data, allDocasCad] = await Promise.all([
+      api(`/api/dashboard/docas${date ? `?dataAgendada=${encodeURIComponent(date)}` : ''}`),
+      api('/api/cadastros/docas').catch(() => [])
+    ]);
+    const wrap = byId('docaPainel');
     if (!wrap) return;
 
-    wrap.innerHTML = data.map((d) => `
-      <div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
-        <button type="button" class="doca-card-toggle" data-doca-open="${escapeHtml(d.docaId || d.codigo)}">
+    wrap.innerHTML = data.map((d) => {
+      const isADefinir = String(d.codigo || '').toLowerCase().includes('definir') || String(d.codigo || '').toLowerCase() === 'a definir';
+      const fila = Array.isArray(d.fila) ? d.fila : [];
+      return `<div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
+        <button type="button" class="doca-card-toggle" data-doca-open="${escapeHtml(String(d.docaId||d.codigo))}">
           <div>
-            <h3>${escapeHtml(d.codigo)}</h3>
+            <h3>${isADefinir ? '⚠️ ' : ''}${escapeHtml(d.codigo)}</h3>
             <small>${escapeHtml(d.descricao || '')}</small>
           </div>
           <span class="badge ${statusTone(d.ocupacaoAtual, d.semaforo)}">${escapeHtml(d.semaforo)}</span>
         </button>
         <div class="doca-detail-summary mt12 doca-meta-summary">
-          <span><strong>Agendamentos:</strong> ${escapeHtml(formatIntegerBR(d.totalAgendamentos || (Array.isArray(d.fila) ? d.fila.length : 0) || 0))}</span>
+          <span><strong>Agendamentos:</strong> ${escapeHtml(formatIntegerBR(d.totalAgendamentos || fila.length || 0))}</span>
           <span><strong>Total NF:</strong> ${escapeHtml(formatIntegerBR(d.totalNotas || 0))}</span>
-          <span><strong>Total peso:</strong> ${escapeHtml(formatDecimalBR(d.totalPesoKg || 0, 3))} kg</span>
-          <span><strong>Total volume:</strong> ${escapeHtml(formatDecimalBR(d.totalVolumes || 0, 3))}</span>
+          <span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(d.totalPesoKg || 0, 3))} kg</span>
+          <span><strong>Volumes:</strong> ${escapeHtml(formatDecimalBR(d.totalVolumes || 0, 3))}</span>
         </div>
-      </div>
-    `).join("");
+      </div>`;
+    }).join('');
 
     wrap.querySelectorAll('[data-doca-open]').forEach((btn) => btn.addEventListener('click', async () => {
       const key = String(btn.dataset.docaOpen || '').trim();
       const doca = (Array.isArray(data) ? data : []).find((item) => String(item.docaId || item.codigo) === key);
       if (!doca) return;
-      await showHtmlModal({
-        title: `Doca ${doca.codigo || ''}`.trim(),
-        html: buildDocaModalHtml(doca),
-        confirmText: 'Fechar',
-        wide: true
-      });
+      const isADefinir = String(doca.codigo || '').toLowerCase().includes('definir') || String(doca.codigo || '').toLowerCase() === 'a definir';
+      const modalHtml = buildDocaModalHtml(doca, { isADefinir, docaOptions: Array.isArray(allDocasCad) ? allDocasCad : [] });
+
+      // Wire "Definir doca" buttons BEFORE awaiting (inject into modal body before it's shown)
+      showHtmlModal({ title: (isADefinir ? '⚠️ ' : '') + `Doca ${doca.codigo || ''}`.trim(), html: modalHtml, confirmText: 'Fechar', wide: true });
+      // Give DOM a tick to render then wire
+      setTimeout(() => {
+        document.querySelectorAll('.btn-definir-doca').forEach((btn2) => {
+          btn2.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const agId = btn2.dataset.agId;
+            if (!agId) return;
+            const docasList = Array.isArray(allDocasCad) ? allDocasCad.filter((dc) => !String(dc.codigo||'').toLowerCase().includes('definir')) : [];
+            if (!docasList.length) { alert('Nenhuma doca disponível.'); return; }
+            // Show inline dropdown
+            const cell = btn2.closest('td');
+            if (!cell) return;
+            const optionsHtml = docasList.map((dc) => `<option value="${escapeHtml(String(dc.id))}">${escapeHtml(dc.codigo)}</option>`).join('');
+            cell.innerHTML = `<select id="selDefinirDoca${agId}" style="padding:7px 10px;border-radius:8px;border:1px solid #3b82f6;font-size:13px;min-width:140px"><option value="">Escolha a doca...</option>${optionsHtml}</select>`;
+            cell.querySelector('select').addEventListener('change', async (ev) => {
+              const docaId = ev.target.value;
+              if (!docaId) return;
+              try {
+                await api(`/api/agendamentos/${agId}/definir-doca`, { method: 'PATCH', body: JSON.stringify({ docaId: Number(docaId) }) });
+                cell.innerHTML = '<span style="color:#10b981;font-weight:600;font-size:12px">✓ Doca definida</span>';
+                setTimeout(() => loadDocas(), 800);
+              } catch (err) { cell.innerHTML = `<span style="color:#ef4444;font-size:12px">${err.message}</span>`; }
+            });
+          });
+        });
+      }, 80);
     }));
   }
 
@@ -2722,9 +3150,8 @@
         payload.quantidadeVolumes = parseNumberBR(byId('internalQuantidadeVolumes')?.value || 0);
         payload.pesoTotalKg = parseNumberBR(byId('internalPesoTotalKg')?.value || 0);
         payload.valorTotalNf = parseNumberBR(byId('internalValorTotalNf')?.value || 0);
-        if (!payload.fornecedorPendenteInterno) throw new Error('Selecione o fornecedor pendente.');
-        if (!payload.fornecedor) throw new Error('Fornecedor pendente inválido.');
-        if (!payload.notasFiscais.length) throw new Error('Selecione ao menos uma NF pendente para o agendamento.');
+        if (!payload.fornecedor && !payload.fornecedorPendenteInterno) throw new Error('Selecione ou informe um fornecedor.');
+        // Permite agendamento com 0 NFs (fornecedor manual / sem relatório)
         delete payload.fornecedorPendenteInterno;
         const awareness = await confirmAwarenessForPayload(payload);
         if (awareness.analysis?.requiresAwareness && !awareness.confirmed) return;
@@ -2777,6 +3204,24 @@
       return postStatus("reagendar", body);
     }, "Agendamento reagendado."));
     byId("btnCancelar")?.addEventListener("click", async () => handleOp(() => postStatus("cancelar", { motivo: "Cancelado via painel" }), "Agendamento cancelado."));
+
+    byId("btnEditarAgendamento")?.addEventListener("click", async () => {
+      const id = currentId();
+      if (!id) { alert('Selecione um agendamento para editar.'); return; }
+      try {
+        const item = await api(`/api/agendamentos/${id}`);
+        const statusBloqueado = ['APROVADO', 'CHEGOU', 'EM_DESCARGA', 'FINALIZADO'].includes(String(item.status || '').toUpperCase());
+        if (statusBloqueado) {
+          if (!confirm(`Agendamento ${item.protocolo} está ${item.status}. Para editar será necessário cancelá-lo e criar um novo. Continuar?`)) return;
+          await api(`/api/agendamentos/${id}/cancelar`, { method: 'POST', body: JSON.stringify({ motivo: 'Cancelado para edição pelo operador.' }) });
+          byId('operacaoMsg').textContent = `Agendamento ${item.protocolo} cancelado. Preencha o formulário acima para criar um novo.`;
+          await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadFornecedoresPendentesInterno()]);
+          return;
+        }
+        // Not approved — show inline edit fields
+        openInlineEditModal(item);
+      } catch (err) { byId('operacaoMsg').textContent = err.message; }
+    });
     byId("btnIniciar")?.addEventListener("click", async () => handleOp(() => postStatus("iniciar"), "Descarga iniciada."));
     byId("btnFinalizar")?.addEventListener("click", async () => handleOp(async () => {
       let finalizacaoContext = null;

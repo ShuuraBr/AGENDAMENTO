@@ -389,3 +389,217 @@ body.modal-open{overflow:hidden}
 .wm-tile img{width:28px;height:28px;object-fit:contain}
 .wm-tile span{font-size:11px;font-weight:700;color:#0f172a;letter-spacing:.04em;font-family:Arial,sans-serif}
 /* ── End Watermark ──────────────────────────────────────────────── */
+
+/* KPI clicável */
+.kpi-clickable{cursor:pointer;transition:all .15s}
+.kpi-clickable:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.12)}
+.kpi-clickable.kpi-active{outline:3px solid #111827;outline-offset:2px}
+/* Volume edit btn */
+.btn-edit-volume{background:none;border:none;cursor:pointer;font-size:11px;padding:0 2px;opacity:.7}
+.btn-edit-volume:hover{opacity:1}
+
+/* ── Dashboard calendar ─────────────────────────────────────────── */
+#calendarGrid div[data-cal-day]:hover { background:#eff6ff !important; }
+#chartsRow .card { padding:16px }
+#rankingMelhores table, #rankingOcorrencias table { font-size:13px }
+
+/* ═══════════════════════════════════════════════════════════════════
+   DESIGN SYSTEM OVERHAUL v5
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Base ── */
+*, *::before, *::after { box-sizing: border-box; }
+body { background: #f1f5f9; font-family: 'Inter', system-ui, -apple-system, Arial, sans-serif; color: #0f172a; margin: 0; }
+
+/* ── Cards ── */
+.card {
+  background: #fff;
+  border-radius: 18px;
+  padding: 22px 24px;
+  box-shadow: 0 1px 4px rgba(15,23,42,.06), 0 4px 16px rgba(15,23,42,.04);
+  border: 1px solid #e8ecf0;
+}
+.card h2, .card h3, .card h4 { margin-top: 0; }
+
+/* ── KPI grid ── */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px,1fr)); gap: 12px; }
+.kpi {
+  background: #fff;
+  border: 1px solid #e8ecf0;
+  border-radius: 16px;
+  padding: 16px 18px;
+  display: grid;
+  gap: 4px;
+  box-shadow: 0 1px 3px rgba(15,23,42,.05);
+  transition: box-shadow .15s, transform .15s;
+}
+.kpi-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.kpi-value { font-size: 26px; font-weight: 800; color: #0f172a; line-height: 1.1; }
+.kpi-value-tight { font-size: 20px; font-weight: 700; }
+.kpi-value-compact { font-size: 15px; font-weight: 700; }
+.kpi-clickable { cursor: pointer; }
+.kpi-clickable:hover { box-shadow: 0 4px 16px rgba(15,23,42,.12); transform: translateY(-2px); }
+.kpi-clickable.kpi-active { outline: 3px solid #3b82f6; outline-offset: 2px; background: #eff6ff; }
+
+/* ── Calendar ── */
+#calendarCard { overflow: hidden; }
+#calendarGrid { user-select: none; }
+#calendarGrid > div[data-cal-day] {
+  border-radius: 10px !important;
+  transition: background .12s, box-shadow .12s;
+}
+#calendarGrid > div[data-cal-day]:hover { background: #eff6ff !important; box-shadow: 0 2px 8px rgba(59,130,246,.15); }
+#calPrev, #calNext {
+  padding: 7px 16px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  transition: all .15s;
+}
+#calPrev:hover, #calNext:hover { background: #f1f5f9; border-color: #cbd5e1; }
+
+/* ── Charts row ── */
+#chartsRow .card { border-radius: 18px; }
+#chartsRow h4 { font-size: 13px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 14px !important; }
+
+/* ── Rankings ── */
+#rankingMelhores table td, #rankingOcorrencias table td { vertical-align: middle; }
+
+/* ── Pending table ── */
+#pendingTableCard table thead th { font-weight: 700; }
+#pendingTableCard table { border-radius: 12px; overflow: hidden; }
+
+/* ── Buttons ── */
+button, .btn {
+  font-family: inherit;
+  transition: all .15s;
+}
+.nav-btn {
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+}
+.nav-btn:hover, .nav-btn.active { background: #0f172a; color: #fff; border-color: #0f172a; }
+#loadDashboard, #loadDocas {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+}
+#loadDashboard:hover, #loadDocas:hover { background: #0f172a; color: #fff; border-color: #0f172a; }
+
+/* ── Doca cards ── */
+.doca-card {
+  border-radius: 16px !important;
+  border: 1px solid #e2e8f0 !important;
+  background: #fff;
+  padding: 16px !important;
+  transition: box-shadow .15s, transform .15s;
+}
+.doca-card:hover { box-shadow: 0 4px 20px rgba(15,23,42,.1); transform: translateY(-2px); }
+.doca-card-toggle {
+  width: 100%; background: none; border: none; cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center;
+  text-align: left; padding: 0;
+}
+.doca-card-toggle h3 { margin: 0; font-size: 15px; font-weight: 700; color: #0f172a; }
+.doca-meta-summary { font-size: 12px; color: #64748b; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-top: 10px; }
+.doca-meta-summary span strong { color: #374151; }
+
+/* ── Badges ── */
+.badge {
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* ── App Modal ── */
+.app-modal-card {
+  border-radius: 20px !important;
+  padding: 28px !important;
+  box-shadow: 0 24px 64px rgba(15,23,42,.2) !important;
+  border: 1px solid #e8ecf0;
+}
+.app-modal-header { margin-bottom: 20px; }
+#appModalTitle { font-size: 18px; font-weight: 700; color: #0f172a; }
+.app-modal-actions { margin-top: 20px; gap: 10px; display: flex; }
+#appModalConfirm {
+  padding: 11px 20px; border-radius: 12px; border: none;
+  background: #0f172a; color: #fff; font-weight: 700; font-size: 14px; cursor: pointer;
+}
+#appModalConfirm:hover { background: #1e293b; }
+#appModalCancel {
+  padding: 11px 20px; border-radius: 12px;
+  border: 2px solid #e2e8f0; background: #fff; font-weight: 600; font-size: 14px; cursor: pointer;
+}
+#appModalCancel:hover { background: #f8fafc; }
+
+/* ── Inputs ── */
+input[type=text], input[type=email], input[type=date], input[type=number], input[type=password], select, textarea {
+  border-radius: 10px !important;
+  border: 1.5px solid #e2e8f0 !important;
+  padding: 9px 12px !important;
+  font-size: 13px !important;
+  font-family: inherit;
+  transition: border-color .15s, box-shadow .15s;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none !important;
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 3px rgba(59,130,246,.12) !important;
+}
+
+/* ── Volume edit button ── */
+.btn-edit-volume {
+  background: none; border: none; cursor: pointer;
+  font-size: 13px; padding: 0 3px; opacity: .6;
+  transition: opacity .1s;
+}
+.btn-edit-volume:hover { opacity: 1; }
+
+/* ── Btn definir doca ── */
+.btn-definir-doca {
+  padding: 5px 12px !important;
+  border-radius: 8px !important;
+  border: 1.5px solid #3b82f6 !important;
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all .15s !important;
+}
+.btn-definir-doca:hover { background: #dbeafe !important; }
+
+/* ── Nav ── */
+nav, .private-nav {
+  display: flex; gap: 6px; align-items: center;
+  padding: 10px 20px;
+  background: #fff;
+  border-bottom: 1px solid #e8ecf0;
+  position: sticky; top: 0; z-index: 90;
+  box-shadow: 0 1px 4px rgba(15,23,42,.06);
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 99px; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
