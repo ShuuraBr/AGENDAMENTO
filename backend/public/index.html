@@ -174,42 +174,77 @@
     </section>
 
     <section id="dashboard" class="view">
+      <!-- KPIs -->
       <div class="card">
-        <div class="row between">
-          <h2>Painel operacional interno</h2>
-          <button id="loadDashboard">Atualizar</button>
+        <div class="row between" style="margin-bottom:12px">
+          <h2 style="margin:0">Dashboard</h2>
+          <button id="loadDashboard">↻ Atualizar</button>
         </div>
         <div id="kpis" class="grid"></div>
       </div>
 
-      <div class="card mt16">
-        <h3>Filtros</h3>
-        <div class="filters">
-          <select id="fStatus"><option value="">Status</option></select>
-          <select id="fFornecedor"><option value="">Fornecedor</option></select>
-          <select id="fTransportadora"><option value="">Transportadora</option></select>
-          <select id="fMotorista"><option value="">Motorista</option></select>
-          <select id="fPlaca"><option value="">Placa</option></select>
-          <input id="fData" type="date" />
-          <button id="applyFilters">Aplicar filtros</button>
-          <button id="clearFilters">Limpar</button>
+      <!-- Calendário -->
+      <div class="card mt16" id="calendarCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <button id="calPrev" style="padding:6px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;cursor:pointer">‹ Anterior</button>
+          <h3 id="calMonthLabel" style="margin:0;font-size:18px"></h3>
+          <button id="calNext" style="padding:6px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;cursor:pointer">Próximo ›</button>
+        </div>
+        <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div>
+      </div>
+
+      <!-- Gráficos -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px" id="chartsRow">
+        <div class="card">
+          <h4 style="margin:0 0 12px">Peso recebido por dia (kg)</h4>
+          <canvas id="chartPeso" height="200"></canvas>
+        </div>
+        <div class="card">
+          <h4 style="margin:0 0 12px">Ranking — ocorrências por transportadora</h4>
+          <canvas id="chartOcorrencias" height="200"></canvas>
+        </div>
+        <div class="card">
+          <h4 style="margin:0 0 12px">Tempo médio de descarga (min)</h4>
+          <canvas id="chartDescarga" height="200"></canvas>
+        </div>
+        <div class="card">
+          <h4 style="margin:0 0 12px">Tempo médio agendamento → chegada (dias)</h4>
+          <canvas id="chartAgendaChegada" height="200"></canvas>
         </div>
       </div>
 
-      <div class="card mt16">
-        <h3>Agendamentos</h3>
-        <div id="dashboardTable"></div>
+      <!-- Rankings -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+        <div class="card">
+          <h4 style="margin:0 0 12px">🏆 Melhores transportadoras</h4>
+          <div id="rankingMelhores"></div>
+        </div>
+        <div class="card">
+          <h4 style="margin:0 0 12px">⚠️ Mais cancelamentos / no-show / atrasos</h4>
+          <div id="rankingOcorrencias"></div>
+        </div>
       </div>
 
+      <!-- hidden dashboardTable kept for compatibility -->
+      <div id="dashboardTable" style="display:none"></div>
+      <!-- hidden filter selects kept for JS compatibility -->
+      <div style="display:none">
+        <select id="fStatus"></select><select id="fFornecedor"></select>
+        <select id="fTransportadora"></select><select id="fMotorista"></select>
+        <select id="fPlaca"></select><input id="fData" type="date" />
+        <button id="applyFilters"></button><button id="clearFilters"></button>
+      </div>
     </section>
 
     <section id="docas" class="view">
       <div class="card">
         <div class="row between">
-          <h2>Painel de docas e fila de caminhões</h2>
-          <button id="loadDocas">Atualizar painel</button>
+          <h2>Painel de docas</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <label style="margin:0;font-size:13px">Data <input id="docaData" type="date" style="padding:6px 8px;border-radius:8px;border:1px solid #cbd5e1" /></label>
+            <button id="loadDocas">↻ Atualizar</button>
+          </div>
         </div>
-        <label class="mt12">Data<input id="docaData" type="date" /></label>
         <div id="docaPainel" class="grid mt16"></div>
       </div>
     </section>
@@ -324,6 +359,7 @@
             <button id="btnReprovar">Reprovar</button>
             <button id="btnReagendar">Reagendar</button>
             <button id="btnCancelar">Cancelar</button>
+            <button id="btnEditarAgendamento">✏️ Editar</button>
             <button id="btnIniciar">Iniciar descarga</button>
             <button id="btnFinalizar">Finalizar</button>
             <button id="btnNoShow">No-show</button>
@@ -481,6 +517,7 @@
   }
   // ── end watermark ────────────────────────────────────────────────────────
 </script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="/assets/app.js"></script>
 </body>
 </html>

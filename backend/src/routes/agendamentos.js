@@ -1921,4 +1921,19 @@ router.patch("/:id(\\d+)/notas/:numeroNf/volumes", requirePermission("agendament
   }
 });
 
+// PATCH /:id/definir-doca — atribui uma doca a um agendamento (usado no modal "A definir")
+router.patch("/:id(\\d+)/definir-doca", requirePermission("agendamentos.create"), async (req, res) => {
+  try {
+    const found = await mustExist(req.params.id);
+    if (!found) return res.status(404).json({ message: "Agendamento não encontrado." });
+    const docaId = Number(req.body?.docaId);
+    if (!docaId) return res.status(400).json({ message: "docaId inválido." });
+    let updated;
+    try { updated = await prisma.agendamento.update({ where: { id: Number(found.id) }, data: { docaId } }); }
+    catch { updated = updateAgendamentoFile(found.id, { docaId }); }
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "DEFINIR_DOCA", entidade: "AGENDAMENTO", entidadeId: found.id, detalhes: { docaId }, ip: req.ip });
+    res.json({ ok: true, id: found.id, docaId });
+  } catch (err) { res.status(400).json({ message: err.message }); }
+});
+
 export default router;

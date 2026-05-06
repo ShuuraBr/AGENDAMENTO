@@ -389,3 +389,16 @@ body.modal-open{overflow:hidden}
 .wm-tile img{width:28px;height:28px;object-fit:contain}
 .wm-tile span{font-size:11px;font-weight:700;color:#0f172a;letter-spacing:.04em;font-family:Arial,sans-serif}
 /* ── End Watermark ──────────────────────────────────────────────── */
+
+/* KPI clicável */
+.kpi-clickable{cursor:pointer;transition:all .15s}
+.kpi-clickable:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.12)}
+.kpi-clickable.kpi-active{outline:3px solid #111827;outline-offset:2px}
+/* Volume edit btn */
+.btn-edit-volume{background:none;border:none;cursor:pointer;font-size:11px;padding:0 2px;opacity:.7}
+.btn-edit-volume:hover{opacity:1}
+
+/* ── Dashboard calendar ─────────────────────────────────────────── */
+#calendarGrid div[data-cal-day]:hover { background:#eff6ff !important; }
+#chartsRow .card { padding:16px }
+#rankingMelhores table, #rankingOcorrencias table { font-size:13px }
