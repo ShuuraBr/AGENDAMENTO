@@ -1784,22 +1784,62 @@
         const nota = getCurrentInternalNotas().find((n) => buildInternalNotaKey(normalizePendingNota(n)) === notaKey);
         if (!nota) return;
         const currentVol = Number(nota.volumes ?? 0);
-        const novoVol = window.prompt(`Editar volumes para NF ${nota.numeroNf || '-'} (atual: ${formatDecimalBR(currentVol, 3)}):`, String(currentVol));
-        if (novoVol === null) return;
-        const parsed = parseFloat(String(novoVol).replace(',', '.').replace(/[^0-9.]/g, ''));
-        if (!Number.isFinite(parsed) || parsed < 0) { alert('Volume inválido.'); return; }
-        nota.volumes = parsed;
-        // Persist change into the fornecedor group
-        const fornecedores = getSelectedInternalFornecedores();
-        for (const forn of fornecedores) {
-          const src = Array.isArray(forn.notas) ? forn.notas : (Array.isArray(forn.notasFiscais) ? forn.notasFiscais : []);
-          const idx = src.findIndex((n) => buildInternalNotaKey(normalizePendingNota(n)) === notaKey);
-          if (idx > -1) { src[idx].volumes = parsed; forn.quantidadeVolumes = src.reduce((a, n) => a + Number(n.volumes || 0), 0); }
-        }
-        // Update display
-        const span = wrap.querySelector(`.nota-volume-val[data-nota-key="${CSS.escape(notaKey)}"]`);
-        if (span) span.textContent = formatDecimalBR(parsed, 3);
-        updateInternalTotals();
+
+        // Clean modal instead of window.prompt
+        const existing = byId('volumeEditModal'); if (existing) existing.remove();
+        const modal = document.createElement('div');
+        modal.id = 'volumeEditModal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.5);display:flex;align-items:center;justify-content:center;z-index:500;padding:16px';
+        modal.innerHTML = `
+          <div style="background:#fff;border-radius:20px;padding:28px 32px;width:100%;max-width:380px;box-shadow:0 24px 64px rgba(15,23,42,0.18);font-family:inherit">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+              <h3 style="margin:0;font-size:17px;color:#0f172a">Editar volumes</h3>
+              <button id="volModalClose" style="background:none;border:none;font-size:22px;cursor:pointer;color:#94a3b8;line-height:1">✕</button>
+            </div>
+            <div style="background:#f8fafc;border-radius:12px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#475569">
+              NF <strong style="color:#0f172a">${escapeHtml(String(nota.numeroNf||'-'))}</strong> · Série <strong style="color:#0f172a">${escapeHtml(String(nota.serie||'-'))}</strong>
+            </div>
+            <label style="display:block;margin-bottom:6px;font-size:13px;font-weight:600;color:#374151">Volumes</label>
+            <input id="volModalInput" type="number" min="0" step="0.001"
+              value="${currentVol}"
+              style="width:100%;padding:12px 14px;border-radius:12px;border:2px solid #e2e8f0;font-size:16px;box-sizing:border-box;outline:none;transition:border .15s"
+              onfocus="this.style.borderColor='#3b82f6'"
+              onblur="this.style.borderColor='#e2e8f0'"
+            />
+            <p id="volModalErr" style="color:#ef4444;font-size:12px;margin:6px 0 0;min-height:18px"></p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px">
+              <button id="volModalSave" style="padding:12px;border-radius:12px;border:none;background:#0f172a;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Salvar</button>
+              <button id="volModalCancel" style="padding:12px;border-radius:12px;border:2px solid #e2e8f0;background:#fff;color:#0f172a;font-weight:600;font-size:14px;cursor:pointer">Cancelar</button>
+            </div>
+          </div>`;
+        document.body.appendChild(modal);
+        const inp = modal.querySelector('#volModalInput');
+        setTimeout(() => { inp?.focus(); inp?.select(); }, 50);
+
+        const closeModal = () => modal.remove();
+        modal.querySelector('#volModalClose').onclick = closeModal;
+        modal.querySelector('#volModalCancel').onclick = closeModal;
+        modal.onclick = (ev) => { if (ev.target === modal) closeModal(); };
+
+        modal.querySelector('#volModalSave').onclick = () => {
+          const raw = String(inp.value).replace(',', '.');
+          const parsed = parseFloat(raw);
+          const errEl = modal.querySelector('#volModalErr');
+          if (!Number.isFinite(parsed) || parsed < 0) { errEl.textContent = 'Informe um número válido.'; return; }
+          nota.volumes = parsed;
+          const fornecedores = getSelectedInternalFornecedores();
+          for (const forn of fornecedores) {
+            const src = Array.isArray(forn.notas) ? forn.notas : (Array.isArray(forn.notasFiscais) ? forn.notasFiscais : []);
+            const idx = src.findIndex((n) => buildInternalNotaKey(normalizePendingNota(n)) === notaKey);
+            if (idx > -1) { src[idx].volumes = parsed; forn.quantidadeVolumes = src.reduce((a, n) => a + Number(n.volumes || 0), 0); }
+          }
+          const span = wrap.querySelector(`.nota-volume-val[data-nota-key="${CSS.escape(notaKey)}"]`);
+          if (span) span.textContent = formatDecimalBR(parsed, 3);
+          updateInternalTotals();
+          closeModal();
+        };
+        // Enter key saves
+        inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') modal.querySelector('#volModalSave').click(); });
       });
     });
 
@@ -2276,74 +2316,177 @@
   function statusColor2(s=''){const m={PENDENTE_APROVACAO:'#f59e0b',APROVADO:'#10b981',CANCELADO:'#ef4444',NO_SHOW:'#8b5cf6',REAGENDADO:'#3b82f6',FINALIZADO:'#64748b',CHEGOU:'#06b6d4',EM_DESCARGA:'#f97316'};return m[s]||'#94a3b8';}
 
   let _chartInstances = {};
-  function destroyChart(id) { if (_chartInstances[id]) { _chartInstances[id].destroy(); delete _chartInstances[id]; } }
+  function destroyChart(id) {
+    // Destroy tracked instance
+    if (_chartInstances[id]) {
+      try { _chartInstances[id].destroy(); } catch(e) {}
+      delete _chartInstances[id];
+    }
+    // Destroy any orphan on the canvas
+    const canvas = document.getElementById(id);
+    if (canvas) {
+      try {
+        const ex = typeof Chart !== 'undefined' && Chart.getChart ? Chart.getChart(canvas) : null;
+        if (ex) ex.destroy();
+      } catch(e) {}
+      // Nuclear: replace canvas element to fully clear WebGL/2D context
+      const parent = canvas.parentNode;
+      if (parent) {
+        const fresh = document.createElement('canvas');
+        fresh.id = canvas.id;
+        fresh.height = canvas.height || 200;
+        fresh.style.cssText = canvas.style.cssText;
+        parent.replaceChild(fresh, canvas);
+      }
+    }
+  }
 
   function renderCharts(metricas = {}) {
+    if (typeof Chart === 'undefined') return;
     const { pesoPorDia = [], rankingOcorrencias = [], rankingMelhores = [], mediaRecebimentoMin } = metricas;
 
-    // Peso por dia
+    const CHART_OPTS = {
+      responsive: true,
+      maintainAspectRatio: true,
+      animation: false,
+      plugins: {
+        tooltip: { enabled: false },
+        legend: { display: false }
+      }
+    };
+
+    function makeBarConfig(labels, data, color, opts = {}) {
+      return {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            data,
+            backgroundColor: color + '22',
+            borderColor: color,
+            borderWidth: 2,
+            borderRadius: 6,
+            datalabels: { display: false }
+          }]
+        },
+        options: {
+          ...CHART_OPTS,
+          ...opts,
+          plugins: {
+            ...CHART_OPTS.plugins,
+            ...(opts.plugins || {})
+          },
+          scales: {
+            x: { grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 }, color: '#64748b', maxRotation: 30 } },
+            y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 }, color: '#64748b' } },
+            ...(opts.scales || {})
+          }
+        }
+      };
+    }
+
+    // Chart 1: Peso por dia
     destroyChart('chartPeso');
-    const ctxPeso = byId('chartPeso')?.getContext('2d');
-    if (ctxPeso && pesoPorDia.length) {
-      _chartInstances['chartPeso'] = new Chart(ctxPeso, {
-        type: 'bar',
-        data: { labels: pesoPorDia.map((d) => d.data.slice(5)), datasets: [{ label: 'Peso (kg)', data: pesoPorDia.map((d) => d.peso), backgroundColor: '#3b82f620', borderColor: '#3b82f6', borderWidth: 2 }] },
-        options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-      });
+    const cPeso = byId('chartPeso');
+    if (cPeso && pesoPorDia.length) {
+      _chartInstances['chartPeso'] = new Chart(cPeso, makeBarConfig(
+        pesoPorDia.map((d) => d.data.slice(5)),
+        pesoPorDia.map((d) => Math.round(d.peso)),
+        '#3b82f6'
+      ));
+    } else if (cPeso) {
+      cPeso.parentNode.querySelector('.chart-empty')?.remove();
+      const p = document.createElement('p'); p.className='chart-empty'; p.textContent='Sem dados de peso.'; cPeso.after(p);
     }
 
-    // Ocorrências por transportadora
+    // Chart 2: Ocorrências (stacked) — sem tooltip, com rótulos diretos
     destroyChart('chartOcorrencias');
-    const ctxOc = byId('chartOcorrencias')?.getContext('2d');
-    if (ctxOc && rankingOcorrencias.length) {
-      const top = rankingOcorrencias.slice(0, 8);
-      _chartInstances['chartOcorrencias'] = new Chart(ctxOc, {
+    const cOc = byId('chartOcorrencias');
+    if (cOc && rankingOcorrencias.length) {
+      const top = rankingOcorrencias.slice(0, 7);
+      _chartInstances['chartOcorrencias'] = new Chart(cOc, {
         type: 'bar',
-        data: { labels: top.map((t) => t.nome.length > 14 ? t.nome.slice(0,14)+'…' : t.nome), datasets: [
-          { label: 'Cancelamentos', data: top.map((t) => t.cancelamentos), backgroundColor: '#ef444440', borderColor: '#ef4444', borderWidth: 2 },
-          { label: 'No-show', data: top.map((t) => t.noShow), backgroundColor: '#8b5cf640', borderColor: '#8b5cf6', borderWidth: 2 },
-          { label: 'Atrasos', data: top.map((t) => t.atrasos), backgroundColor: '#f59e0b40', borderColor: '#f59e0b', borderWidth: 2 },
-        ]},
-        options: { responsive: true, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } }
+        data: {
+          labels: top.map((t) => t.nome.length > 12 ? t.nome.slice(0,12)+'…' : t.nome),
+          datasets: [
+            { label: 'Cancel.', data: top.map((t) => t.cancelamentos), backgroundColor: '#ef4444cc', borderRadius: 3, stack: 's' },
+            { label: 'No-show', data: top.map((t) => t.noShow), backgroundColor: '#8b5cf6cc', borderRadius: 3, stack: 's' },
+            { label: 'Atrasos', data: top.map((t) => t.atrasos), backgroundColor: '#f59e0bcc', borderRadius: 3, stack: 's' }
+          ]
+        },
+        options: {
+          ...CHART_OPTS,
+          plugins: { tooltip: { enabled: false }, legend: { display: true, position: 'bottom', labels: { font: { size: 11 }, boxWidth: 10 } } },
+          scales: {
+            x: { stacked: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 }, color: '#64748b', maxRotation: 30 } },
+            y: { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 }, color: '#64748b', precision: 0 } }
+          }
+        }
       });
     }
 
-    // Tempo médio de descarga
+    // Chart 3: Tempo médio descarga (horizontal bars)
     destroyChart('chartDescarga');
-    const ctxDesc = byId('chartDescarga')?.getContext('2d');
-    if (ctxDesc && rankingOcorrencias.length) {
-      const withData = rankingOcorrencias.filter((t) => t.mediaDescargaMin != null).slice(0, 8);
-      _chartInstances['chartDescarga'] = new Chart(ctxDesc, {
-        type: 'horizontalBar',
-        data: { labels: withData.map((t) => t.nome.length > 16 ? t.nome.slice(0,16)+'…' : t.nome), datasets: [{ label: 'Minutos', data: withData.map((t) => t.mediaDescargaMin), backgroundColor: '#10b98140', borderColor: '#10b981', borderWidth: 2 }] },
-        options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+    const cDesc = byId('chartDescarga');
+    const descData = rankingOcorrencias.filter((t) => t.mediaDescargaMin != null).slice(0, 6);
+    if (cDesc && descData.length) {
+      _chartInstances['chartDescarga'] = new Chart(cDesc, {
+        type: 'bar',
+        data: {
+          labels: descData.map((t) => t.nome.length > 14 ? t.nome.slice(0,14)+'…' : t.nome),
+          datasets: [{ data: descData.map((t) => t.mediaDescargaMin), backgroundColor: '#10b981cc', borderRadius: 5 }]
+        },
+        options: {
+          ...CHART_OPTS,
+          indexAxis: 'y',
+          scales: {
+            x: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 }, color: '#64748b' } },
+            y: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#374151' } }
+          }
+        }
       });
+    } else if (cDesc) {
+      cDesc.parentNode.querySelector('.chart-empty')?.remove();
+      const p = document.createElement('p'); p.className='chart-empty'; p.textContent='Sem dados de descarga.'; cDesc.after(p);
     }
 
-    // Tempo agendamento → chegada
+    // Chart 4: Tempo agendamento → chegada
     destroyChart('chartAgendaChegada');
-    const ctxAC = byId('chartAgendaChegada')?.getContext('2d');
-    if (ctxAC && rankingOcorrencias.length) {
-      const withData = rankingOcorrencias.filter((t) => t.mediaAgendaChegadaMin != null).slice(0, 8);
-      _chartInstances['chartAgendaChegada'] = new Chart(ctxAC, {
-        type: 'horizontalBar',
-        data: { labels: withData.map((t) => t.nome.length > 16 ? t.nome.slice(0,16)+'…' : t.nome), datasets: [{ label: 'Min desde agendamento', data: withData.map((t) => Math.round(t.mediaAgendaChegadaMin / 60 * 10) / 10), backgroundColor: '#6366f140', borderColor: '#6366f1', borderWidth: 2 }] },
-        options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } } }
+    const cAC = byId('chartAgendaChegada');
+    const acData = rankingOcorrencias.filter((t) => t.mediaAgendaChegadaMin != null).slice(0, 6);
+    if (cAC && acData.length) {
+      _chartInstances['chartAgendaChegada'] = new Chart(cAC, {
+        type: 'bar',
+        data: {
+          labels: acData.map((t) => t.nome.length > 14 ? t.nome.slice(0,14)+'…' : t.nome),
+          datasets: [{ data: acData.map((t) => Math.round(t.mediaAgendaChegadaMin / 60 * 10) / 10), backgroundColor: '#6366f1cc', borderRadius: 5 }]
+        },
+        options: {
+          ...CHART_OPTS,
+          indexAxis: 'y',
+          scales: {
+            x: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 }, color: '#64748b' } },
+            y: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#374151' } }
+          }
+        }
       });
     }
 
     // Rankings HTML
     const mkRanking = (id, items, fields) => {
       const el = byId(id); if (!el) return;
-      if (!items.length) { el.innerHTML = '<p style="color:#64748b;font-size:13px">Sem dados suficientes.</p>'; return; }
-      el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">${items.map((t, i) => `<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:8px 4px;font-weight:700;color:#64748b;width:24px">${i+1}</td><td style="padding:8px 4px;font-weight:600">${escapeHtml(t.nome)}</td>${fields.map((f) => `<td style="padding:8px 4px;color:#475569;text-align:right">${escapeHtml(String(t[f.key] ?? '-'))} <small style="color:#94a3b8">${f.label}</small></td>`).join('')}</tr>`).join('')}</table>`;
+      if (!items.length) { el.innerHTML = '<p style="color:#94a3b8;font-size:13px;text-align:center;padding:16px">Sem dados suficientes.</p>'; return; }
+      el.innerHTML = `<div style="display:grid;gap:6px">${items.slice(0,8).map((t, i) => {
+        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `<span style="font-size:12px;color:#94a3b8;font-weight:700">${i+1}</span>`;
+        return `<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:${i%2===0?'#f8fafc':'#fff'};border:1px solid #f1f5f9">
+          <span style="min-width:22px;text-align:center">${medal}</span>
+          <span style="flex:1;font-size:13px;font-weight:600;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(t.nome)}</span>
+          ${fields.map((f) => `<span style="font-size:12px;color:#64748b;white-space:nowrap"><strong style="color:#374151">${escapeHtml(String(t[f.key]??0))}</strong> <small>${f.label}</small></span>`).join('')}
+        </div>`;
+      }).join('')}</div>`;
     };
-    mkRanking('rankingMelhores', rankingMelhores, [{ key: 'finalizados', label: 'finalizados' }, { key: 'ocorrencias', label: 'ocorrências' }]);
+    mkRanking('rankingMelhores', rankingMelhores, [{ key: 'finalizados', label: 'ok' }, { key: 'ocorrencias', label: 'ocorr.' }]);
     mkRanking('rankingOcorrencias', rankingOcorrencias, [{ key: 'cancelamentos', label: 'cancel.' }, { key: 'noShow', label: 'no-show' }, { key: 'atrasos', label: 'atrasos' }]);
-
-    // Media recebimento
-    const mediaEl = byId('mediaRecebimento');
-    if (mediaEl) mediaEl.textContent = mediaRecebimentoMin != null ? `${mediaRecebimentoMin} min` : '-';
   }
 
   async function loadDashboard() {
@@ -2395,13 +2538,63 @@
     renderCalendar();
     // Charts
     renderCharts(metricas);
-    // Wire calendar nav (only once)
-    if (!byId('calPrev')?.dataset.bound) {
-      const prev = byId('calPrev'); const next = byId('calNext');
-      if (prev) { prev.dataset.bound = '1'; prev.addEventListener('click', () => { calState.month--; if (calState.month < 0) { calState.month = 11; calState.year--; } renderCalendar(); }); }
-      if (next) { next.dataset.bound = '1'; next.addEventListener('click', () => { calState.month++; if (calState.month > 11) { calState.month = 0; calState.year++; } renderCalendar(); }); }
+    // Wire calendar nav every time dashboard loads (re-clone to avoid duplicate listeners)
+    const prevBtn = byId('calPrev'); const nextBtn = byId('calNext');
+    if (prevBtn) {
+      const pClone = prevBtn.cloneNode(true); prevBtn.parentNode.replaceChild(pClone, prevBtn);
+      pClone.addEventListener('click', () => { calState.month--; if (calState.month < 0) { calState.month = 11; calState.year--; } renderCalendar(); });
     }
+    if (nextBtn) {
+      const nClone = nextBtn.cloneNode(true); nextBtn.parentNode.replaceChild(nClone, nextBtn);
+      nClone.addEventListener('click', () => { calState.month++; if (calState.month > 11) { calState.month = 0; calState.year++; } renderCalendar(); });
+    }
+    // Render pending table
+    const activeStatuses = new Set(['PENDENTE_APROVACAO','APROVADO']);
+    const pending = allAgendamentos.filter((ag) => activeStatuses.has(String(ag.status||'').toUpperCase()));
+    renderPendingTable(pending);
+
+    // Wire search
+    const searchInput = byId('pendingSearch');
+    if (searchInput && !searchInput.dataset.bound) {
+      searchInput.dataset.bound = '1';
+      searchInput.addEventListener('input', () => {
+        const term = searchInput.value.trim().toLowerCase();
+        const filtered = term ? pending.filter((ag) => JSON.stringify(ag).toLowerCase().includes(term)) : pending;
+        renderPendingTable(filtered);
+      });
+    }
+
     await maybeShowMissingRelatorioAlerts(data.agendamentos || []);
+  }
+
+  const STATUS_COLORS = { PENDENTE_APROVACAO:'#f59e0b', APROVADO:'#10b981', CANCELADO:'#ef4444', NO_SHOW:'#8b5cf6', REAGENDADO:'#3b82f6', FINALIZADO:'#64748b', CHEGOU:'#06b6d4', EM_DESCARGA:'#f97316' };
+  const STATUS_LABELS = { PENDENTE_APROVACAO:'Pendente', APROVADO:'Aprovado', CANCELADO:'Cancelado', NO_SHOW:'No-show', REAGENDADO:'Reagendado', FINALIZADO:'Finalizado', CHEGOU:'Chegou', EM_DESCARGA:'Em descarga' };
+
+  function renderPendingTable(items = []) {
+    const tbody = byId('dashboardTableBody');
+    if (!tbody) return;
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="padding:24px;text-align:center;color:#94a3b8;font-size:13px">Nenhum agendamento pendente.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map((ag, i) => {
+      const color = STATUS_COLORS[ag.status] || '#94a3b8';
+      const label = STATUS_LABELS[ag.status] || ag.status || '-';
+      const bg = i % 2 === 0 ? '#fff' : '#fafafa';
+      return `<tr style="background:${bg};transition:background .1s" onmouseenter="this.style.background='#f0f9ff'" onmouseleave="this.style.background='${bg}'">
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;white-space:nowrap">${escapeHtml(ag.protocolo||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9">
+          <span style="padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;background:${color}18;color:${color};white-space:nowrap">${escapeHtml(label)}</span>
+        </td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;white-space:nowrap">${escapeHtml(ag.dataAgendada||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;white-space:nowrap">${escapeHtml(ag.horaAgendada||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#334155;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(ag.fornecedor||'')}">${escapeHtml(ag.fornecedor||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#334155;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(ag.transportadora||'')}">${escapeHtml(ag.transportadora||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;white-space:nowrap">${escapeHtml(ag.doca?.codigo || ag.docaCodigo || String(ag.docaId||'-'))}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;text-align:right">${escapeHtml(formatIntegerBR(ag.quantidadeNotas||0))}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;text-align:right;white-space:nowrap">${escapeHtml(formatDecimalBR(ag.pesoTotalKg||ag.quantidadePeso||0,3))} kg</td>
+      </tr>`;
+    }).join('');
   }
 
   function formatAuditDate(value) {
@@ -2535,31 +2728,34 @@
       const isADefinir = String(doca.codigo || '').toLowerCase().includes('definir') || String(doca.codigo || '').toLowerCase() === 'a definir';
       const modalHtml = buildDocaModalHtml(doca, { isADefinir, docaOptions: Array.isArray(allDocasCad) ? allDocasCad : [] });
 
-      await showHtmlModal({ title: (isADefinir ? '⚠️ ' : '') + `Doca ${doca.codigo || ''}`.trim(), html: modalHtml, confirmText: 'Fechar', wide: true });
-
-      // Wire "Definir doca" buttons inside modal
-      document.querySelectorAll('.btn-definir-doca').forEach((btn2) => {
-        btn2.addEventListener('click', async () => {
-          const agId = btn2.dataset.agId;
-          if (!agId) return;
-          const docasList = Array.isArray(allDocasCad) ? allDocasCad.filter((dc) => !String(dc.codigo||'').toLowerCase().includes('definir')) : [];
-          if (!docasList.length) { alert('Nenhuma doca disponível.'); return; }
-          const optionsHtml = docasList.map((dc) => `<option value="${escapeHtml(String(dc.id))}">${escapeHtml(dc.codigo)}</option>`).join('');
-          const sel = document.createElement('select');
-          sel.innerHTML = `<option value="">Escolha a doca...</option>${optionsHtml}`;
-          sel.style.cssText = 'padding:8px 12px;border-radius:8px;border:1px solid #3b82f6;font-size:14px;margin-top:6px;width:100%';
-          btn2.replaceWith(sel);
-          sel.addEventListener('change', async () => {
-            const docaId = sel.value;
-            if (!docaId) return;
-            try {
-              await api(`/api/agendamentos/${agId}/definir-doca`, { method: 'PATCH', body: JSON.stringify({ docaId: Number(docaId) }) });
-              sel.closest('tr')?.querySelector('td:last-child')?.replaceWith(Object.assign(document.createElement('td'), { innerHTML: '<span style="color:#10b981;font-size:12px">✓ Doca definida</span>', style: 'padding:8px' }));
-              await loadDocas();
-            } catch (err) { alert(err.message); }
+      // Wire "Definir doca" buttons BEFORE awaiting (inject into modal body before it's shown)
+      showHtmlModal({ title: (isADefinir ? '⚠️ ' : '') + `Doca ${doca.codigo || ''}`.trim(), html: modalHtml, confirmText: 'Fechar', wide: true });
+      // Give DOM a tick to render then wire
+      setTimeout(() => {
+        document.querySelectorAll('.btn-definir-doca').forEach((btn2) => {
+          btn2.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const agId = btn2.dataset.agId;
+            if (!agId) return;
+            const docasList = Array.isArray(allDocasCad) ? allDocasCad.filter((dc) => !String(dc.codigo||'').toLowerCase().includes('definir')) : [];
+            if (!docasList.length) { alert('Nenhuma doca disponível.'); return; }
+            // Show inline dropdown
+            const cell = btn2.closest('td');
+            if (!cell) return;
+            const optionsHtml = docasList.map((dc) => `<option value="${escapeHtml(String(dc.id))}">${escapeHtml(dc.codigo)}</option>`).join('');
+            cell.innerHTML = `<select id="selDefinirDoca${agId}" style="padding:7px 10px;border-radius:8px;border:1px solid #3b82f6;font-size:13px;min-width:140px"><option value="">Escolha a doca...</option>${optionsHtml}</select>`;
+            cell.querySelector('select').addEventListener('change', async (ev) => {
+              const docaId = ev.target.value;
+              if (!docaId) return;
+              try {
+                await api(`/api/agendamentos/${agId}/definir-doca`, { method: 'PATCH', body: JSON.stringify({ docaId: Number(docaId) }) });
+                cell.innerHTML = '<span style="color:#10b981;font-weight:600;font-size:12px">✓ Doca definida</span>';
+                setTimeout(() => loadDocas(), 800);
+              } catch (err) { cell.innerHTML = `<span style="color:#ef4444;font-size:12px">${err.message}</span>`; }
+            });
           });
         });
-      });
+      }, 80);
     }));
   }
 
@@ -2942,20 +3138,7 @@
 
     byId("btnLogout")?.addEventListener("click", logout);
 
-    // Add React Admin link to private nav if not already there
-    (function() {
-      const nav = document.getElementById('privateNav');
-      if (!nav || nav.querySelector('[data-admin-react]')) return;
-      const link = document.createElement('a');
-      link.href = '/admin';
-      link.target = '_blank';
-      link.setAttribute('data-admin-react', '1');
-      link.textContent = 'Admin (React)';
-      link.style.cssText = 'padding:6px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;color:#334155;font-size:13px;font-weight:600;text-decoration:none;margin-left:8px';
-      const logoutBtn = nav.querySelector('#btnLogout');
-      if (logoutBtn) nav.insertBefore(link, logoutBtn);
-      else nav.appendChild(link);
-    })();
+    // Admin (React) button removed
 
     byId('toggleLoginPassword')?.addEventListener('click', () => {
       const input = byId('loginSenha');
@@ -3065,7 +3248,9 @@
         if (awareness.confirmed) payload.confirmarCienciaVencimento = true;
         const data = await api("/api/agendamentos", { method: "POST", body: JSON.stringify(payload) });
         byId("agendamentoId").value = data.id || "";
-        byId("agendamentoMsg").textContent = `Agendamento criado: ${data.protocolo} | ID: ${data.id}`;
+        const volumes = Number(data.quantidadeVolumes || 0);
+        const notas = Number(data.quantidadeNotas || 0);
+        byId("agendamentoMsg").innerHTML = `<span style="color:#10b981;font-weight:700">✓ Agendamento criado</span> — Protocolo: <strong>${escapeHtml(data.protocolo||'-')}</strong> | Status: <strong>${escapeHtml(data.status||'PENDENTE')}</strong> | ${notas} NF(s) | Volumes: <strong>${volumes}</strong>`;
         e.target.reset();
         clearInternalPendingSelectionState();
         const fornecedorField = byId('internalFornecedorNome');
@@ -3114,18 +3299,23 @@
 
     byId("btnEditarAgendamento")?.addEventListener("click", async () => {
       const id = currentId();
-      if (!id) { alert('Selecione um agendamento para editar.'); return; }
+      if (!id) { byId('operacaoMsg').textContent = 'Selecione um agendamento primeiro (clique em "Usar ID").'; return; }
       try {
         const item = await api(`/api/agendamentos/${id}`);
-        const statusBloqueado = ['APROVADO', 'CHEGOU', 'EM_DESCARGA', 'FINALIZADO'].includes(String(item.status || '').toUpperCase());
+        if (!item || !item.id) { byId('operacaoMsg').textContent = 'Agendamento não encontrado.'; return; }
+        const statusBloqueado = ['APROVADO','CHEGOU','EM_DESCARGA','FINALIZADO'].includes(String(item.status||'').toUpperCase());
         if (statusBloqueado) {
-          if (!confirm(`Agendamento ${item.protocolo} está ${item.status}. Para editar será necessário cancelá-lo e criar um novo. Continuar?`)) return;
+          const ok = await showAppModal({
+            title: `Agendamento ${item.protocolo} — ${item.status}`,
+            message: 'Este agendamento já foi aprovado. Para editar, ele será CANCELADO e você precisará criar um novo. Deseja continuar?',
+            confirmText: 'Cancelar e editar', cancelText: 'Voltar', tone: 'warning'
+          });
+          if (!ok) return;
           await api(`/api/agendamentos/${id}/cancelar`, { method: 'POST', body: JSON.stringify({ motivo: 'Cancelado para edição pelo operador.' }) });
-          byId('operacaoMsg').textContent = `Agendamento ${item.protocolo} cancelado. Preencha o formulário acima para criar um novo.`;
+          byId('operacaoMsg').textContent = `Agendamento ${item.protocolo} cancelado. Crie um novo agendamento.`;
           await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadFornecedoresPendentesInterno()]);
           return;
         }
-        // Not approved — show inline edit fields
         openInlineEditModal(item);
       } catch (err) { byId('operacaoMsg').textContent = err.message; }
     });

@@ -15,14 +15,10 @@
     #site-watermark.wm-active { display: block; }
     .wm-tile {
       position: absolute; transform: rotate(-30deg);
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
-      opacity: 0.055; user-select: none; white-space: nowrap;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0.12; user-select: none;
     }
-    .wm-tile img { width: 28px; height: 28px; object-fit: contain; }
-    .wm-tile span {
-      font-size: 11px; font-weight: 700; color: #0f172a;
-      letter-spacing: 0.04em; font-family: Arial, sans-serif;
-    }
+    .wm-tile img { width: 32px; height: 32px; object-fit: contain; }
   </style>
 </head>
 <body>
@@ -193,23 +189,26 @@
         <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div>
       </div>
 
-      <!-- Gráficos -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px" id="chartsRow">
+      <!-- Gráficos (1 row, 2 cols) -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px" id="chartsRow">
         <div class="card">
-          <h4 style="margin:0 0 12px">Peso recebido por dia (kg)</h4>
-          <canvas id="chartPeso" height="200"></canvas>
+          <h4>Peso recebido por dia (kg)</h4>
+          <canvas id="chartPeso" height="140"></canvas>
         </div>
         <div class="card">
-          <h4 style="margin:0 0 12px">Ranking — ocorrências por transportadora</h4>
-          <canvas id="chartOcorrencias" height="200"></canvas>
+          <h4>Ocorrências por transportadora</h4>
+          <canvas id="chartOcorrencias" height="140"></canvas>
+        </div>
+      </div>
+      <!-- Gráficos row 2 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+        <div class="card">
+          <h4>Tempo médio de descarga (min)</h4>
+          <canvas id="chartDescarga" height="140"></canvas>
         </div>
         <div class="card">
-          <h4 style="margin:0 0 12px">Tempo médio de descarga (min)</h4>
-          <canvas id="chartDescarga" height="200"></canvas>
-        </div>
-        <div class="card">
-          <h4 style="margin:0 0 12px">Tempo médio agendamento → chegada (dias)</h4>
-          <canvas id="chartAgendaChegada" height="200"></canvas>
+          <h4>Tempo médio agendamento → chegada (h)</h4>
+          <canvas id="chartAgendaChegada" height="140"></canvas>
         </div>
       </div>
 
@@ -225,9 +224,35 @@
         </div>
       </div>
 
-      <!-- hidden dashboardTable kept for compatibility -->
-      <div id="dashboardTable" style="display:none"></div>
-      <!-- hidden filter selects kept for JS compatibility -->
+      <!-- Tabela de agendamentos pendentes -->
+      <div class="card mt16" id="pendingTableCard">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <h3 style="margin:0">Agendamentos pendentes / em andamento</h3>
+          <div style="display:flex;gap:8px">
+            <input id="pendingSearch" placeholder="Buscar..." style="padding:7px 12px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;width:200px" />
+          </div>
+        </div>
+        <div style="overflow-x:auto">
+          <table id="dashboardTable" style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:#f8fafc">
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Protocolo</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Status</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Data</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Hora</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Fornecedor</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Transportadora</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Doca</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">NFs</th>
+                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Peso</th>
+              </tr>
+            </thead>
+            <tbody id="dashboardTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- hidden compatibility stubs -->
       <div style="display:none">
         <select id="fStatus"></select><select id="fFornecedor"></select>
         <select id="fTransportadora"></select><select id="fMotorista"></select>
@@ -491,14 +516,14 @@
     if (!el) return;
     el.innerHTML = '';
     if (!label) { el.classList.remove('wm-active'); return; }
-    var cols = 6, rows = 10;
+    var cols = 8, rows = 13;
     for (var i = 0; i < cols * rows; i++) {
       var col = i % cols, row = Math.floor(i / cols);
       var tile = document.createElement('div');
       tile.className = 'wm-tile';
-      tile.style.left = (col * 18) + '%';
-      tile.style.top  = (row * 11) + '%';
-      tile.innerHTML = '<img src="/assets/Favicon.png" alt=""><span>' + label.replace(/</g,'&lt;') + '</span>';
+      tile.style.left = (col * 13.5) + '%';
+      tile.style.top  = (row * 8.5) + '%';
+      tile.innerHTML = '<img src="/assets/Favicon.png" alt="" />';
       el.appendChild(tile);
     }
     el.classList.add('wm-active');
