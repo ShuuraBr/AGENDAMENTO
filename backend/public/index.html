@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agendamento de Descarga</title>
+  <title>Agendamento de Descarga V3.2</title>
   <link rel="stylesheet" href="/assets/styles34.css" />
   <link rel="icon" href="assets/Favicon.png" type="image">
 
@@ -15,12 +15,12 @@
     #site-watermark.wm-active { display: block; }
     .wm-tile {
       position: absolute; transform: rotate(-30deg);
-      display: flex; flex-direction: column; align-items: center; gap: 7px;
-      opacity: 0.08; user-select: none; white-space: nowrap;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      opacity: 0.055; user-select: none; white-space: nowrap;
     }
-    .wm-tile img { width: 30px; height: 30px; object-fit: contain; }
+    .wm-tile img { width: 28px; height: 28px; object-fit: contain; }
     .wm-tile span {
-      font-size: 13px; font-weight: 700; color: #0f172a;
+      font-size: 11px; font-weight: 700; color: #0f172a;
       letter-spacing: 0.04em; font-family: Arial, sans-serif;
     }
   </style>
@@ -225,35 +225,9 @@
         </div>
       </div>
 
-      <!-- Tabela de agendamentos pendentes -->
-      <div class="card mt16" id="pendingTableCard">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <h3 style="margin:0">Agendamentos pendentes / em andamento</h3>
-          <div style="display:flex;gap:8px">
-            <input id="pendingSearch" placeholder="Buscar..." style="padding:7px 12px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;width:200px" />
-          </div>
-        </div>
-        <div style="overflow-x:auto">
-          <table id="dashboardTable" style="width:100%;border-collapse:collapse;font-size:13px">
-            <thead>
-              <tr style="background:#f8fafc">
-                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Protocolo</th>
-                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Status</th>
-                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Data</th>
-                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Hora</th>
-                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Fornecedor</th>
-                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Transportadora</th>
-                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Doca</th>
-                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">NFs</th>
-                <th style="padding:10px 12px;text-align:left;border-bottom:2px solid #e2e8f0;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap">Peso</th>
-              </tr>
-            </thead>
-            <tbody id="dashboardTableBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- hidden compatibility stubs -->
+      <!-- hidden dashboardTable kept for compatibility -->
+      <div id="dashboardTable" style="display:none"></div>
+      <!-- hidden filter selects kept for JS compatibility -->
       <div style="display:none">
         <select id="fStatus"></select><select id="fFornecedor"></select>
         <select id="fTransportadora"></select><select id="fMotorista"></select>
