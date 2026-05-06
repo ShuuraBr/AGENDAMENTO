@@ -1784,22 +1784,62 @@
         const nota = getCurrentInternalNotas().find((n) => buildInternalNotaKey(normalizePendingNota(n)) === notaKey);
         if (!nota) return;
         const currentVol = Number(nota.volumes ?? 0);
-        const novoVol = window.prompt(`Editar volumes para NF ${nota.numeroNf || '-'} (atual: ${formatDecimalBR(currentVol, 3)}):`, String(currentVol));
-        if (novoVol === null) return;
-        const parsed = parseFloat(String(novoVol).replace(',', '.').replace(/[^0-9.]/g, ''));
-        if (!Number.isFinite(parsed) || parsed < 0) { alert('Volume inválido.'); return; }
-        nota.volumes = parsed;
-        // Persist change into the fornecedor group
-        const fornecedores = getSelectedInternalFornecedores();
-        for (const forn of fornecedores) {
-          const src = Array.isArray(forn.notas) ? forn.notas : (Array.isArray(forn.notasFiscais) ? forn.notasFiscais : []);
-          const idx = src.findIndex((n) => buildInternalNotaKey(normalizePendingNota(n)) === notaKey);
-          if (idx > -1) { src[idx].volumes = parsed; forn.quantidadeVolumes = src.reduce((a, n) => a + Number(n.volumes || 0), 0); }
-        }
-        // Update display
-        const span = wrap.querySelector(`.nota-volume-val[data-nota-key="${CSS.escape(notaKey)}"]`);
-        if (span) span.textContent = formatDecimalBR(parsed, 3);
-        updateInternalTotals();
+
+        // Clean modal instead of window.prompt
+        const existing = byId('volumeEditModal'); if (existing) existing.remove();
+        const modal = document.createElement('div');
+        modal.id = 'volumeEditModal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.5);display:flex;align-items:center;justify-content:center;z-index:500;padding:16px';
+        modal.innerHTML = `
+          <div style="background:#fff;border-radius:20px;padding:28px 32px;width:100%;max-width:380px;box-shadow:0 24px 64px rgba(15,23,42,0.18);font-family:inherit">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+              <h3 style="margin:0;font-size:17px;color:#0f172a">Editar volumes</h3>
+              <button id="volModalClose" style="background:none;border:none;font-size:22px;cursor:pointer;color:#94a3b8;line-height:1">✕</button>
+            </div>
+            <div style="background:#f8fafc;border-radius:12px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#475569">
+              NF <strong style="color:#0f172a">${escapeHtml(String(nota.numeroNf||'-'))}</strong> · Série <strong style="color:#0f172a">${escapeHtml(String(nota.serie||'-'))}</strong>
+            </div>
+            <label style="display:block;margin-bottom:6px;font-size:13px;font-weight:600;color:#374151">Volumes</label>
+            <input id="volModalInput" type="number" min="0" step="0.001"
+              value="${currentVol}"
+              style="width:100%;padding:12px 14px;border-radius:12px;border:2px solid #e2e8f0;font-size:16px;box-sizing:border-box;outline:none;transition:border .15s"
+              onfocus="this.style.borderColor='#3b82f6'"
+              onblur="this.style.borderColor='#e2e8f0'"
+            />
+            <p id="volModalErr" style="color:#ef4444;font-size:12px;margin:6px 0 0;min-height:18px"></p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px">
+              <button id="volModalSave" style="padding:12px;border-radius:12px;border:none;background:#0f172a;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Salvar</button>
+              <button id="volModalCancel" style="padding:12px;border-radius:12px;border:2px solid #e2e8f0;background:#fff;color:#0f172a;font-weight:600;font-size:14px;cursor:pointer">Cancelar</button>
+            </div>
+          </div>`;
+        document.body.appendChild(modal);
+        const inp = modal.querySelector('#volModalInput');
+        setTimeout(() => { inp?.focus(); inp?.select(); }, 50);
+
+        const closeModal = () => modal.remove();
+        modal.querySelector('#volModalClose').onclick = closeModal;
+        modal.querySelector('#volModalCancel').onclick = closeModal;
+        modal.onclick = (ev) => { if (ev.target === modal) closeModal(); };
+
+        modal.querySelector('#volModalSave').onclick = () => {
+          const raw = String(inp.value).replace(',', '.');
+          const parsed = parseFloat(raw);
+          const errEl = modal.querySelector('#volModalErr');
+          if (!Number.isFinite(parsed) || parsed < 0) { errEl.textContent = 'Informe um número válido.'; return; }
+          nota.volumes = parsed;
+          const fornecedores = getSelectedInternalFornecedores();
+          for (const forn of fornecedores) {
+            const src = Array.isArray(forn.notas) ? forn.notas : (Array.isArray(forn.notasFiscais) ? forn.notasFiscais : []);
+            const idx = src.findIndex((n) => buildInternalNotaKey(normalizePendingNota(n)) === notaKey);
+            if (idx > -1) { src[idx].volumes = parsed; forn.quantidadeVolumes = src.reduce((a, n) => a + Number(n.volumes || 0), 0); }
+          }
+          const span = wrap.querySelector(`.nota-volume-val[data-nota-key="${CSS.escape(notaKey)}"]`);
+          if (span) span.textContent = formatDecimalBR(parsed, 3);
+          updateInternalTotals();
+          closeModal();
+        };
+        // Enter key saves
+        inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') modal.querySelector('#volModalSave').click(); });
       });
     });
 
@@ -2395,13 +2435,63 @@
     renderCalendar();
     // Charts
     renderCharts(metricas);
-    // Wire calendar nav (only once)
-    if (!byId('calPrev')?.dataset.bound) {
-      const prev = byId('calPrev'); const next = byId('calNext');
-      if (prev) { prev.dataset.bound = '1'; prev.addEventListener('click', () => { calState.month--; if (calState.month < 0) { calState.month = 11; calState.year--; } renderCalendar(); }); }
-      if (next) { next.dataset.bound = '1'; next.addEventListener('click', () => { calState.month++; if (calState.month > 11) { calState.month = 0; calState.year++; } renderCalendar(); }); }
+    // Wire calendar nav every time dashboard loads (re-clone to avoid duplicate listeners)
+    const prevBtn = byId('calPrev'); const nextBtn = byId('calNext');
+    if (prevBtn) {
+      const pClone = prevBtn.cloneNode(true); prevBtn.parentNode.replaceChild(pClone, prevBtn);
+      pClone.addEventListener('click', () => { calState.month--; if (calState.month < 0) { calState.month = 11; calState.year--; } renderCalendar(); });
     }
+    if (nextBtn) {
+      const nClone = nextBtn.cloneNode(true); nextBtn.parentNode.replaceChild(nClone, nextBtn);
+      nClone.addEventListener('click', () => { calState.month++; if (calState.month > 11) { calState.month = 0; calState.year++; } renderCalendar(); });
+    }
+    // Render pending table
+    const activeStatuses = new Set(['PENDENTE_APROVACAO','APROVADO','CHEGOU','EM_DESCARGA']);
+    const pending = allAgendamentos.filter((ag) => activeStatuses.has(String(ag.status||'').toUpperCase()));
+    renderPendingTable(pending);
+
+    // Wire search
+    const searchInput = byId('pendingSearch');
+    if (searchInput && !searchInput.dataset.bound) {
+      searchInput.dataset.bound = '1';
+      searchInput.addEventListener('input', () => {
+        const term = searchInput.value.trim().toLowerCase();
+        const filtered = term ? pending.filter((ag) => JSON.stringify(ag).toLowerCase().includes(term)) : pending;
+        renderPendingTable(filtered);
+      });
+    }
+
     await maybeShowMissingRelatorioAlerts(data.agendamentos || []);
+  }
+
+  const STATUS_COLORS = { PENDENTE_APROVACAO:'#f59e0b', APROVADO:'#10b981', CANCELADO:'#ef4444', NO_SHOW:'#8b5cf6', REAGENDADO:'#3b82f6', FINALIZADO:'#64748b', CHEGOU:'#06b6d4', EM_DESCARGA:'#f97316' };
+  const STATUS_LABELS = { PENDENTE_APROVACAO:'Pendente', APROVADO:'Aprovado', CANCELADO:'Cancelado', NO_SHOW:'No-show', REAGENDADO:'Reagendado', FINALIZADO:'Finalizado', CHEGOU:'Chegou', EM_DESCARGA:'Em descarga' };
+
+  function renderPendingTable(items = []) {
+    const tbody = byId('dashboardTableBody');
+    if (!tbody) return;
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="9" style="padding:24px;text-align:center;color:#94a3b8;font-size:13px">Nenhum agendamento pendente.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map((ag, i) => {
+      const color = STATUS_COLORS[ag.status] || '#94a3b8';
+      const label = STATUS_LABELS[ag.status] || ag.status || '-';
+      const bg = i % 2 === 0 ? '#fff' : '#fafafa';
+      return `<tr style="background:${bg};transition:background .1s" onmouseenter="this.style.background='#f0f9ff'" onmouseleave="this.style.background='${bg}'">
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;white-space:nowrap">${escapeHtml(ag.protocolo||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9">
+          <span style="padding:3px 10px;border-radius:99px;font-size:11px;font-weight:700;background:${color}18;color:${color};white-space:nowrap">${escapeHtml(label)}</span>
+        </td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;white-space:nowrap">${escapeHtml(ag.dataAgendada||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;white-space:nowrap">${escapeHtml(ag.horaAgendada||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#334155;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(ag.fornecedor||'')}">${escapeHtml(ag.fornecedor||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#334155;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(ag.transportadora||'')}">${escapeHtml(ag.transportadora||'-')}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;white-space:nowrap">${escapeHtml(ag.doca?.codigo || ag.docaCodigo || String(ag.docaId||'-'))}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;text-align:right">${escapeHtml(formatIntegerBR(ag.quantidadeNotas||0))}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;color:#475569;text-align:right;white-space:nowrap">${escapeHtml(formatDecimalBR(ag.pesoTotalKg||ag.quantidadePeso||0,3))} kg</td>
+      </tr>`;
+    }).join('');
   }
 
   function formatAuditDate(value) {
@@ -2535,31 +2625,34 @@
       const isADefinir = String(doca.codigo || '').toLowerCase().includes('definir') || String(doca.codigo || '').toLowerCase() === 'a definir';
       const modalHtml = buildDocaModalHtml(doca, { isADefinir, docaOptions: Array.isArray(allDocasCad) ? allDocasCad : [] });
 
-      await showHtmlModal({ title: (isADefinir ? '⚠️ ' : '') + `Doca ${doca.codigo || ''}`.trim(), html: modalHtml, confirmText: 'Fechar', wide: true });
-
-      // Wire "Definir doca" buttons inside modal
-      document.querySelectorAll('.btn-definir-doca').forEach((btn2) => {
-        btn2.addEventListener('click', async () => {
-          const agId = btn2.dataset.agId;
-          if (!agId) return;
-          const docasList = Array.isArray(allDocasCad) ? allDocasCad.filter((dc) => !String(dc.codigo||'').toLowerCase().includes('definir')) : [];
-          if (!docasList.length) { alert('Nenhuma doca disponível.'); return; }
-          const optionsHtml = docasList.map((dc) => `<option value="${escapeHtml(String(dc.id))}">${escapeHtml(dc.codigo)}</option>`).join('');
-          const sel = document.createElement('select');
-          sel.innerHTML = `<option value="">Escolha a doca...</option>${optionsHtml}`;
-          sel.style.cssText = 'padding:8px 12px;border-radius:8px;border:1px solid #3b82f6;font-size:14px;margin-top:6px;width:100%';
-          btn2.replaceWith(sel);
-          sel.addEventListener('change', async () => {
-            const docaId = sel.value;
-            if (!docaId) return;
-            try {
-              await api(`/api/agendamentos/${agId}/definir-doca`, { method: 'PATCH', body: JSON.stringify({ docaId: Number(docaId) }) });
-              sel.closest('tr')?.querySelector('td:last-child')?.replaceWith(Object.assign(document.createElement('td'), { innerHTML: '<span style="color:#10b981;font-size:12px">✓ Doca definida</span>', style: 'padding:8px' }));
-              await loadDocas();
-            } catch (err) { alert(err.message); }
+      // Wire "Definir doca" buttons BEFORE awaiting (inject into modal body before it's shown)
+      showHtmlModal({ title: (isADefinir ? '⚠️ ' : '') + `Doca ${doca.codigo || ''}`.trim(), html: modalHtml, confirmText: 'Fechar', wide: true });
+      // Give DOM a tick to render then wire
+      setTimeout(() => {
+        document.querySelectorAll('.btn-definir-doca').forEach((btn2) => {
+          btn2.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const agId = btn2.dataset.agId;
+            if (!agId) return;
+            const docasList = Array.isArray(allDocasCad) ? allDocasCad.filter((dc) => !String(dc.codigo||'').toLowerCase().includes('definir')) : [];
+            if (!docasList.length) { alert('Nenhuma doca disponível.'); return; }
+            // Show inline dropdown
+            const cell = btn2.closest('td');
+            if (!cell) return;
+            const optionsHtml = docasList.map((dc) => `<option value="${escapeHtml(String(dc.id))}">${escapeHtml(dc.codigo)}</option>`).join('');
+            cell.innerHTML = `<select id="selDefinirDoca${agId}" style="padding:7px 10px;border-radius:8px;border:1px solid #3b82f6;font-size:13px;min-width:140px"><option value="">Escolha a doca...</option>${optionsHtml}</select>`;
+            cell.querySelector('select').addEventListener('change', async (ev) => {
+              const docaId = ev.target.value;
+              if (!docaId) return;
+              try {
+                await api(`/api/agendamentos/${agId}/definir-doca`, { method: 'PATCH', body: JSON.stringify({ docaId: Number(docaId) }) });
+                cell.innerHTML = '<span style="color:#10b981;font-weight:600;font-size:12px">✓ Doca definida</span>';
+                setTimeout(() => loadDocas(), 800);
+              } catch (err) { cell.innerHTML = `<span style="color:#ef4444;font-size:12px">${err.message}</span>`; }
+            });
           });
         });
-      });
+      }, 80);
     }));
   }
 
