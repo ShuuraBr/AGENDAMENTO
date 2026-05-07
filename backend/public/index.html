@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Agendamento de Descarga V3.2</title>
-  <link rel="stylesheet" href="/assets/styles35.css" />
+  <link rel="stylesheet" href="/assets/styles36.css" />
   <link rel="icon" href="assets/Favicon.png" type="image">
 
   <style>
@@ -15,10 +15,11 @@
     #site-watermark.wm-active { display: block; }
     .wm-tile {
       position: absolute; transform: rotate(-30deg);
-      display: flex; align-items: center; justify-content: center;
-      opacity: 0.12; user-select: none;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      opacity: 0.13; user-select: none; white-space: nowrap;
     }
-    .wm-tile img { width: 32px; height: 32px; object-fit: contain; }
+    .wm-tile img { width: 28px; height: 28px; object-fit: contain; }
+    .wm-tile span { font-size: 9px; font-weight: 700; color: #0f172a; letter-spacing: .04em; font-family: Arial,sans-serif; }
   </style>
 </head>
 <body>
@@ -189,26 +190,23 @@
         <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div>
       </div>
 
-      <!-- Gráficos (1 row, 2 cols) -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px" id="chartsRow">
-        <div class="card">
-          <h4>Peso recebido por dia (kg)</h4>
-          <canvas id="chartPeso" height="140"></canvas>
+      <!-- Gráficos 2x2 compactos -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px" id="chartsRow">
+        <div class="card" style="padding:10px 12px">
+          <h4>PESO RECEBIDO POR DIA (KG)</h4>
+          <canvas id="chartPeso" height="100"></canvas>
         </div>
-        <div class="card">
-          <h4>Ocorrências por transportadora</h4>
-          <canvas id="chartOcorrencias" height="140"></canvas>
+        <div class="card" style="padding:10px 12px">
+          <h4>OCORRÊNCIAS POR TRANSPORTADORA</h4>
+          <canvas id="chartOcorrencias" height="100"></canvas>
         </div>
-      </div>
-      <!-- Gráficos row 2 -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
-        <div class="card">
-          <h4>Tempo médio de descarga (min)</h4>
-          <canvas id="chartDescarga" height="140"></canvas>
+        <div class="card" style="padding:10px 12px">
+          <h4>TEMPO MÉDIO DE DESCARGA (MIN)</h4>
+          <canvas id="chartDescarga" height="100"></canvas>
         </div>
-        <div class="card">
-          <h4>Tempo médio agendamento → chegada (h)</h4>
-          <canvas id="chartAgendaChegada" height="140"></canvas>
+        <div class="card" style="padding:10px 12px">
+          <h4>TEMPO MÉDIO AGENDAMENTO → CHEGADA (H)</h4>
+          <canvas id="chartAgendaChegada" height="100"></canvas>
         </div>
       </div>
 
@@ -523,7 +521,7 @@
       tile.className = 'wm-tile';
       tile.style.left = (col * 13.5) + '%';
       tile.style.top  = (row * 8.5) + '%';
-      tile.innerHTML = '<img src="/assets/Favicon.png" alt="" />';
+      tile.innerHTML = '<img src="/assets/Favicon.png" alt="" /><span>' + label.replace(/</g,'&lt;') + '</span>';
       el.appendChild(tile);
     }
     el.classList.add('wm-active');

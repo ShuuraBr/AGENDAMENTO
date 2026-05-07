@@ -65,8 +65,16 @@ function Watermark({ user }) {
             <img
               src="/assets/Favicon.png"
               alt=""
-              style={{ width: 28, height: 28, objectFit: "contain" }}
+              style={{ width: 26, height: 26, objectFit: "contain" }}
             />
+            <span
+              style={{
+                fontSize: 9, fontWeight: 700, color: "#0f172a",
+                letterSpacing: "0.04em", fontFamily: "Arial, sans-serif",
+              }}
+            >
+              {label}
+            </span>
             <span
               style={{
                 fontSize: 11,

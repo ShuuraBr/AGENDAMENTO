@@ -2506,7 +2506,7 @@
       kpiData[kpiKey] = allAgendamentos.filter((ag) => String(ag.status || '').toUpperCase() === status).length;
     }
     if (kpis) {
-      kpis.className = 'grid kpi-grid';
+      kpis.className = 'kpi-grid';
       kpis.innerHTML = '';
       const kpiModalMap = { finalizados: 'FINALIZADO', cancelados: 'CANCELADO', noShow: 'NO_SHOW', reagendados: 'REAGENDADO' };
       Object.entries(kpiData || {}).forEach(([k, v]) => {
@@ -3122,6 +3122,60 @@
     });
   }
 
+  function show2FAStep(email) {
+    const loginCard = byId('loginForm')?.closest('.card') || byId('loginForm')?.parentNode;
+    if (!loginCard) return;
+    const existing = byId('twoFAStep');
+    if (existing) { existing.style.display = 'block'; return; }
+    const div = document.createElement('div');
+    div.id = 'twoFAStep';
+    div.style.cssText = 'margin-top:16px;display:grid;gap:10px';
+    div.innerHTML = `
+      <p style="margin:0;font-size:14px;color:#334155">Digite o código de 6 dígitos enviado para seu e-mail:</p>
+      <input id="twoFACode" type="text" maxlength="6" placeholder="000000" inputmode="numeric"
+        style="font-size:28px;letter-spacing:10px;text-align:center;padding:14px;border-radius:12px;border:2px solid #2563eb;font-weight:700" />
+      <button id="btnVerify2FA" style="padding:12px;border-radius:12px;font-size:15px;font-weight:700">Verificar código</button>
+      <button id="btnResend2FA" style="background:#475569;padding:10px;border-radius:10px;font-size:13px">Reenviar código</button>
+      <p id="twoFAMsg" style="margin:0;font-size:13px;color:#ef4444"></p>`;
+    loginCard.appendChild(div);
+
+    div.querySelector('#btnVerify2FA').onclick = async () => {
+      const code = div.querySelector('#twoFACode').value.trim();
+      const msgEl = div.querySelector('#twoFAMsg');
+      if (code.length !== 6) { msgEl.textContent = 'Digite os 6 dígitos.'; return; }
+      try {
+        const data = await api('/api/auth/verify-2fa', { method: 'POST', body: JSON.stringify({ email, code }) });
+        state.token = data.token;
+        localStorage.setItem('token', data.token);
+        state.currentUser = data.user || null;
+        syncCurrentUserFromToken();
+        if (typeof refreshWatermark === 'function') refreshWatermark();
+        div.remove();
+        updateNav();
+        await fillSelects();
+        showView('dashboard');
+        await loadDashboard();
+        byId('loginMsg').textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
+      } catch (err) {
+        msgEl.textContent = err.message || 'Código inválido.';
+      }
+    };
+    div.querySelector('#twoFACode').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') div.querySelector('#btnVerify2FA').click();
+    });
+    div.querySelector('#btnResend2FA').onclick = async () => {
+      try {
+        const form = byId('loginForm');
+        const fd = new FormData(form);
+        await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, senha: fd.get('senha') || '' }) });
+        div.querySelector('#twoFAMsg').textContent = 'Novo código enviado!';
+        div.querySelector('#twoFAMsg').style.color = '#10b981';
+        setTimeout(() => { div.querySelector('#twoFAMsg').textContent = ''; div.querySelector('#twoFAMsg').style.color = '#ef4444'; }, 3000);
+      } catch (err) { div.querySelector('#twoFAMsg').textContent = err.message; }
+    };
+    setTimeout(() => div.querySelector('#twoFACode')?.focus(), 50);
+  }
+
   document.addEventListener("DOMContentLoaded", async () => {
     bindViewNavigation();
 
@@ -3165,6 +3219,15 @@
       try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
         const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
+
+        // ── 2FA: server requires verification code ───────────────────────────
+        if (data.requires2FA) {
+          byId("loginMsg").textContent = `Código enviado para ${data.email}. Verifique seu e-mail.`;
+          show2FAStep(payload.email);
+          return;
+        }
+
+        // ── Direct login (no 2FA or fallback) ───────────────────────────────
         state.token = data.token;
         localStorage.setItem("token", data.token);
         state.currentUser = data.user || null;
