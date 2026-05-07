@@ -81,15 +81,43 @@ router.post("/login", loginRateLimit, async (req, res) => {
       try {
         await sendEmail({
           to: user.email,
-          subject: 'Seu código de verificação — Agendamento',
-          html: `<div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:32px;background:#f8fafc;border-radius:16px;border:1px solid #e2e8f0">
-            <h2 style="margin:0 0 8px;color:#0f172a">Verificação em duas etapas</h2>
-            <p style="color:#475569;margin:0 0 24px">Use o código abaixo para concluir o login. Ele expira em <strong>10 minutos</strong>.</p>
-            <div style="background:#fff;border:2px solid #2563eb;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px">
-              <span style="font-size:36px;font-weight:800;letter-spacing:12px;color:#0f172a">${code}</span>
+          subject: 'Código de verificação — Agendamento',
+          html: `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#1a1a2a;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#1a1a2a;padding:40px 20px;">
+  <tr><td align="center">
+    <table width="480" cellpadding="0" cellspacing="0" style="background:#22223a;border-radius:12px;overflow:hidden;max-width:480px;width:100%;">
+      <tr>
+        <td style="padding:32px 40px 20px;text-align:center;">
+          <div style="font-size:28px;margin-bottom:8px;">🔒</div>
+          <div style="color:#a0a0b8;font-size:13px;letter-spacing:0.5px;">Agendamento · Objetiva Atacadista</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 40px 28px;">
+          <p style="color:#e8e8f0;font-size:16px;margin:0 0 8px;">Olá, <strong>${user.nome}</strong>!</p>
+          <p style="color:#a0a0b8;font-size:14px;margin:0 0 24px;">Use o código abaixo para concluir sua verificação em dois fatores.</p>
+          <div style="border:2px dashed #444466;border-radius:10px;padding:4px;">
+            <div style="background:#14142a;border-radius:8px;padding:20px;text-align:center;">
+              <div style="color:#a0a0b8;font-size:10px;letter-spacing:3px;margin-bottom:12px;">CÓDIGO DE VERIFICAÇÃO</div>
+              <div style="color:#ffffff;font-size:40px;font-weight:700;letter-spacing:14px;font-family:monospace;">${code}</div>
             </div>
-            <p style="color:#94a3b8;font-size:12px;margin:0">Se você não solicitou este código, ignore este e-mail.</p>
-          </div>`,
+          </div>
+          <div style="background:#b8860b;border-radius:8px;padding:12px 16px;margin-top:20px;">
+            <span style="color:#fff8e0;font-size:13px;">🔒 Válido por <strong>10 minutos</strong>. Não compartilhe com ninguém.</span>
+          </div>
+          <p style="color:#6b6b88;font-size:12px;margin:16px 0 0;">Se você não tentou acessar o sistema, ignore este e-mail.</p>
+        </td>
+      </tr>
+      <tr>
+        <td style="border-top:1px solid #2e2e4a;padding:16px 40px;text-align:center;">
+          <span style="color:#505070;font-size:11px;">Agendamento · Objetiva Atacadista · Uso interno e restrito</span>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`,
           text: `Seu código de verificação: ${code} (expira em 10 minutos)`
         });
       } catch (mailErr) {
