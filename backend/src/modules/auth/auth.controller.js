@@ -5,7 +5,11 @@ import { env } from '../../config/env.js';
 
 export async function login(req, res) {
   const { email, password } = req.body;
-  const user = await prisma.usuario.findUnique({ include: { perfil: true }, where: { email } });
+  
+  const user = await prisma.usuario.findUnique({ 
+    include: { perfil: true }, 
+    where: { email } 
+  });
 
   if (!user) return res.status(401).json({ message: 'Credenciais inválidas' });
 
@@ -18,14 +22,25 @@ export async function login(req, res) {
     { expiresIn: '8h' }
   );
 
-  res.json({ token, user: { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil.nome } });
+  return res.json({ 
+    token, 
+    user: { id: user.id, nome: user.nome, email: user.email, perfil: user.perfil.nome } 
+  });
 }
 
 export async function me(req, res) {
-  const user = await prisma.usuario.findUnique({
-    where: { id: Number(req.user.sub) },
-    include: { perfil: true },
-  });
+  try {
+    const user = await prisma.usuario.findUnique({
+      where: { id: Number(req.user.sub) },
+      include: { perfil: true },
+    });
 
-  res.json({ id: user.id, nome: user.nome, email: user.email, perfil: user.perfil.nome });
+    if (!user) return res.status(404).json({ message: "Usuário não encontrado" });
+
+    return res.json({ 
+      id: user.id, nome: user.nome, email: user.email, perfil: user.perfil.nome 
+    });
+  } catch (error) {
+    return res.status(500).json({ message: "Erro ao buscar dados do usuário" });
+  }
 }
