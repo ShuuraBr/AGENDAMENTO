@@ -1,21 +1,28 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { api } from '../services/api';
 
-// SECURITY NOTE: Token is stored in localStorage which is accessible to XSS.
-// For improved security, migrate to httpOnly secure cookies set by the backend.
-// See: https://owasp.org/www-community/HttpOnly
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true); // Novo estado de loading
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      api.get('/auth/me').then((res) => setUser(res.data)).catch(() => {
-        localStorage.removeItem('token');
-      });
+    async function loadUser() {
+      const token = localStorage.getItem('token');
+      if (token) {
+        try {
+          const res = await api.get('/auth/me');
+          setUser(res.data);
+        } catch (error) {
+          console.error("Token inválido ou expirado", error);
+          localStorage.removeItem('token');
+          setUser(null);
+        }
+      }
+      setLoading(false); // Finaliza o carregamento independente do resultado
     }
+    loadUser();
   }, []);
 
   async function login(email, password) {
@@ -29,7 +36,11 @@ export function AuthProvider({ children }) {
     setUser(null);
   }
 
-  return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ user, login, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
