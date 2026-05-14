@@ -50,7 +50,10 @@
     OPERADOR: [
       "dashboard.view", "docas.view", "cadastros.view", "cadastros.manage",
       "agendamentos.view", "agendamentos.create", "agendamentos.consulta_nf",
-      "agendamentos.documentos", "agendamentos.notas",
+      "agendamentos.approve", "agendamentos.reprove", "agendamentos.reschedule",
+      "agendamentos.cancel", "agendamentos.start", "agendamentos.finish", "agendamentos.no_show",
+      "agendamentos.documentos", "agendamentos.notas", "agendamentos.notify",
+      "confirmacoes.view",
       "relatorio.view", "relatorio.terceirizado.view"
     ],
     PORTARIA: [

@@ -43,7 +43,7 @@ export const PROFILE_PERMISSIONS = {
   // Acesso total exceto gestão de usuários
   GESTOR: ALL_PERMISSIONS.filter((p) => p !== 'users.manage'),
 
-  // Cria agendamentos e edita cadastros (exceto usuários); sem acesso à aba Confirmações
+  // Cria e aprova agendamentos, edita cadastros (exceto usuários); sem solicitar-reagendamento em lote
   OPERADOR: [
     'dashboard.view',
     'docas.view',
@@ -52,8 +52,17 @@ export const PROFILE_PERMISSIONS = {
     'agendamentos.view',
     'agendamentos.create',
     'agendamentos.consulta_nf',
+    'agendamentos.approve',
+    'agendamentos.reprove',
+    'agendamentos.reschedule',
+    'agendamentos.cancel',
+    'agendamentos.start',
+    'agendamentos.finish',
+    'agendamentos.no_show',
     'agendamentos.documentos',
     'agendamentos.notas',
+    'agendamentos.notify',
+    'confirmacoes.view',
     'relatorio.view',
     'relatorio.terceirizado.view'
   ],
