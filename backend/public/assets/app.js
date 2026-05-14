@@ -1984,12 +1984,14 @@
     if (!transpInput) return;
 
     // Helper: fill transportadora + email + phone from cadastro record
-    function applyTranspCadastro(transp) {
+        function applyTranspCadastro(transp) {
       if (!transp) return;
       if (transp.nome) transpInput.value = transp.nome;
       const emailTranspInput = form.querySelector('[name="emailTransportadora"]');
+      const emailMotoInput = form.querySelector('[name="emailMotorista"]');
       const telefoneMotoInput = form.querySelector('[name="telefoneMotorista"]');
       if (emailTranspInput && transp.email && !emailTranspInput.value) emailTranspInput.value = transp.email;
+      if (emailMotoInput && transp.email && !emailMotoInput.value) emailMotoInput.value = transp.email;
       if (telefoneMotoInput && transp.telefone && !telefoneMotoInput.value) telefoneMotoInput.value = transp.telefone;
     }
 
