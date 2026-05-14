@@ -1998,12 +1998,8 @@
     const transpInput = form.querySelector('[name="transportadora"]');
     if (!transpInput) return;
 
-    // Helper: fill transportadora + email + phone from cadastro record
-<<<<<<< HEAD
     function applyTranspCadastro(transp) {
-=======
-        function applyTranspCadastro(transp) {
->>>>>>> 3e8dd641d99ec524abeb0ab0b972fa663cebed81
+
       if (!transp) return;
       if (transp.nome) transpInput.value = transp.nome;
       const emailTranspInput = form.querySelector('[name="emailTransportadora"]');
@@ -2014,22 +2010,13 @@
       if (telefoneMotoInput && transp.telefone && !telefoneMotoInput.value) telefoneMotoInput.value = transp.telefone;
     }
 
-    // Lookup transportadora by fornecedor name in cadastro
-<<<<<<< HEAD
-=======
-        // Lookup transportadora by fornecedor name in cadastro
->>>>>>> 3e8dd641d99ec524abeb0ab0b972fa663cebed81
+
     async function fetchTranspByFornecedor(nomeFornecedor) {
       try {
         const data = await api(`/api/cadastros/transportadoras/por-fornecedor?nome=${encodeURIComponent(nomeFornecedor)}`);
         return Array.isArray(data) ? data[0] : (data || null);
       } catch { return null; }
     }
-
-<<<<<<< HEAD
-=======
-
->>>>>>> 3e8dd641d99ec524abeb0ab0b972fa663cebed81
     if (fornecedores.length === 1) {
       const forn = fornecedores[0];
       const transpNome = String(forn?.transportadora || '').trim();
