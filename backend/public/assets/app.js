@@ -721,6 +721,117 @@
     });
   }
 
+  function timeAgo(iso) {
+    const diff = Date.now() - new Date(iso).getTime();
+    const min = Math.floor(diff / 60000);
+    if (min < 1) return 'agora';
+    if (min < 60) return `${min} min atrás`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h}h atrás`;
+    return `${Math.floor(h / 24)}d atrás`;
+  }
+
+  async function loadNotificacoes() {
+    if (!state.token || isTokenExpired(state.token)) return;
+    try {
+      const data = await api('/api/notificacoes');
+      state.notificacoes = Array.isArray(data) ? data : [];
+      renderNotifBadge();
+    } catch { /* silencioso */ }
+  }
+
+  function renderNotifBadge() {
+    const badge = byId('notifBadge');
+    const unread = state.notificacoes.filter((n) => !n.lida).length;
+    if (!badge) return;
+    badge.textContent = unread > 99 ? '99+' : String(unread);
+    badge.classList.toggle('hidden', unread === 0);
+  }
+
+  function renderNotifDropdown() {
+    const drop = byId('notifDropdown');
+    if (!drop) return;
+    const notifs = state.notificacoes;
+    drop.innerHTML = `
+      <div class="notif-header">
+        <span>Notificações</span>
+        <button type="button" id="btnFecharNotif" style="background:none;border:none;color:#64748b;font-size:18px;cursor:pointer;padding:0">✕</button>
+      </div>
+      ${!notifs.length ? '<div class="notif-empty">Nenhuma notificação.</div>' : notifs.map((n) => `
+        <div class="notif-item ${n.lida ? '' : 'unread'}" data-notif-id="${n.id}" data-agendamento-id="${n.agendamentoId || ''}">
+          <div class="notif-item-title">${n.tipo === 'SOLICITAR_REAGENDAMENTO' ? '🔔 Reagendamento solicitado' : escapeHtml(n.tipo || '')}</div>
+          <div class="notif-item-sub">${escapeHtml(n.protocolo || '-')} — ${escapeHtml(n.fornecedor || '-')}</div>
+          <div class="notif-item-sub">Data original: <strong>${escapeHtml(formatDateBR(n.dataAgendadaOriginal) || '-')}</strong> | Por: ${escapeHtml(n.requestedBy?.nome || n.requestedBy?.perfil || '-')}</div>
+          <div class="notif-item-time">${timeAgo(n.createdAt)}</div>
+        </div>`).join('')}
+    `;
+    drop.querySelectorAll('.notif-item').forEach((el) => {
+      el.addEventListener('click', async () => {
+        const notifId = el.dataset.notifId;
+        const agendamentoId = el.dataset.agendamentoId;
+        await api(`/api/notificacoes/${notifId}/lida`, { method: 'PATCH' }).catch(() => {});
+        const idx = state.notificacoes.findIndex((n) => String(n.id) === String(notifId));
+        if (idx >= 0) state.notificacoes[idx].lida = true;
+        renderNotifBadge();
+        if (agendamentoId && hasPermission('agendamentos.reschedule')) {
+          abrirModalReagendamentoNotif(notifId, agendamentoId, el);
+        }
+        drop.classList.add('hidden');
+      });
+    });
+    byId('btnFecharNotif')?.addEventListener('click', (e) => { e.stopPropagation(); drop.classList.add('hidden'); });
+  }
+
+  function abrirModalReagendamentoNotif(notifId, agendamentoId, itemEl) {
+    const existing = byId('modalReagendamentoNotif');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'modalReagendamentoNotif';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:600;padding:16px';
+    const protocolo = itemEl?.querySelector('.notif-item-sub')?.textContent?.split('—')[0]?.trim() || `ID ${agendamentoId}`;
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:18px;padding:28px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+        <h3 style="margin:0 0 16px">Reagendar agendamento</h3>
+        <p style="margin:0 0 12px;font-size:14px;color:#475569">${escapeHtml(protocolo)}</p>
+        <label style="display:grid;gap:6px;font-size:14px;font-weight:600">Nova data
+          <input id="novaDataReagendamento" type="date" style="padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px" />
+        </label>
+        <label style="display:grid;gap:6px;font-size:14px;font-weight:600;margin-top:12px">Nova hora (HH:MM)
+          <input id="novaHoraReagendamento" type="text" placeholder="08:00" style="padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px" />
+        </label>
+        <p id="modalReagendNotifMsg" style="margin:10px 0 0;font-size:13px;color:#ef4444"></p>
+        <div style="display:flex;gap:10px;margin-top:20px">
+          <button id="btnConfirmarReagendNotif" style="flex:1;padding:12px;border-radius:12px;font-weight:700">Confirmar</button>
+          <button id="btnCancelarReagendNotif" style="flex:1;background:#475569;padding:12px;border-radius:12px">Cancelar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    byId('btnCancelarReagendNotif').onclick = () => modal.remove();
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    byId('btnConfirmarReagendNotif').onclick = async () => {
+      const novaData = byId('novaDataReagendamento').value;
+      const novaHora = byId('novaHoraReagendamento').value.trim();
+      const msg = byId('modalReagendNotifMsg');
+      if (!novaData) { msg.textContent = 'Informe a nova data.'; return; }
+      try {
+        await api(`/api/agendamentos/${agendamentoId}/reagendar`, { method: 'POST', body: JSON.stringify({ dataAgendada: novaData, horaAgendada: novaHora || undefined }) });
+        modal.remove();
+        await loadNotificacoes();
+        if (document.querySelector('#confirmacoes.view.active')) loadAgendamentos().catch(() => {});
+      } catch (err) { msg.textContent = err.message || 'Erro ao reagendar.'; }
+    };
+  }
+
+  function startNotifPolling() {
+    if (state.notifPollInterval) return;
+    loadNotificacoes();
+    state.notifPollInterval = setInterval(() => loadNotificacoes(), 30000);
+  }
+
+  function stopNotifPolling() {
+    if (state.notifPollInterval) { clearInterval(state.notifPollInterval); state.notifPollInterval = null; }
+  }
+
   function logout() {
     stopNotifPolling();
     localStorage.removeItem("token");
@@ -3781,109 +3892,6 @@
         byId('operacaoMsg').textContent = err.message || 'Falha ao enviar o resumo financeiro visual.';
       }
     });
-
-    // ── Notificações ──────────────────────────────────────────────────────────
-
-    function timeAgo(iso) {
-      const diff = Date.now() - new Date(iso).getTime();
-      const min = Math.floor(diff / 60000);
-      if (min < 1) return 'agora';
-      if (min < 60) return `${min} min atrás`;
-      const h = Math.floor(min / 60);
-      if (h < 24) return `${h}h atrás`;
-      return `${Math.floor(h / 24)}d atrás`;
-    }
-
-    async function loadNotificacoes() {
-      if (!state.token || isTokenExpired(state.token)) return;
-      try {
-        const data = await api('/api/notificacoes');
-        state.notificacoes = Array.isArray(data) ? data : [];
-        renderNotifBadge();
-      } catch { /* silencioso */ }
-    }
-
-    function renderNotifBadge() {
-      const badge = byId('notifBadge');
-      const unread = state.notificacoes.filter((n) => !n.lida).length;
-      if (!badge) return;
-      badge.textContent = unread > 99 ? '99+' : String(unread);
-      badge.classList.toggle('hidden', unread === 0);
-    }
-
-    function renderNotifDropdown() {
-      const drop = byId('notifDropdown');
-      if (!drop) return;
-      const notifs = state.notificacoes;
-      drop.innerHTML = `
-        <div class="notif-header">
-          <span>Notificações</span>
-          <button type="button" id="btnFecharNotif" style="background:none;border:none;color:#64748b;font-size:18px;cursor:pointer;padding:0">✕</button>
-        </div>
-        ${!notifs.length ? '<div class="notif-empty">Nenhuma notificação.</div>' : notifs.map((n) => `
-          <div class="notif-item ${n.lida ? '' : 'unread'}" data-notif-id="${n.id}" data-agendamento-id="${n.agendamentoId || ''}">
-            <div class="notif-item-title">${n.tipo === 'SOLICITAR_REAGENDAMENTO' ? '🔔 Reagendamento solicitado' : escapeHtml(n.tipo || '')}</div>
-            <div class="notif-item-sub">${escapeHtml(n.protocolo || '-')} — ${escapeHtml(n.fornecedor || '-')}</div>
-            <div class="notif-item-sub">Data original: <strong>${escapeHtml(formatDateBR(n.dataAgendadaOriginal) || '-')}</strong> | Por: ${escapeHtml(n.requestedBy?.nome || n.requestedBy?.perfil || '-')}</div>
-            <div class="notif-item-time">${timeAgo(n.createdAt)}</div>
-          </div>`).join('')}
-      `;
-      drop.querySelectorAll('.notif-item').forEach((el) => {
-        el.addEventListener('click', async () => {
-          const notifId = el.dataset.notifId;
-          const agendamentoId = el.dataset.agendamentoId;
-          await api(`/api/notificacoes/${notifId}/lida`, { method: 'PATCH' }).catch(() => {});
-          const idx = state.notificacoes.findIndex((n) => String(n.id) === String(notifId));
-          if (idx >= 0) state.notificacoes[idx].lida = true;
-          renderNotifBadge();
-          if (agendamentoId && hasPermission('agendamentos.reschedule')) {
-            abrirModalReagendamentoNotif(notifId, agendamentoId, el);
-          }
-          drop.classList.add('hidden');
-        });
-      });
-      byId('btnFecharNotif')?.addEventListener('click', (e) => { e.stopPropagation(); drop.classList.add('hidden'); });
-    }
-
-    function abrirModalReagendamentoNotif(notifId, agendamentoId, itemEl) {
-      const existing = byId('modalReagendamentoNotif');
-      if (existing) existing.remove();
-      const modal = document.createElement('div');
-      modal.id = 'modalReagendamentoNotif';
-      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:600;padding:16px';
-      const protocolo = itemEl?.querySelector('.notif-item-sub')?.textContent?.split('—')[0]?.trim() || `ID ${agendamentoId}`;
-      modal.innerHTML = `
-        <div style="background:#fff;border-radius:18px;padding:28px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
-          <h3 style="margin:0 0 16px">Reagendar agendamento</h3>
-          <p style="margin:0 0 12px;font-size:14px;color:#475569">${escapeHtml(protocolo)}</p>
-          <label style="display:grid;gap:6px;font-size:14px;font-weight:600">Nova data
-            <input id="novaDataReagendamento" type="date" style="padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px" />
-          </label>
-          <label style="display:grid;gap:6px;font-size:14px;font-weight:600;margin-top:12px">Nova hora (HH:MM)
-            <input id="novaHoraReagendamento" type="text" placeholder="08:00" style="padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px" />
-          </label>
-          <p id="modalReagendNotifMsg" style="margin:10px 0 0;font-size:13px;color:#ef4444"></p>
-          <div style="display:flex;gap:10px;margin-top:20px">
-            <button id="btnConfirmarReagendNotif" style="flex:1;padding:12px;border-radius:12px;font-weight:700">Confirmar</button>
-            <button id="btnCancelarReagendNotif" style="flex:1;background:#475569;padding:12px;border-radius:12px">Cancelar</button>
-          </div>
-        </div>`;
-      document.body.appendChild(modal);
-      byId('btnCancelarReagendNotif').onclick = () => modal.remove();
-      modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-      byId('btnConfirmarReagendNotif').onclick = async () => {
-        const novaData = byId('novaDataReagendamento').value;
-        const novaHora = byId('novaHoraReagendamento').value.trim();
-        const msg = byId('modalReagendNotifMsg');
-        if (!novaData) { msg.textContent = 'Informe a nova data.'; return; }
-        try {
-          await api(`/api/agendamentos/${agendamentoId}/reagendar`, { method: 'POST', body: JSON.stringify({ dataAgendada: novaData, horaAgendada: novaHora || undefined }) });
-          modal.remove();
-          await loadNotificacoes();
-          if (document.querySelector('#confirmacoes.view.active')) loadAgendamentos().catch(() => {});
-        } catch (err) { msg.textContent = err.message || 'Erro ao reagendar.'; }
-      };
-    }
 
     // Bell toggle
     byId('btnNotificacoes')?.addEventListener('click', (e) => {
