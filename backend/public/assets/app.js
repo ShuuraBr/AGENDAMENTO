@@ -3054,11 +3054,14 @@
 
   function getCadastroPayload() {
     const config = CADASTRO_CONFIG[state.cadastroTipo];
-    const data = Object.fromEntries(new FormData(byId("cadastroForm")).entries());
     const payload = {};
     config.fields.forEach((field) => {
       if (field.type === 'info') return;
-      payload[field.name] = normalizeValueByField(field, data[field.name] ?? "");
+      // Read directly from DOM element so disabled fields are still included.
+      // FormData skips disabled inputs, which silently wipes isArray fields like fornecedoresVinculados.
+      const el = byId(`cad_${field.name}`);
+      const value = el ? el.value : '';
+      payload[field.name] = normalizeValueByField(field, value);
     });
     return payload;
   }
