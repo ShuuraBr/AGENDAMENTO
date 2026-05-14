@@ -1,8 +1,8 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { findUserByEmailDirect, directCadastrosEnabled } from "../utils/direct-cadastros.js";
-import { readUsuarios } from "../utils/file-store.js";
-import { signInternalSession } from "../utils/security.js";
+import { readUsuarios, patchUsuarioFile } from "../utils/file-store.js";
+import { signInternalSession, signTempSession, verifyTempSession } from "../utils/security.js";
 import { auditLog } from "../utils/audit.js";
 import { loginRateLimit, registerLoginFailure, clearLoginFailures } from "../middlewares/rateLimit.js";
 import { getAccessProfileSummary, normalizeProfile } from "../utils/permissions.js";
@@ -45,6 +45,7 @@ async function findUserByEmail(email) {
     perfil: fileUser.perfil || 'ADMIN',
     senhaHash: fileUser.senhaHash || null,
     senha: fileUser.senha || null,
+    senhaProvisoria: !!fileUser.senhaProvisoria,
   };
 }
 
@@ -72,6 +73,13 @@ router.post("/login", loginRateLimit, async (req, res) => {
     if (!ok) {
       await registerLoginFailure(req, email);
       return res.status(401).json({ message: "Credenciais inválidas." });
+    }
+
+    // Senha provisória — exige troca antes de emitir token completo
+    if (user.senhaProvisoria) {
+      await clearLoginFailures(req, email, user);
+      const tempToken = signTempSession({ sub: user.id, email: user.email });
+      return res.json({ requiresPasswordChange: true, tempToken });
     }
 
     // Credentials valid — send 2FA code by email if mail is configured
@@ -218,6 +226,54 @@ router.post("/verify-2fa", loginRateLimit, async (req, res) => {
     return completLogin(res, req, user);
   } catch (err) {
     console.error("Erro no verify-2fa:", err);
+    return res.status(500).json({ message: "Erro interno." });
+  }
+});
+
+// ── Troca de senha provisória ────────────────────────────────────────────────
+router.post("/trocar-senha-provisoria", async (req, res) => {
+  try {
+    const { tempToken, novaSenha } = req.body || {};
+    if (!tempToken || !novaSenha) {
+      return res.status(400).json({ message: "Token e nova senha são obrigatórios." });
+    }
+    if (String(novaSenha).length < 6) {
+      return res.status(400).json({ message: "A senha deve ter pelo menos 6 caracteres." });
+    }
+
+    let payload;
+    try { payload = verifyTempSession(tempToken); } catch {
+      return res.status(401).json({ message: "Token inválido ou expirado. Faça login novamente." });
+    }
+
+    const user = await findUserByEmail(payload.email);
+    if (!user) return res.status(404).json({ message: "Usuário não encontrado." });
+
+    const newHash = await bcrypt.hash(String(novaSenha), 12);
+
+    // Update in DB if available
+    if (directCadastrosEnabled()) {
+      try {
+        const { updateCadastroDirect } = await import("../utils/direct-cadastros.js");
+        await updateCadastroDirect("usuarios", user.id, { senhaHash: newHash, senhaProvisoria: false });
+      } catch (dbErr) {
+        console.warn("[SENHA-PROV] DB update failed, file only:", dbErr?.message);
+      }
+    }
+    // Always update file (source of truth for senhaProvisoria)
+    patchUsuarioFile(user.id, { senhaHash: newHash, senhaProvisoria: false });
+
+    await auditLog({
+      usuarioId: user.id, perfil: user.perfil,
+      acao: "TROCA_SENHA_PROVISORIA", entidade: "USUARIO", entidadeId: user.id,
+      detalhes: { email: user.email }, ip: req.ip
+    });
+
+    // Issue full session token
+    const freshUser = { ...user, senhaHash: newHash, senhaProvisoria: false };
+    return completLogin(res, req, freshUser);
+  } catch (err) {
+    console.error("Erro ao trocar senha provisória:", err);
     return res.status(500).json({ message: "Erro interno." });
   }
 });

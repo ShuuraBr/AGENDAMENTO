@@ -8,6 +8,16 @@ export function signInternalSession(payload) {
   });
 }
 
+export function signTempSession(payload) {
+  return jwt.sign({ ...payload, scope: 'change-password' }, env.jwtSecret, { expiresIn: '15m' });
+}
+
+export function verifyTempSession(token) {
+  const payload = jwt.verify(token, env.jwtSecret);
+  if (payload.scope !== 'change-password') throw new Error('Token inválido.');
+  return payload;
+}
+
 export function verifyInternalSession(token) {
   return jwt.verify(token, env.jwtSecret);
 }
