@@ -1994,14 +1994,14 @@
     }
 
     // Lookup transportadora by fornecedor name in cadastro
+        // Lookup transportadora by fornecedor name in cadastro
     async function fetchTranspByFornecedor(nomeFornecedor) {
       try {
-        const res = await fetch(`/api/cadastros/transportadoras/por-fornecedor?nome=${encodeURIComponent(nomeFornecedor)}`);
-        if (!res.ok) return null;
-        const data = await res.json();
+        const data = await api(`/api/cadastros/transportadoras/por-fornecedor?nome=${encodeURIComponent(nomeFornecedor)}`);
         return Array.isArray(data) ? data[0] : (data || null);
       } catch { return null; }
     }
+
 
     if (fornecedores.length === 1) {
       const forn = fornecedores[0];
