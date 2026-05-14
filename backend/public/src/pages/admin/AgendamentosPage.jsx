@@ -354,11 +354,21 @@ export default function AgendamentosPage() {
       const group = pendingGroups.find((g) => g.fornecedor === supplier);
       if (group?.transportadora) {
         setForm((f) => ({ ...f, transportadora: group.transportadora }));
+        autoFillTransportadora(group.transportadora);
         return;
       }
       // Try linked transportadora from cadastro
       api.get(`/cadastros/transportadoras/por-fornecedor?nome=${encodeURIComponent(supplier)}`)
-        .then(({ data }) => { if (data?.nome) setForm((f) => ({ ...f, transportadora: data.nome })); })
+        .then(({ data }) => {
+          if (data?.nome) {
+            setForm((f) => ({
+              ...f,
+              transportadora: data.nome,
+              emailTransportadora: f.emailTransportadora || data.email || data.emailTransportadora || '',
+              telefoneMotorista: f.telefoneMotorista || data.telefoneMotorista || data.telefone || '',
+            }));
+          }
+        })
         .catch(() => {});
     }
   }, [selectedSuppliers.join('|')]);
@@ -368,6 +378,11 @@ export default function AgendamentosPage() {
       setForm((old) => ({ ...old, janelaId: String(availableJanelas[0]?.id || '') }));
     }
   }, [availableJanelas, form.janelaId]);
+
+  // Passo 4: quando transportadora muda manualmente, tentar auto-preencher email/telefone
+  useEffect(() => {
+    if (form.transportadora) autoFillTransportadora(form.transportadora);
+  }, [form.transportadora]);
 
   function toggleSupplier(name) { setSelectedSuppliers((c) => c.includes(name) ? c.filter((x) => x !== name) : [...c, name]); }
   function clearSuppliers() { setSelectedSuppliers([]); setSelectedNotes({}); setTransportadoraMap({}); }
@@ -379,6 +394,21 @@ export default function AgendamentosPage() {
   function toggleNote(nota) { const key = noteKey(nota); setSelectedNotes((c) => ({ ...c, [key]: !c[key] })); }
   function setField(field, value) { setForm((old) => ({ ...old, [field]: value })); }
   function setTranspForSupplier(supplier, value) { setTransportadoraMap((m) => ({ ...m, [supplier]: value })); }
+
+  // Passo 4: auto-fill email da transportadora e telefone do motorista a partir do cadastro
+  function autoFillTransportadora(nomeTransp) {
+    if (!nomeTransp) return;
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const found = transportadoras.find(
+      (t) => norm(t.nome) === norm(nomeTransp) || norm(t.razaoSocial) === norm(nomeTransp) || norm(t.name) === norm(nomeTransp)
+    );
+    if (!found) return;
+    setForm((f) => ({
+      ...f,
+      emailTransportadora: f.emailTransportadora || found.email || found.emailTransportadora || '',
+      telefoneMotorista: f.telefoneMotorista || found.telefoneMotorista || found.telefone || '',
+    }));
+  }
 
   function buildPayload() {
     const janela = janelas.find((item) => String(item.id) === String(form.janelaId));
@@ -487,8 +517,18 @@ export default function AgendamentosPage() {
               </datalist>
             </div>
             <div>
-              <label style={styles.label}>E-mail transportadora</label>
-              <input style={styles.input} value={form.emailTransportadora} onChange={(e) => setField('emailTransportadora', e.target.value)} />
+              <label style={styles.label}>
+                E-mail transportadora
+                {form.emailTransportadora && (() => {
+                  const norm = (s) => String(s || '').trim().toLowerCase();
+                  const found = transportadoras.find((t) => norm(t.nome) === norm(form.transportadora) || norm(t.razaoSocial) === norm(form.transportadora));
+                  const isAuto = found && (found.email === form.emailTransportadora || found.emailTransportadora === form.emailTransportadora);
+                  return isAuto ? (
+                    <span style={{ marginLeft: 8, fontSize: 11, color: '#3b82f6', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 99, padding: '2px 8px' }}>✓ preenchido do cadastro</span>
+                  ) : null;
+                })()}
+              </label>
+              <input style={styles.input} value={form.emailTransportadora} onChange={(e) => setField('emailTransportadora', e.target.value)} placeholder="Preenchido automaticamente se cadastrado" />
             </div>
             <div>
               <label style={styles.label}>Motorista</label>
@@ -503,8 +543,18 @@ export default function AgendamentosPage() {
               <input style={styles.input} value={form.cpfMotorista} onChange={(e) => setField('cpfMotorista', e.target.value)} placeholder="Opcional" />
             </div>
             <div>
-              <label style={styles.label}>Telefone motorista</label>
-              <input style={styles.input} value={form.telefoneMotorista} onChange={(e) => setField('telefoneMotorista', e.target.value)} placeholder="Opcional" />
+              <label style={styles.label}>
+                Telefone motorista
+                {form.telefoneMotorista && (() => {
+                  const norm = (s) => String(s || '').trim().toLowerCase();
+                  const found = transportadoras.find((t) => norm(t.nome) === norm(form.transportadora) || norm(t.razaoSocial) === norm(form.transportadora));
+                  const isAuto = found && (found.telefoneMotorista === form.telefoneMotorista || found.telefone === form.telefoneMotorista);
+                  return isAuto ? (
+                    <span style={{ marginLeft: 8, fontSize: 11, color: '#3b82f6', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 99, padding: '2px 8px' }}>✓ preenchido do cadastro</span>
+                  ) : null;
+                })()}
+              </label>
+              <input style={styles.input} value={form.telefoneMotorista} onChange={(e) => setField('telefoneMotorista', e.target.value)} placeholder="Preenchido automaticamente se cadastrado" />
             </div>
             <div>
               <label style={styles.label}>E-mail motorista</label>
@@ -521,10 +571,30 @@ export default function AgendamentosPage() {
               </select>
             </div>
             <div>
-              <label style={styles.label}>Janela disponível</label>
-              <select style={styles.input} value={form.janelaId} onChange={(e) => setField('janelaId', e.target.value)}>
-                {availableJanelas.map((janela) => <option key={janela.id} value={janela.id}>{janela.codigo}</option>)}
-              </select>
+              <label style={styles.label}>
+                Janela disponível
+                {(() => {
+                  const janela = availableJanelas.find((j) => String(j.id) === String(form.janelaId));
+                  const hora = parseJanelaHora(janela?.codigo || janela?.descricao || '');
+                  return hora ? (
+                    <span style={{ marginLeft: 8, fontWeight: 700, color: '#10b981', fontSize: 13, background: '#ecfdf5', border: '1px solid #10b981', borderRadius: 99, padding: '2px 10px' }}>
+                      ⏰ {hora}
+                    </span>
+                  ) : null;
+                })()}
+              </label>
+              {availableJanelas.length === 0 ? (
+                <div style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #fde68a', background: '#fffbeb', color: '#92400e', fontSize: 13 }}>
+                  ⚠️ Nenhuma janela disponível para esta doca e data. Todas as janelas estão ocupadas ou já passaram.
+                </div>
+              ) : (
+                <select style={styles.input} value={form.janelaId} onChange={(e) => setField('janelaId', e.target.value)}>
+                  {availableJanelas.map((janela) => {
+                    const hora = parseJanelaHora(janela.codigo || janela.descricao || '');
+                    return <option key={janela.id} value={janela.id}>{janela.codigo}{hora ? ` — ${hora}` : ''}</option>;
+                  })}
+                </select>
+              )}
             </div>
           </div>
 

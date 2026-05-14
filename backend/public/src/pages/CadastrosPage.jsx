@@ -113,14 +113,33 @@ function prettify(value) {
 function VincularFornecedoresModal({ transportadora, onClose, onSaved }) {
   const [fornecedores, setFornecedores] = useState([]);
   const [allFornecedores, setAllFornecedores] = useState([]);
+  const [allTransportadoras, setAllTransportadoras] = useState([]);
   const [input, setInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
     setFornecedores(Array.isArray(transportadora?.fornecedoresVinculados) ? transportadora.fornecedoresVinculados : []);
-    api.get("/cadastros/fornecedores").then((r) => setAllFornecedores(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+    Promise.all([
+      api.get("/cadastros/fornecedores").catch(() => ({ data: [] })),
+      api.get("/cadastros/transportadoras").catch(() => ({ data: [] })),
+    ]).then(([fRes, tRes]) => {
+      setAllFornecedores(Array.isArray(fRes.data) ? fRes.data : []);
+      setAllTransportadoras(Array.isArray(tRes.data) ? tRes.data : []);
+    });
   }, [transportadora?.id]);
+
+  // Mapa: nome do fornecedor → nome da outra transportadora que já o tem vinculado
+  const conflictMap = useMemo(() => {
+    const map = {};
+    for (const t of allTransportadoras) {
+      if (String(t.id) === String(transportadora.id)) continue;
+      for (const f of (t.fornecedoresVinculados || [])) {
+        map[String(f).trim()] = t.nome || t.razaoSocial || `ID ${t.id}`;
+      }
+    }
+    return map;
+  }, [allTransportadoras, transportadora?.id]);
 
   function add() {
     const name = input.trim();
@@ -142,7 +161,7 @@ function VincularFornecedoresModal({ transportadora, onClose, onSaved }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
-      <div style={{ background: "#fff", borderRadius: 18, padding: 24, maxWidth: 480, width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,.25)" }}>
+      <div style={{ background: "#fff", borderRadius: 18, padding: 24, maxWidth: 500, width: "90%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.25)" }}>
         <h3 style={{ margin: "0 0 4px" }}>Vincular fornecedores</h3>
         <p style={{ margin: "0 0 14px", fontSize: 13, color: "#64748b" }}>
           Transportadora: <strong>{transportadora.nome}</strong>
@@ -151,17 +170,28 @@ function VincularFornecedoresModal({ transportadora, onClose, onSaved }) {
 
         {/* Quick-pick from registered suppliers */}
         {allFornecedores.length > 0 && (
-          <div style={{ marginBottom: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {allFornecedores.map((f) => {
-              const name = f.nome || f.name || "";
-              const linked = fornecedores.includes(name);
-              return (
-                <button key={f.id} type="button" onClick={() => linked ? remove(name) : setFornecedores((arr) => [...arr, name])}
-                  style={{ padding: "4px 10px", borderRadius: 99, fontSize: 12, border: `1px solid ${linked ? "#10b981" : "#cbd5e1"}`, background: linked ? "#ecfdf5" : "#f8fafc", color: linked ? "#065f46" : "#374151", cursor: "pointer" }}>
-                  {linked ? "✓ " : ""}{name}
-                </button>
-              );
-            })}
+          <div style={{ marginBottom: 10 }}>
+            <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: "#374151" }}>Fornecedores cadastrados:</p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {allFornecedores.map((f) => {
+                const name = f.nome || f.name || "";
+                const linked = fornecedores.includes(name);
+                const conflict = !linked && conflictMap[name];
+                return (
+                  <button key={f.id} type="button"
+                    onClick={() => linked ? remove(name) : setFornecedores((arr) => [...arr, name])}
+                    title={conflict ? `⚠️ Já vinculado a: ${conflict}` : ""}
+                    style={{
+                      padding: "4px 10px", borderRadius: 99, fontSize: 12, cursor: "pointer",
+                      border: `1px solid ${linked ? "#10b981" : conflict ? "#f59e0b" : "#cbd5e1"}`,
+                      background: linked ? "#ecfdf5" : conflict ? "#fffbeb" : "#f8fafc",
+                      color: linked ? "#065f46" : conflict ? "#92400e" : "#374151",
+                    }}>
+                    {linked ? "✓ " : conflict ? "⚠️ " : ""}{name}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -178,15 +208,32 @@ function VincularFornecedoresModal({ transportadora, onClose, onSaved }) {
         </div>
 
         {/* Current list */}
-        <div style={{ maxHeight: 160, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 12 }}>
+        <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 12 }}>
           {fornecedores.length === 0 && <p style={{ padding: 10, color: "#64748b", fontSize: 13, margin: 0 }}>Nenhum fornecedor vinculado.</p>}
-          {fornecedores.map((name) => (
-            <div key={name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
-              <span>{name}</span>
-              <button type="button" onClick={() => remove(name)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 12 }}>remover</button>
-            </div>
-          ))}
+          {fornecedores.map((name) => {
+            const conflict = conflictMap[name];
+            return (
+              <div key={name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
+                <div>
+                  <span>{name}</span>
+                  {conflict && (
+                    <span style={{ marginLeft: 8, fontSize: 11, color: "#f59e0b", fontStyle: "italic" }}>
+                      ⚠️ também em: {conflict}
+                    </span>
+                  )}
+                </div>
+                <button type="button" onClick={() => remove(name)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 12 }}>remover</button>
+              </div>
+            );
+          })}
         </div>
+
+        {/* Conflict legend */}
+        {fornecedores.some((n) => conflictMap[n]) && (
+          <div style={{ padding: "8px 12px", borderRadius: 8, background: "#fffbeb", border: "1px solid #fde68a", marginBottom: 10, fontSize: 12, color: "#92400e" }}>
+            ⚠️ Fornecedores marcados já possuem vínculo com outra transportadora. Você pode salvar assim mesmo — o agendamento usará o vínculo mais recente.
+          </div>
+        )}
 
         {err && <p style={{ color: "#ef4444", fontSize: 13 }}>{err}</p>}
         <div style={{ display: "flex", gap: 8 }}>
@@ -211,6 +258,7 @@ export default function CadastrosPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [vincularModal, setVincularModal] = useState(null); // transportadora object
 
   const config = resources[selected];
 
@@ -403,9 +451,25 @@ export default function CadastrosPage() {
                       <td>{item.id}</td>
                       {config.fields.map((field) => <td key={field.name}>{prettify(item[field.name])}</td>)}
                       <td>
-                        <button type="button" onClick={() => startEdit(item)} style={{ padding: "8px 12px", borderRadius: 8, cursor: "pointer" }}>
-                          Editar
-                        </button>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button type="button" onClick={() => startEdit(item)} style={{ padding: "8px 12px", borderRadius: 8, cursor: "pointer" }}>
+                            Editar
+                          </button>
+                          {selected === "transportadoras" && (
+                            <button
+                              type="button"
+                              onClick={() => setVincularModal(item)}
+                              style={{ padding: "8px 12px", borderRadius: 8, cursor: "pointer", border: "1px solid #10b981", background: "#ecfdf5", color: "#065f46", fontSize: 12, fontWeight: 600 }}
+                            >
+                              🔗 Vincular fornecedores
+                              {Array.isArray(item.fornecedoresVinculados) && item.fornecedoresVinculados.length > 0 && (
+                                <span style={{ marginLeft: 4, background: "#10b981", color: "#fff", borderRadius: 99, padding: "1px 6px", fontSize: 11 }}>
+                                  {item.fornecedoresVinculados.length}
+                                </span>
+                              )}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -415,6 +479,15 @@ export default function CadastrosPage() {
           )}
         </section>
       </div>
+
+      {/* Modal vincular fornecedores — aparece só para transportadoras */}
+      {vincularModal && (
+        <VincularFornecedoresModal
+          transportadora={vincularModal}
+          onClose={() => setVincularModal(null)}
+          onSaved={() => { load(); setVincularModal(null); setMessage(`Fornecedores vinculados à transportadora "${vincularModal.nome}" atualizados com sucesso.`); }}
+        />
+      )}
     </div>
   );
 }
