@@ -22,35 +22,39 @@
     currentUser: null,
     auditoria: [],
     avaliacaoToken: "",
-    missingRelatorioAlertKeys: new Set()
+    missingRelatorioAlertKeys: new Set(),
+    notificacoes: [],
+    notifPollInterval: null,
+    confirmacoesSelecionados: new Set()
   };
 
   const PROFILE_PERMISSIONS = {
     ADMIN: [
       "dashboard.view", "docas.view", "logs.view", "cadastros.view", "cadastros.manage", "users.manage",
       "agendamentos.view", "agendamentos.create", "agendamentos.consulta_nf", "agendamentos.definir_doca",
-      "agendamentos.approve", "agendamentos.reprove", "agendamentos.reschedule", "agendamentos.cancel",
-      "agendamentos.start", "agendamentos.finish", "agendamentos.no_show", "agendamentos.checkin",
-      "agendamentos.documentos", "agendamentos.notas", "agendamentos.notify", "financeiro.summary",
+      "agendamentos.approve", "agendamentos.reprove", "agendamentos.reschedule", "agendamentos.request_reschedule",
+      "agendamentos.cancel", "agendamentos.start", "agendamentos.finish", "agendamentos.no_show",
+      "agendamentos.checkin", "agendamentos.documentos", "agendamentos.notas", "agendamentos.notify",
+      "confirmacoes.view", "financeiro.summary",
       "relatorio.view", "relatorio.manage", "relatorio.terceirizado.view", "relatorio.terceirizado.manage"
     ],
     GESTOR: [
       "dashboard.view", "docas.view", "logs.view", "cadastros.view", "cadastros.manage",
       "agendamentos.view", "agendamentos.create", "agendamentos.consulta_nf", "agendamentos.definir_doca",
-      "agendamentos.approve", "agendamentos.reprove", "agendamentos.reschedule", "agendamentos.cancel",
-      "agendamentos.start", "agendamentos.finish", "agendamentos.no_show", "agendamentos.checkin",
-      "agendamentos.documentos", "agendamentos.notas", "agendamentos.notify", "financeiro.summary",
+      "agendamentos.approve", "agendamentos.reprove", "agendamentos.reschedule", "agendamentos.request_reschedule",
+      "agendamentos.cancel", "agendamentos.start", "agendamentos.finish", "agendamentos.no_show",
+      "agendamentos.checkin", "agendamentos.documentos", "agendamentos.notas", "agendamentos.notify",
+      "confirmacoes.view", "financeiro.summary",
       "relatorio.view", "relatorio.manage", "relatorio.terceirizado.view", "relatorio.terceirizado.manage"
     ],
     OPERADOR: [
-      "dashboard.view", "docas.view", "cadastros.view", "agendamentos.view", "agendamentos.create",
-      "agendamentos.consulta_nf", "agendamentos.definir_doca", "agendamentos.approve", "agendamentos.reprove",
-      "agendamentos.reschedule", "agendamentos.cancel", "agendamentos.start", "agendamentos.finish",
-      "agendamentos.no_show", "agendamentos.checkin", "agendamentos.documentos", "agendamentos.notas",
-      "agendamentos.notify", "relatorio.view", "relatorio.terceirizado.view"
+      "dashboard.view", "docas.view", "cadastros.view", "cadastros.manage",
+      "agendamentos.view", "agendamentos.create", "agendamentos.consulta_nf",
+      "agendamentos.documentos", "agendamentos.notas",
+      "relatorio.view", "relatorio.terceirizado.view"
     ],
     PORTARIA: [
-      "docas.view", "agendamentos.view", "agendamentos.consulta_nf", "agendamentos.no_show", "agendamentos.checkin"
+      "agendamentos.checkin"
     ]
   };
 
@@ -715,6 +719,7 @@
   }
 
   function logout() {
+    stopNotifPolling();
     localStorage.removeItem("token");
     state.token = "";
     state.currentUser = null;
@@ -1994,7 +1999,11 @@
     if (!transpInput) return;
 
     // Helper: fill transportadora + email + phone from cadastro record
+<<<<<<< HEAD
     function applyTranspCadastro(transp) {
+=======
+        function applyTranspCadastro(transp) {
+>>>>>>> 3e8dd641d99ec524abeb0ab0b972fa663cebed81
       if (!transp) return;
       if (transp.nome) transpInput.value = transp.nome;
       const emailTranspInput = form.querySelector('[name="emailTransportadora"]');
@@ -2006,6 +2015,10 @@
     }
 
     // Lookup transportadora by fornecedor name in cadastro
+<<<<<<< HEAD
+=======
+        // Lookup transportadora by fornecedor name in cadastro
+>>>>>>> 3e8dd641d99ec524abeb0ab0b972fa663cebed81
     async function fetchTranspByFornecedor(nomeFornecedor) {
       try {
         const data = await api(`/api/cadastros/transportadoras/por-fornecedor?nome=${encodeURIComponent(nomeFornecedor)}`);
@@ -2013,6 +2026,10 @@
       } catch { return null; }
     }
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 3e8dd641d99ec524abeb0ab0b972fa663cebed81
     if (fornecedores.length === 1) {
       const forn = fornecedores[0];
       const transpNome = String(forn?.transportadora || '').trim();
@@ -2141,7 +2158,7 @@
     } catch {}
   }
 
-  function renderOperationalTable(items, { targetId, includeActions = false } = {}) {
+  function renderOperationalTable(items, { targetId, includeActions = false, includeSelect = false } = {}) {
     const wrap = byId(targetId);
     const allowDockActions = includeActions && hasPermission('agendamentos.definir_doca');
     if (!wrap) return;
@@ -2153,6 +2170,7 @@
       <table class="table operational-table">
         <thead>
           <tr>
+            ${includeSelect ? '<th style="width:36px"><input type="checkbox" id="chkSelectAll" title="Selecionar todos" /></th>' : ''}
             <th>ID</th>
             <th>Protocolo</th>
             <th>Status</th>
@@ -2174,6 +2192,7 @@
         <tbody>
           ${items.map((item) => `
             <tr>
+              ${includeSelect ? `<td><input type="checkbox" class="row-check" data-ag-id="${escapeHtml(String(item.id))}" /></td>` : ''}
               <td>${escapeHtml(item.id ?? '')}</td>
               <td>${escapeHtml(item.protocolo || '')}</td>
               <td>${renderStatusBadge(item.status, item.semaforo)}</td>
@@ -2201,6 +2220,41 @@
         </tbody>
       </table>
     `;
+
+    if (includeSelect) {
+      const chkAll = wrap.querySelector('#chkSelectAll');
+      const rowChecks = () => wrap.querySelectorAll('.row-check');
+
+      if (chkAll) {
+        chkAll.addEventListener('change', () => {
+          rowChecks().forEach((chk) => {
+            chk.checked = chkAll.checked;
+            const id = chk.dataset.agId;
+            if (id) {
+              if (chkAll.checked) state.confirmacoesSelecionados.add(id);
+              else state.confirmacoesSelecionados.delete(id);
+            }
+          });
+          updateConfirmacoesToolbar();
+        });
+      }
+
+      rowChecks().forEach((chk) => {
+        chk.addEventListener('change', () => {
+          const id = chk.dataset.agId;
+          if (id) {
+            if (chk.checked) state.confirmacoesSelecionados.add(id);
+            else state.confirmacoesSelecionados.delete(id);
+          }
+          if (chkAll) {
+            const all = rowChecks();
+            chkAll.indeterminate = state.confirmacoesSelecionados.size > 0 && state.confirmacoesSelecionados.size < all.length;
+            chkAll.checked = state.confirmacoesSelecionados.size === all.length && all.length > 0;
+          }
+          updateConfirmacoesToolbar();
+        });
+      });
+    }
 
     if (allowDockActions) {
       wrap.querySelectorAll('[data-select-agendamento]').forEach((btn) => {
@@ -2302,6 +2356,7 @@
       const [y, m, dd] = d.split('-').map(Number);
       if (y === year && m - 1 === month) { if (!agByDay[dd]) agByDay[dd] = []; agByDay[dd].push(ag); }
     }
+    const STATUS_ORDER = ['PENDENTE_APROVACAO','SOLICITADO','APROVADO','CHEGOU','EM_DESCARGA','FINALIZADO','CANCELADO','NO_SHOW','REAGENDADO'];
     let html = dayNames.map((d) => `<div style="text-align:center;font-size:11px;font-weight:700;color:#64748b;padding:4px 0">${d}</div>`).join('');
     for (let i = 0; i < firstDay; i++) html += '<div></div>';
     for (let day = 1; day <= daysInMonth; day++) {
@@ -2309,11 +2364,24 @@
       const isPast = cellDate < today;
       const isToday = cellDate.getTime() === today.getTime();
       const ags = agByDay[day] || [];
-      const dot = ags.length ? `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#3b82f6;margin-top:2px"></span>` : '';
-      html += `<div data-cal-day="${day}" style="min-height:52px;padding:6px;border-radius:10px;border:1px solid ${isToday?'#3b82f6':'#e2e8f0'};background:${isPast?'#f8fafc':'#fff'};cursor:${ags.length?'pointer':'default'};opacity:${isPast&&!isToday?0.55:1};text-align:center">
-        <span style="font-size:14px;font-weight:${isToday?700:400};color:${isToday?'#1d4ed8':'#0f172a'}">${day}</span>
-        ${ags.length ? `<div style="font-size:10px;color:#475569;margin-top:2px">${ags.length} ag.</div>` : ''}
-        <div>${dot}</div>
+      let statusDots = '';
+      if (ags.length) {
+        const counts = {};
+        for (const ag of ags) {
+          const s = String(ag.status || '').toUpperCase() || 'PENDENTE_APROVACAO';
+          counts[s] = (counts[s] || 0) + 1;
+        }
+        statusDots = `<div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center;margin-top:3px">${
+          STATUS_ORDER.filter((s) => counts[s]).map((s) => {
+            const color = STATUS_COLORS[s] || '#94a3b8';
+            const lbl = STATUS_LABELS[s] || s;
+            return `<span title="${escapeHtml(lbl)}: ${counts[s]}" style="display:inline-flex;align-items:center;gap:2px;background:${color}20;color:${color};border-radius:99px;padding:1px 5px;font-size:9px;font-weight:700;line-height:1.4">${counts[s]}</span>`;
+          }).join('')
+        }</div>`;
+      }
+      html += `<div data-cal-day="${day}" style="min-height:52px;padding:5px 4px;border-radius:10px;border:1px solid ${isToday?'#3b82f6':'#e2e8f0'};background:${isPast?'#f8fafc':'#fff'};cursor:${ags.length?'pointer':'default'};opacity:${isPast&&!isToday?0.55:1};text-align:center">
+        <span style="font-size:13px;font-weight:${isToday?700:400};color:${isToday?'#1d4ed8':'#0f172a'}">${day}</span>
+        ${statusDots}
       </div>`;
     }
     grid.innerHTML = html;
@@ -2330,12 +2398,22 @@
     const totalNf = ags.reduce((a, ag) => a + Number(ag.quantidadeNotas || 0), 0);
     const totalVol = ags.reduce((a, ag) => a + Number(ag.quantidadeVolumes || 0), 0);
     const totalPeso = ags.reduce((a, ag) => a + Number(ag.pesoTotalKg || ag.quantidadePeso || 0), 0);
+    const statusCounts = {};
+    for (const ag of ags) {
+      const s = String(ag.status || '').toUpperCase() || 'PENDENTE_APROVACAO';
+      statusCounts[s] = (statusCounts[s] || 0) + 1;
+    }
+    const statusSummary = Object.entries(statusCounts).map(([s, n]) => {
+      const color = STATUS_COLORS[s] || '#94a3b8';
+      const lbl = STATUS_LABELS[s] || s;
+      return `<span style="display:inline-flex;align-items:center;gap:4px;background:${color}18;color:${color};border-radius:99px;padding:3px 10px;font-size:11px;font-weight:700">${escapeHtml(lbl)}: ${n}</span>`;
+    }).join('');
     const rows = ags.map((ag) => `<tr>
       <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(ag.protocolo||'-')}</td>
       <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(ag.horaAgendada||'-')}</td>
       <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(ag.fornecedor||'-')}</td>
       <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(ag.transportadora||'-')}</td>
-      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:12px"><span style="padding:2px 8px;border-radius:99px;font-size:11px;background:${statusColor2(ag.status)}20;color:${statusColor2(ag.status)}">${escapeHtml(ag.status||'-')}</span></td>
+      <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:12px"><span style="padding:2px 8px;border-radius:99px;font-size:11px;background:${statusColor2(ag.status)}20;color:${statusColor2(ag.status)}">${escapeHtml(STATUS_LABELS[String(ag.status||'').toUpperCase()] || ag.status || '-')}</span></td>
       <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(formatIntegerBR(ag.quantidadeNotas||0))}</td>
       <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(formatDecimalBR(ag.quantidadeVolumes||0,3))}</td>
       <td style="padding:8px;border-bottom:1px solid #f1f5f9;font-size:13px">${escapeHtml(formatDecimalBR(ag.pesoTotalKg||ag.quantidadePeso||0,3))}</td>
@@ -2345,10 +2423,11 @@
     modal.id = 'dayModal';
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:200;padding:16px';
     modal.innerHTML = `<div style="background:#fff;border-radius:18px;padding:24px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25)">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <h3 style="margin:0;text-transform:capitalize">${escapeHtml(dateLabel)}</h3>
         <button id="dayModalClose" style="background:none;border:none;font-size:20px;cursor:pointer">✕</button>
       </div>
+      ${statusSummary ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${statusSummary}</div>` : ''}
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
         ${[['Agendamentos',ags.length],['Notas',totalNf],['Volumes',formatDecimalBR(totalVol,3)],['Peso (kg)',formatDecimalBR(totalPeso,3)]].map(([l,v])=>`<div style="background:#f8fafc;border-radius:10px;padding:12px;text-align:center"><div style="font-size:11px;color:#64748b;text-transform:uppercase">${l}</div><div style="font-size:22px;font-weight:700;color:#0f172a">${v}</div></div>`).join('')}
       </div>
@@ -2934,7 +3013,14 @@
     const params = new URLSearchParams();
     Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
     const items = await api(`/api/agendamentos?${params.toString()}`);
-    renderOperationalTable(items || [], { targetId: 'agendamentosList', includeActions: false });
+    const inConfirmacoes = !!byId('confirmacoes')?.classList.contains('active');
+    state.confirmacoesSelecionados = new Set();
+    renderOperationalTable(items || [], {
+      targetId: 'agendamentosList',
+      includeActions: false,
+      includeSelect: inConfirmacoes && hasPermission('agendamentos.request_reschedule'),
+    });
+    updateConfirmacoesToolbar();
     await Promise.allSettled([maybeShowMissingRelatorioAlerts(items || []), loadAuditoria()]);
   }
 
@@ -3208,6 +3294,7 @@
         if (typeof refreshWatermark === 'function') refreshWatermark();
         div.remove();
         updateNav();
+        startNotifPolling();
         await fillSelects();
         showView('dashboard');
         await loadDashboard();
@@ -3290,6 +3377,7 @@
         syncCurrentUserFromToken();
         if (typeof refreshWatermark === 'function') refreshWatermark();
         updateNav();
+        startNotifPolling();
         await fillSelects();
         if (!applyCheckinRouteContext({ autoValidate: true })) {
           const requestedView = new URLSearchParams(location.search).get("view");
@@ -3610,7 +3698,187 @@
       }
     });
 
+    // ── Notificações ──────────────────────────────────────────────────────────
+
+    function timeAgo(iso) {
+      const diff = Date.now() - new Date(iso).getTime();
+      const min = Math.floor(diff / 60000);
+      if (min < 1) return 'agora';
+      if (min < 60) return `${min} min atrás`;
+      const h = Math.floor(min / 60);
+      if (h < 24) return `${h}h atrás`;
+      return `${Math.floor(h / 24)}d atrás`;
+    }
+
+    async function loadNotificacoes() {
+      if (!state.token || isTokenExpired(state.token)) return;
+      try {
+        const data = await api('/api/notificacoes');
+        state.notificacoes = Array.isArray(data) ? data : [];
+        renderNotifBadge();
+      } catch { /* silencioso */ }
+    }
+
+    function renderNotifBadge() {
+      const badge = byId('notifBadge');
+      const unread = state.notificacoes.filter((n) => !n.lida).length;
+      if (!badge) return;
+      badge.textContent = unread > 99 ? '99+' : String(unread);
+      badge.classList.toggle('hidden', unread === 0);
+    }
+
+    function renderNotifDropdown() {
+      const drop = byId('notifDropdown');
+      if (!drop) return;
+      const notifs = state.notificacoes;
+      drop.innerHTML = `
+        <div class="notif-header">
+          <span>Notificações</span>
+          <button type="button" id="btnFecharNotif" style="background:none;border:none;color:#64748b;font-size:18px;cursor:pointer;padding:0">✕</button>
+        </div>
+        ${!notifs.length ? '<div class="notif-empty">Nenhuma notificação.</div>' : notifs.map((n) => `
+          <div class="notif-item ${n.lida ? '' : 'unread'}" data-notif-id="${n.id}" data-agendamento-id="${n.agendamentoId || ''}">
+            <div class="notif-item-title">${n.tipo === 'SOLICITAR_REAGENDAMENTO' ? '🔔 Reagendamento solicitado' : escapeHtml(n.tipo || '')}</div>
+            <div class="notif-item-sub">${escapeHtml(n.protocolo || '-')} — ${escapeHtml(n.fornecedor || '-')}</div>
+            <div class="notif-item-sub">Data original: <strong>${escapeHtml(formatDateBR(n.dataAgendadaOriginal) || '-')}</strong> | Por: ${escapeHtml(n.requestedBy?.nome || n.requestedBy?.perfil || '-')}</div>
+            <div class="notif-item-time">${timeAgo(n.createdAt)}</div>
+          </div>`).join('')}
+      `;
+      drop.querySelectorAll('.notif-item').forEach((el) => {
+        el.addEventListener('click', async () => {
+          const notifId = el.dataset.notifId;
+          const agendamentoId = el.dataset.agendamentoId;
+          await api(`/api/notificacoes/${notifId}/lida`, { method: 'PATCH' }).catch(() => {});
+          const idx = state.notificacoes.findIndex((n) => String(n.id) === String(notifId));
+          if (idx >= 0) state.notificacoes[idx].lida = true;
+          renderNotifBadge();
+          if (agendamentoId && hasPermission('agendamentos.reschedule')) {
+            abrirModalReagendamentoNotif(notifId, agendamentoId, el);
+          }
+          drop.classList.add('hidden');
+        });
+      });
+      byId('btnFecharNotif')?.addEventListener('click', (e) => { e.stopPropagation(); drop.classList.add('hidden'); });
+    }
+
+    function abrirModalReagendamentoNotif(notifId, agendamentoId, itemEl) {
+      const existing = byId('modalReagendamentoNotif');
+      if (existing) existing.remove();
+      const modal = document.createElement('div');
+      modal.id = 'modalReagendamentoNotif';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:600;padding:16px';
+      const protocolo = itemEl?.querySelector('.notif-item-sub')?.textContent?.split('—')[0]?.trim() || `ID ${agendamentoId}`;
+      modal.innerHTML = `
+        <div style="background:#fff;border-radius:18px;padding:28px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+          <h3 style="margin:0 0 16px">Reagendar agendamento</h3>
+          <p style="margin:0 0 12px;font-size:14px;color:#475569">${escapeHtml(protocolo)}</p>
+          <label style="display:grid;gap:6px;font-size:14px;font-weight:600">Nova data
+            <input id="novaDataReagendamento" type="date" style="padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px" />
+          </label>
+          <label style="display:grid;gap:6px;font-size:14px;font-weight:600;margin-top:12px">Nova hora (HH:MM)
+            <input id="novaHoraReagendamento" type="text" placeholder="08:00" style="padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px" />
+          </label>
+          <p id="modalReagendNotifMsg" style="margin:10px 0 0;font-size:13px;color:#ef4444"></p>
+          <div style="display:flex;gap:10px;margin-top:20px">
+            <button id="btnConfirmarReagendNotif" style="flex:1;padding:12px;border-radius:12px;font-weight:700">Confirmar</button>
+            <button id="btnCancelarReagendNotif" style="flex:1;background:#475569;padding:12px;border-radius:12px">Cancelar</button>
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
+      byId('btnCancelarReagendNotif').onclick = () => modal.remove();
+      modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+      byId('btnConfirmarReagendNotif').onclick = async () => {
+        const novaData = byId('novaDataReagendamento').value;
+        const novaHora = byId('novaHoraReagendamento').value.trim();
+        const msg = byId('modalReagendNotifMsg');
+        if (!novaData) { msg.textContent = 'Informe a nova data.'; return; }
+        try {
+          await api(`/api/agendamentos/${agendamentoId}/reagendar`, { method: 'POST', body: JSON.stringify({ dataAgendada: novaData, horaAgendada: novaHora || undefined }) });
+          modal.remove();
+          await loadNotificacoes();
+          if (document.querySelector('#confirmacoes.view.active')) loadAgendamentos().catch(() => {});
+        } catch (err) { msg.textContent = err.message || 'Erro ao reagendar.'; }
+      };
+    }
+
+    function startNotifPolling() {
+      if (state.notifPollInterval) return;
+      loadNotificacoes();
+      state.notifPollInterval = setInterval(() => loadNotificacoes(), 30000);
+    }
+
+    function stopNotifPolling() {
+      if (state.notifPollInterval) { clearInterval(state.notifPollInterval); state.notifPollInterval = null; }
+    }
+
+    // Bell toggle
+    byId('btnNotificacoes')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const drop = byId('notifDropdown');
+      if (!drop) return;
+      const isHidden = drop.classList.contains('hidden');
+      if (isHidden) { renderNotifDropdown(); drop.classList.remove('hidden'); }
+      else drop.classList.add('hidden');
+    });
+    document.addEventListener('click', (e) => {
+      const drop = byId('notifDropdown');
+      const bell = byId('btnNotificacoes');
+      if (drop && bell && !drop.contains(e.target) && !bell.contains(e.target)) drop.classList.add('hidden');
+    });
+
+    // ── Multi-seleção e botões da aba Confirmações ─────────────────────────────
+
+    function updateConfirmacoesToolbar() {
+      const toolbar = byId('confirmacoesSelecionadasToolbar');
+      const countEl = byId('confirmacoesSelecionadasCount');
+      const n = state.confirmacoesSelecionados.size;
+      if (toolbar) toolbar.classList.toggle('hidden', n === 0);
+      if (countEl) countEl.textContent = `${n} agendamento${n !== 1 ? 's' : ''} selecionado${n !== 1 ? 's' : ''}`;
+    }
+
+    byId('btnDeselecionarTodos')?.addEventListener('click', () => {
+      state.confirmacoesSelecionados.clear();
+      document.querySelectorAll('#confirmacoes .row-check').forEach((cb) => { cb.checked = false; });
+      const chkAll = document.querySelector('#confirmacoes #chkSelectAll');
+      if (chkAll) { chkAll.checked = false; chkAll.indeterminate = false; }
+      updateConfirmacoesToolbar();
+    });
+
+    byId('btnSolicitarReagendamentoLote')?.addEventListener('click', async () => {
+      const ids = [...state.confirmacoesSelecionados];
+      if (!ids.length) return;
+      const ok = await showAppModal({ title: 'Solicitar reagendamento', message: `Solicitar reagendamento para ${ids.length} agendamento(s) selecionado(s)?\n\nOs operadores receberão uma notificação para definir nova data.`, confirmText: 'Sim, solicitar', cancelText: 'Cancelar', tone: 'warning' });
+      if (!ok) return;
+      try {
+        const res = await api('/api/agendamentos/solicitar-reagendamento-lote', { method: 'POST', body: JSON.stringify({ ids }) });
+        const sucessos = (res.results || []).filter((r) => r.ok).length;
+        const falhas = (res.results || []).filter((r) => !r.ok);
+        state.confirmacoesSelecionados.clear();
+        document.querySelectorAll('#confirmacoes .row-check').forEach((cb) => { cb.checked = false; });
+        const chkAll = document.querySelector('#confirmacoes #chkSelectAll');
+        if (chkAll) { chkAll.checked = false; chkAll.indeterminate = false; }
+        updateConfirmacoesToolbar();
+        byId('operacaoMsg').textContent = `Solicitação enviada para ${sucessos} agendamento(s).${falhas.length ? ` ${falhas.length} falhou.` : ''}`;
+      } catch (err) { byId('operacaoMsg').textContent = err.message; }
+    });
+
+    byId('btnEncerrarDia')?.addEventListener('click', async () => {
+      const input = byId('encerrarDiaInput');
+      const data = input?.value;
+      if (!data) { byId('operacaoMsg').textContent = 'Selecione uma data para encerrar.'; return; }
+      const ok = await showAppModal({ title: 'Encerrar dia', message: `Cancelar todos os agendamentos com status PENDENTE_APROVAÇÃO em ${formatDateBR(data)}?\n\nEsta ação não pode ser desfeita.`, confirmText: 'Encerrar', cancelText: 'Cancelar', tone: 'warning' });
+      if (!ok) return;
+      try {
+        const res = await api('/api/agendamentos/encerrar-dia', { method: 'POST', body: JSON.stringify({ data }) });
+        byId('operacaoMsg').textContent = `${res.cancelados} agendamento(s) cancelado(s) em ${formatDateBR(data)}.`;
+        await loadAgendamentos();
+      } catch (err) { byId('operacaoMsg').textContent = err.message; }
+    });
+
+    // ── Fim das novas funções ──────────────────────────────────────────────────
+
     if (state.token && !isTokenExpired(state.token)) {
+      startNotifPolling();
       await fillSelects();
       try { await loadCadastro(); } catch {}
     }

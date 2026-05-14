@@ -3,6 +3,7 @@ import authRoutes from "./auth.js";
 import dashboardRoutes from "./dashboard.js";
 import cadastrosRoutes from "./cadastros.js";
 import agendamentosRoutes from "./agendamentos.js";
+import notificacoesRoutes from "./notificacoes.js";
 import publicRoutes from "./public.js";
 import { pingDatabase } from "../utils/db-fallback.js";
 import { verifyMailTransport } from "../utils/email.js";
@@ -76,6 +77,7 @@ router.use("/auth", authRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/cadastros", cadastrosRoutes);
 router.use("/agendamentos", agendamentosRoutes);
+router.use("/notificacoes", notificacoesRoutes);
 router.use("/public", publicRoutes);
 
 export default router;

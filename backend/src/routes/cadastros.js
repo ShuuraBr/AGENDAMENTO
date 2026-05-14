@@ -166,6 +166,8 @@ router.post("/transportadoras/:id/vincular-fornecedores", requirePermission("cad
 
 // GET /transportadoras/por-fornecedor?nome=X
 // Retorna a transportadora padrão vinculada ao fornecedor
+// GET /transportadoras/por-fornecedor?nome=X
+// Retorna a transportadora padrão vinculada ao fornecedor
 router.get("/transportadoras/por-fornecedor", requirePermission("cadastros.view"), async (req, res) => {
   try {
     const nome = String(req.query?.nome || "").trim().toLowerCase();
@@ -190,5 +192,6 @@ router.get("/transportadoras/por-fornecedor", requirePermission("cadastros.view"
     res.status(400).json({ message: err.message });
   }
 });
+
 
 export default router;
