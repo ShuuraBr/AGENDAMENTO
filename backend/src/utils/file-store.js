@@ -42,6 +42,15 @@ function nextId(items = []) {
 }
 
 export function readUsuarios() { return readJsonFile('usuarios.json', []); }
+export function writeUsuarios(items) { return writeJsonFile('usuarios.json', items); }
+export function patchUsuarioFile(id, patch = {}) {
+  const items = readUsuarios();
+  const idx = items.findIndex((u) => String(u.id) === String(id));
+  if (idx === -1) return false;
+  items[idx] = { ...items[idx], ...patch };
+  writeUsuarios(items);
+  return true;
+}
 export function readAgendamentos() { return readJsonFile('agendamentos.json', []).map(enrichAgendamentoRecord); }
 export function writeAgendamentos(items) { return writeJsonFile('agendamentos.json', items); }
 export function readDocas() { return readJsonFile('docas.json', []); }

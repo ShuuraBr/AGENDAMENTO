@@ -8,7 +8,7 @@ const CADASTRO_CONFIG = {
   docas: { table: 'Doca', columns: ['codigo', 'descricao'] },
   janelas: { table: 'Janela', columns: ['codigo', 'descricao'] },
   regras: { table: 'Regra', columns: ['nome', 'toleranciaAtrasoMin', 'tempoDescargaPrevistoMin'] },
-  usuarios: { table: 'Usuario', columns: ['nome', 'email', 'senhaHash', 'perfil'] }
+  usuarios: { table: 'Usuario', columns: ['nome', 'email', 'senhaHash', 'perfil', 'senhaProvisoria'] }
 };
 
 function getConfig(tipo) {

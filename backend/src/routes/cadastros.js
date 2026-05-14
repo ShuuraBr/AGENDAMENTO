@@ -68,8 +68,10 @@ router.post("/:tipo", requirePermission("cadastros.manage"), async (req, res) =>
     const data = { ...req.body };
     if (tipo === "usuarios") {
       validateProfile(data?.perfil);
-      if (!data.email || !data.nome || !data.senha) throw new Error("Usuário exige nome, e-mail, senha e perfil.");
-      data.senhaHash = await bcrypt.hash(String(data.senha), 10);
+      if (!data.email || !data.nome) throw new Error("Usuário exige nome, e-mail e perfil.");
+      // Sempre inicia com senha provisória; o usuário troca no primeiro login
+      data.senhaHash = await bcrypt.hash("Obj@2026", 12);
+      data.senhaProvisoria = true;
       delete data.senha;
     }
 

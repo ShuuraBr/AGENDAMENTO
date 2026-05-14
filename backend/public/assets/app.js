@@ -158,7 +158,7 @@
           { value: "PORTARIA", text: "Portaria" },
           { value: "GESTOR", text: "Gestor" }
         ] },
-        { name: "senha", label: "Senha", type: "password" }
+        { name: "_info_senha", label: "Senha inicial", type: "info", value: "O usuário receberá a senha provisória Obj@2026 e deverá alterá-la no primeiro acesso." }
       ]
     }
   };
@@ -2902,6 +2902,15 @@
     // Arrays (e.g. fornecedoresVinculados) are displayed as comma-separated text
     const safeValue = Array.isArray(value) ? value.join(", ") : (value ?? "");
 
+    if (field.type === "info") {
+      return `
+        <div class="${wrapperClass} form-group-full">
+          <label>${field.label}</label>
+          <p style="margin:4px 0 0;font-size:13px;color:#475569;background:#f1f5f9;border-radius:8px;padding:8px 12px">${escapeHtml(field.value || '')}</p>
+        </div>
+      `;
+    }
+
     if (field.type === "select") {
       return `
         <div class="${wrapperClass}">
@@ -2937,6 +2946,7 @@
     const data = Object.fromEntries(new FormData(byId("cadastroForm")).entries());
     const payload = {};
     config.fields.forEach((field) => {
+      if (field.type === 'info') return;
       payload[field.name] = normalizeValueByField(field, data[field.name] ?? "");
     });
     return payload;
@@ -3262,6 +3272,76 @@
     });
   }
 
+  function showPasswordChangeModal(tempToken) {
+    const existing = byId('passwordChangeModal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'passwordChangeModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px';
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:18px;padding:32px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+        <h3 style="margin:0 0 8px;font-size:20px;color:#0f172a">Definir nova senha</h3>
+        <p style="margin:0 0 20px;font-size:14px;color:#64748b">Este é seu primeiro acesso. Crie uma senha pessoal para continuar.</p>
+        <div style="display:grid;gap:12px">
+          <div>
+            <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Nova senha</label>
+            <input id="pcNovaSenha" type="password" placeholder="Mínimo 6 caracteres"
+              style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1.5px solid #cbd5e1;font-size:14px" />
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;color:#374151;display:block;margin-bottom:4px">Confirmar senha</label>
+            <input id="pcConfirmarSenha" type="password" placeholder="Repita a senha"
+              style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1.5px solid #cbd5e1;font-size:14px" />
+          </div>
+          <p id="pcMsg" style="margin:0;font-size:13px;color:#ef4444;min-height:18px"></p>
+          <button id="pcSubmit" style="padding:12px;border-radius:12px;font-size:15px;font-weight:700;background:#2563eb;color:#fff;border:none;cursor:pointer">
+            Salvar e entrar
+          </button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+
+    const nova = modal.querySelector('#pcNovaSenha');
+    const confirmar = modal.querySelector('#pcConfirmarSenha');
+    const msg = modal.querySelector('#pcMsg');
+    const btn = modal.querySelector('#pcSubmit');
+    setTimeout(() => nova.focus(), 50);
+
+    btn.addEventListener('click', async () => {
+      msg.textContent = '';
+      const s1 = nova.value;
+      const s2 = confirmar.value;
+      if (s1.length < 6) { msg.textContent = 'A senha deve ter pelo menos 6 caracteres.'; return; }
+      if (s1 !== s2) { msg.textContent = 'As senhas não conferem.'; return; }
+      btn.disabled = true;
+      try {
+        const data = await api('/api/auth/trocar-senha-provisoria', {
+          method: 'POST',
+          body: JSON.stringify({ tempToken, novaSenha: s1 })
+        });
+        modal.remove();
+        state.token = data.token;
+        localStorage.setItem('token', data.token);
+        state.currentUser = data.user || null;
+        syncCurrentUserFromToken();
+        if (typeof refreshWatermark === 'function') refreshWatermark();
+        updateNav();
+        startNotifPolling();
+        await fillSelects();
+        showView('dashboard');
+        await loadDashboard();
+        byId('loginMsg').textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
+      } catch (err) {
+        msg.textContent = err.message || 'Erro ao salvar senha.';
+        btn.disabled = false;
+      }
+    });
+
+    [nova, confirmar].forEach((inp) => inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') btn.click();
+    }));
+  }
+
   function show2FAStep(email) {
     const loginCard = byId('loginForm')?.closest('.card') || byId('loginForm')?.parentNode;
     if (!loginCard) return;
@@ -3360,6 +3440,12 @@
       try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
         const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
+
+        // ── Senha provisória: exige troca antes de emitir sessão ────────────
+        if (data.requiresPasswordChange) {
+          showPasswordChangeModal(data.tempToken);
+          return;
+        }
 
         // ── 2FA: server requires verification code ───────────────────────────
         if (data.requires2FA) {
