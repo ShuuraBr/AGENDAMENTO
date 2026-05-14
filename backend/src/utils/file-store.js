@@ -247,6 +247,21 @@ export function readCadastroFile(tipo) {
   return readJsonFile(name, []);
 }
 
+// Persists extra fields (e.g. fornecedoresVinculados) that have no DB column.
+// Creates a skeleton entry with the given id if none exists in the file.
+export function patchCadastroFileById(tipo, id, patch = {}) {
+  const name = cadastroFileName(tipo);
+  if (!name) throw new Error('Tipo inválido.');
+  const items = readJsonFile(name, []);
+  const index = items.findIndex((t) => String(t.id) === String(id));
+  if (index >= 0) {
+    items[index] = { ...items[index], ...patch, updatedAt: new Date().toISOString() };
+  } else {
+    items.unshift({ id: Number(id), ...patch, updatedAt: new Date().toISOString() });
+  }
+  writeJsonFile(name, items);
+}
+
 export function upsertCadastroFile(tipo, payload = {}, id = null) {
   const name = cadastroFileName(tipo);
   if (!name) throw new Error('Tipo inválido.');
