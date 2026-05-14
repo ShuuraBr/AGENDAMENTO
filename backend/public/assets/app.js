@@ -611,11 +611,14 @@
   }
 
   function getCurrentPermissions() {
-    const explicit = Array.isArray(state.currentUser?.permissions || syncCurrentUserFromToken()?.permissions)
-      ? (state.currentUser?.permissions || syncCurrentUserFromToken()?.permissions || [])
-      : [];
-    if (explicit.length) return [...new Set(explicit.map((item) => String(item || '').trim()).filter(Boolean))];
-    return PROFILE_PERMISSIONS[currentProfile()] || [];
+    // Always use the frontend PROFILE_PERMISSIONS table so a deploy update
+    // is reflected immediately without requiring re-login.
+    const fromProfile = PROFILE_PERMISSIONS[currentProfile()];
+    if (fromProfile) return fromProfile;
+    // Fallback: token-embedded permissions (custom/legacy profile)
+    const user = state.currentUser || syncCurrentUserFromToken();
+    const explicit = Array.isArray(user?.permissions) ? user.permissions : [];
+    return [...new Set(explicit.map((item) => String(item || '').trim()).filter(Boolean))];
   }
 
   function hasPermission(permission) {
