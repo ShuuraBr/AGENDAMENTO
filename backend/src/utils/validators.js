@@ -88,20 +88,24 @@ export function validateAgendamentoPayload(payload, isPublic = false) {
 }
 
 const transitions = {
+  SOLICITADO: ["PENDENTE_APROVACAO", "APROVADO", "REPROVADO", "CANCELADO", "NO_SHOW"],
   PENDENTE_APROVACAO: ["APROVADO", "REPROVADO", "CANCELADO", "NO_SHOW"],
-  APROVADO: ["CHEGOU", "EM_DESCARGA", "CANCELADO", "NO_SHOW"],
+  APROVADO: ["CHEGOU", "EM_DESCARGA", "CANCELADO", "NO_SHOW", "REAGENDADO"],
   CHEGOU: ["EM_DESCARGA", "CANCELADO"],
   EM_DESCARGA: ["FINALIZADO"],
+  REAGENDADO: ["PENDENTE_APROVACAO", "APROVADO", "CANCELADO", "NO_SHOW"],
   FINALIZADO: [],
   CANCELADO: [],
-  REPROVADO: [],
+  REPROVADO: ["PENDENTE_APROVACAO", "CANCELADO"],
   NO_SHOW: []
 };
 
 export function validateStatusTransition(current, target) {
-  if (current === target) return;
-  const allowed = transitions[current] || [];
+  // Status vazio/nulo (MySQL enum em modo não-estrito) trata como PENDENTE_APROVACAO
+  const normalizedCurrent = String(current || "").trim().toUpperCase() || "PENDENTE_APROVACAO";
+  if (normalizedCurrent === target) return;
+  const allowed = transitions[normalizedCurrent] || [];
   if (!allowed.includes(target)) {
-    throw new Error(`Transição inválida: ${current} -> ${target}`);
+    throw new Error(`Transição inválida: ${normalizedCurrent} -> ${target}`);
   }
 }

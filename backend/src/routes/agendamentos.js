@@ -1497,8 +1497,12 @@ router.post('/ocorrencia', requirePermission('agendamentos.create'), async (req,
 });
  
 async function transition(id, target, data = {}, req) {
-  const found = await mustExist(id);
+  let found = await mustExist(id);
   if (!found) throw new Error("Agendamento não encontrado.");
+  // Normaliza status vazio (MySQL enum em modo não-estrito armazena '' para valor inválido)
+  if (!String(found.status || "").trim()) {
+    found = { ...found, status: "PENDENTE_APROVACAO" };
+  }
   if (found.status !== target) validateStatusTransition(found.status, target);
   let updated;
   if (found.status === target) {
@@ -1507,7 +1511,7 @@ async function transition(id, target, data = {}, req) {
     try { updated = await prisma.agendamento.update({ where: { id: Number(id) }, data: { ...data, status: target } }); }
     catch { updated = updateAgendamentoFile(id, { ...data, status: target }); }
   }
- 
+
   await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: target, entidade: "AGENDAMENTO", entidadeId: updated.id, detalhes: data, ip: req.ip });
   return updated;
 }

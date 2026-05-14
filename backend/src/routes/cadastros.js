@@ -3,7 +3,7 @@ import { authRequired, requirePermission } from "../middlewares/auth.js";
 import { validateProfile } from "../utils/validators.js";
 import bcrypt from "bcryptjs";
 import { auditLog } from "../utils/audit.js";
-import { readCadastroFile, upsertCadastroFile } from "../utils/file-store.js";
+import { readCadastroFile, upsertCadastroFile, patchCadastroFileById } from "../utils/file-store.js";
 import { createCadastroDirect, directCadastrosEnabled, listCadastroDirect, updateCadastroDirect } from "../utils/direct-cadastros.js";
 import { logOnce } from "../utils/log-once.js";
 
@@ -43,7 +43,18 @@ router.get("/:tipo", requirePermission("cadastros.view"), async (req, res) => {
   try {
     const tipo = ensureTipo(req.params.tipo);
     ensureUserCadastroPermission(req, tipo);
-    res.json(await listItems(tipo));
+    let items = await listItems(tipo);
+    // fornecedoresVinculados lives only in the JSON file (no DB column).
+    // When MySQL is active, merge it back so the edit form always shows the correct value.
+    if (tipo === 'transportadoras') {
+      const fileItems = readCadastroFile(tipo);
+      const fileMap = new Map(fileItems.map((f) => [String(f.id), f]));
+      items = items.map((item) => ({
+        ...item,
+        fornecedoresVinculados: fileMap.get(String(item.id))?.fornecedoresVinculados || []
+      }));
+    }
+    res.json(items);
   } catch (err) {
     res.status(err.statusCode || 400).json({ message: err.message });
   }
@@ -74,8 +85,12 @@ router.post("/:tipo", requirePermission("cadastros.manage"), async (req, res) =>
       item = upsertCadastroFile(tipo, data);
     }
 
+    // Persist full record + fornecedoresVinculados to JSON file (no DB column, file is source of truth)
+    if (tipo === 'transportadoras' && Array.isArray(data.fornecedoresVinculados)) {
+      patchCadastroFileById(tipo, item.id, { ...item, fornecedoresVinculados: data.fornecedoresVinculados });
+    }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CREATE", entidade: tipo.toUpperCase(), entidadeId: item.id, detalhes: data, ip: req.ip });
-    res.status(201).json(item);
+    res.status(201).json({ ...item, fornecedoresVinculados: data.fornecedoresVinculados || [] });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -105,8 +120,15 @@ router.put("/:tipo/:id", requirePermission("cadastros.manage"), async (req, res)
       item = upsertCadastroFile(tipo, data, req.params.id);
     }
 
+    // Persist full record + fornecedoresVinculados to JSON file (no DB column, file is source of truth)
+    if (tipo === 'transportadoras' && Array.isArray(data.fornecedoresVinculados)) {
+      patchCadastroFileById(tipo, req.params.id, { ...item, fornecedoresVinculados: data.fornecedoresVinculados });
+    }
+    const vinculados = tipo === 'transportadoras'
+      ? (data.fornecedoresVinculados || readCadastroFile(tipo).find((t) => String(t.id) === String(req.params.id))?.fornecedoresVinculados || [])
+      : undefined;
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "UPDATE", entidade: tipo.toUpperCase(), entidadeId: item.id, detalhes: data, ip: req.ip });
-    res.json(item);
+    res.json(vinculados !== undefined ? { ...item, fornecedoresVinculados: vinculados } : item);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -148,9 +170,22 @@ router.get("/transportadoras/por-fornecedor", requirePermission("cadastros.view"
   try {
     const nome = String(req.query?.nome || "").trim().toLowerCase();
     if (!nome) return res.status(400).json({ message: "Informe o nome do fornecedor." });
-    const items = readCadastroFile("transportadoras");
-    const match = items.find((t) => Array.isArray(t.fornecedoresVinculados) && t.fornecedoresVinculados.some((f) => String(f).trim().toLowerCase() === nome));
-    res.json(match || null);
+
+    // fornecedoresVinculados lives in the JSON file — find which transportadora matches
+    const fileItems = readCadastroFile("transportadoras");
+    const match = fileItems.find((t) => Array.isArray(t.fornecedoresVinculados) && t.fornecedoresVinculados.some((f) => String(f).trim().toLowerCase() === nome));
+    if (!match) return res.json(null);
+
+    // If MySQL is active the full record (nome, email, telefone) may only be there
+    if (directCadastrosEnabled()) {
+      try {
+        const dbItems = await listCadastroDirect("transportadoras");
+        const dbRecord = dbItems.find((t) => String(t.id) === String(match.id));
+        if (dbRecord) return res.json({ ...dbRecord, fornecedoresVinculados: match.fornecedoresVinculados });
+      } catch { /* fall through to file record */ }
+    }
+
+    res.json(match);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }

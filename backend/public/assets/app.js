@@ -58,7 +58,8 @@
     dashboard: "dashboard.view",
     docas: "docas.view",
     cadastros: "cadastros.view",
-    agendamentos: "agendamentos.view",
+    agendamentos: "agendamentos.create",
+    confirmacoes: "confirmacoes.view",
     "consulta-nf": "agendamentos.consulta_nf",
     checkin: "agendamentos.checkin"
   };
@@ -93,7 +94,8 @@
         { name: "nome", label: "Nome / Razão social", type: "text", required: true },
         { name: "cnpj", label: "CNPJ", type: "text" },
         { name: "email", label: "E-mail", type: "email" },
-        { name: "telefone", label: "Telefone", type: "text" }
+        { name: "telefone", label: "Telefone", type: "text" },
+        { name: "fornecedoresVinculados", label: "Fornecedores vinculados (separados por vírgula)", type: "text", full: true, isArray: true }
       ]
     },
     motoristas: {
@@ -365,11 +367,14 @@
   }
 
   function statusLabel(status) {
-    return String(status || "").replaceAll("_", " ");
+    const normalized = String(status || "").trim().toUpperCase();
+    if (!normalized || normalized === 'SOLICITADO') return 'Pendente aprovação';
+    return normalized.replaceAll("_", " ");
   }
 
   function statusTone(status = "", semaforo = "") {
     const statusMap = {
+      SOLICITADO: 'amarelo',
       PENDENTE_APROVACAO: 'amarelo',
       APROVADO: 'azul',
       CHEGOU: 'laranja',
@@ -621,8 +626,11 @@
   }
 
   function firstAllowedPrivateView() {
-    const candidates = ["dashboard", "docas", "agendamentos", "consulta-nf", "checkin", "cadastros"];
-    return candidates.find((viewId) => canAccessView(viewId)) || 'public-home';
+    const candidates = ["dashboard", "docas", "agendamentos", "confirmacoes", "consulta-nf", "checkin", "cadastros"];
+    // "checkin" has no VIEW_PERMISSIONS entry so canAccessView returns true for everyone;
+    // place it last so authenticated profiles with real views land there first.
+    return candidates.find((viewId) => canAccessView(viewId) && (VIEW_PERMISSIONS[viewId] ? hasPermission(VIEW_PERMISSIONS[viewId]) : false))
+      || (hasPermission('agendamentos.checkin') ? 'checkin' : 'public-home');
   }
 
   function isAdmin() {
@@ -675,6 +683,7 @@
       btnReprovar: 'agendamentos.reprove',
       btnReagendar: 'agendamentos.reschedule',
       btnCancelar: 'agendamentos.cancel',
+      btnEditarAgendamento: 'confirmacoes.view',
       btnIniciar: 'agendamentos.start',
       btnFinalizar: 'agendamentos.finish',
       btnNoShow: 'agendamentos.no_show',
@@ -682,7 +691,7 @@
       btnQr: 'agendamentos.view',
       btnEnviarInfos: 'agendamentos.notify',
       btnResumoFinanceiro: 'financeiro.summary',
-      loadAgendamentos: 'agendamentos.view',
+      loadAgendamentos: 'confirmacoes.view',
       loadDashboard: 'dashboard.view',
       loadDocas: 'docas.view'
     };
@@ -771,6 +780,11 @@
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.view === target);
     });
+
+    if (target === 'confirmacoes' && logged) {
+      loadAgendamentos().catch(() => {});
+      loadAuditoria().catch(() => {});
+    }
   }
 
   function ensureModalHost() {
@@ -1973,34 +1987,71 @@
   }
 
   // FIX 5&7: Auto-fill or show per-supplier transportadora fields
-  function autoFillTransportadoraForFornecedores(fornecedores = []) {
+  async function autoFillTransportadoraForFornecedores(fornecedores = []) {
     const form = byId('agendamentoForm');
-    if (!form) return;
+    if (!form || !fornecedores.length) return;
     const transpInput = form.querySelector('[name="transportadora"]');
     if (!transpInput) return;
 
-    if (fornecedores.length === 0) return;
+    // Helper: fill transportadora + email + phone from cadastro record
+    function applyTranspCadastro(transp) {
+      if (!transp) return;
+      if (transp.nome) transpInput.value = transp.nome;
+      const emailTranspInput = form.querySelector('[name="emailTransportadora"]');
+      const emailMotoInput = form.querySelector('[name="emailMotorista"]');
+      const telefoneMotoInput = form.querySelector('[name="telefoneMotorista"]');
+      if (emailTranspInput && transp.email && !emailTranspInput.value) emailTranspInput.value = transp.email;
+      if (emailMotoInput && transp.email && !emailMotoInput.value) emailMotoInput.value = transp.email;
+      if (telefoneMotoInput && transp.telefone && !telefoneMotoInput.value) telefoneMotoInput.value = transp.telefone;
+    }
+
+    // Lookup transportadora by fornecedor name in cadastro
+    async function fetchTranspByFornecedor(nomeFornecedor) {
+      try {
+        const data = await api(`/api/cadastros/transportadoras/por-fornecedor?nome=${encodeURIComponent(nomeFornecedor)}`);
+        return Array.isArray(data) ? data[0] : (data || null);
+      } catch { return null; }
+    }
+
     if (fornecedores.length === 1) {
-      // Single supplier: fill from their data or from cadastro link
-      const transp = fornecedores[0]?.transportadora || '';
-      if (transp) transpInput.value = transp;
-      // Hide per-supplier table
+      const forn = fornecedores[0];
+      const transpNome = String(forn?.transportadora || '').trim();
       const perTable = byId('perSupplierTranspContainer');
       if (perTable) perTable.style.display = 'none';
+
+      // Try cadastro first
+      const nomeForn = String(forn?.fornecedor || forn?.nome || '').trim();
+      const cadastro = nomeForn ? await fetchTranspByFornecedor(nomeForn) : null;
+      if (cadastro) {
+        applyTranspCadastro(cadastro);
+      } else if (transpNome) {
+        transpInput.value = transpNome;
+      }
       return;
     }
 
-    // Multi-supplier: check if all share same transportadora
-    const transpValues = fornecedores.map((f) => String(f.transportadora || '').trim()).filter(Boolean);
-    const uniqueTransps = [...new Set(transpValues)];
+    // Multi-supplier: resolve each one from cadastro, then check if all share same transportadora
+    const resolved = await Promise.all(fornecedores.map(async (forn) => {
+      const nomeForn = String(forn?.fornecedor || forn?.nome || '').trim();
+      const cadastro = nomeForn ? await fetchTranspByFornecedor(nomeForn) : null;
+      return { forn, cadastro, transpNome: cadastro?.nome || String(forn?.transportadora || '').trim() };
+    }));
+
+    const uniqueTransps = [...new Set(resolved.map((r) => r.transpNome).filter(Boolean))];
     if (uniqueTransps.length === 1) {
-      transpInput.value = uniqueTransps[0];
+      const winner = resolved.find((r) => r.cadastro);
+      if (winner?.cadastro) {
+        applyTranspCadastro(winner.cadastro);
+      } else {
+        transpInput.value = uniqueTransps[0];
+      }
       const perTable = byId('perSupplierTranspContainer');
       if (perTable) perTable.style.display = 'none';
       return;
     }
 
-    // Different transportadoras: show per-supplier inputs
+    // Different transportadoras: annotate fornecedor objects and show per-supplier inputs
+    resolved.forEach(({ forn, transpNome }) => { if (transpNome) forn.transportadora = transpNome; });
     renderPerSupplierTranspFields(fornecedores);
   }
 
@@ -2548,8 +2599,8 @@
       const nClone = nextBtn.cloneNode(true); nextBtn.parentNode.replaceChild(nClone, nextBtn);
       nClone.addEventListener('click', () => { calState.month++; if (calState.month > 11) { calState.month = 0; calState.year++; } renderCalendar(); });
     }
-    // Render pending table
-    const activeStatuses = new Set(['PENDENTE_APROVACAO','APROVADO']);
+    // Render pending table — include SOLICITADO and empty-string status (MySQL non-strict ENUM stores '' for unknown values)
+    const activeStatuses = new Set(['SOLICITADO', 'PENDENTE_APROVACAO', 'APROVADO', '']);
     const pending = allAgendamentos.filter((ag) => activeStatuses.has(String(ag.status||'').toUpperCase()));
     renderPendingTable(pending);
 
@@ -2567,8 +2618,8 @@
     await maybeShowMissingRelatorioAlerts(data.agendamentos || []);
   }
 
-  const STATUS_COLORS = { PENDENTE_APROVACAO:'#f59e0b', APROVADO:'#10b981', CANCELADO:'#ef4444', NO_SHOW:'#8b5cf6', REAGENDADO:'#3b82f6', FINALIZADO:'#64748b', CHEGOU:'#06b6d4', EM_DESCARGA:'#f97316' };
-  const STATUS_LABELS = { PENDENTE_APROVACAO:'Pendente', APROVADO:'Aprovado', CANCELADO:'Cancelado', NO_SHOW:'No-show', REAGENDADO:'Reagendado', FINALIZADO:'Finalizado', CHEGOU:'Chegou', EM_DESCARGA:'Em descarga' };
+  const STATUS_COLORS = { SOLICITADO:'#f59e0b', PENDENTE_APROVACAO:'#f59e0b', APROVADO:'#10b981', CANCELADO:'#ef4444', NO_SHOW:'#8b5cf6', REAGENDADO:'#3b82f6', FINALIZADO:'#64748b', CHEGOU:'#06b6d4', EM_DESCARGA:'#f97316' };
+  const STATUS_LABELS = { SOLICITADO:'Pendente', PENDENTE_APROVACAO:'Pendente', APROVADO:'Aprovado', CANCELADO:'Cancelado', NO_SHOW:'No-show', REAGENDADO:'Reagendado', FINALIZADO:'Finalizado', CHEGOU:'Chegou', EM_DESCARGA:'Em descarga' };
 
   function renderPendingTable(items = []) {
     const tbody = byId('dashboardTableBody');
@@ -2578,8 +2629,9 @@
       return;
     }
     tbody.innerHTML = items.map((ag, i) => {
-      const color = STATUS_COLORS[ag.status] || '#94a3b8';
-      const label = STATUS_LABELS[ag.status] || ag.status || '-';
+      const statusKey = String(ag.status || '').toUpperCase() || 'SOLICITADO';
+      const color = STATUS_COLORS[statusKey] || '#94a3b8';
+      const label = STATUS_LABELS[statusKey] || ag.status || 'Pendente';
       const bg = i % 2 === 0 ? '#fff' : '#fafafa';
       return `<tr style="background:${bg};transition:background .1s" onmouseenter="this.style.background='#f0f9ff'" onmouseleave="this.style.background='${bg}'">
         <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;font-weight:600;color:#0f172a;white-space:nowrap">${escapeHtml(ag.protocolo||'-')}</td>
@@ -2761,13 +2813,17 @@
 
   function normalizeValueByField(field, value) {
     if (field.type === "number") return value === "" ? 0 : Number(value);
+    if (field.isArray) {
+      return String(value || "").split(",").map((s) => s.trim()).filter(Boolean);
+    }
     return value;
   }
 
   function buildField(field, value = "") {
     const wrapperClass = field.full ? "form-group form-group-full" : "form-group";
     const requiredAttr = field.required ? "required" : "";
-    const safeValue = value ?? "";
+    // Arrays (e.g. fornecedoresVinculados) are displayed as comma-separated text
+    const safeValue = Array.isArray(value) ? value.join(", ") : (value ?? "");
 
     if (field.type === "select") {
       return `
