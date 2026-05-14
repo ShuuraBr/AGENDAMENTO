@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(cat \"Z:/00 - HTML/AGENDAMENTO/backend/data/transportadoras.json\" 2>/dev/null || echo \"não existe no repositório principal\" *)"
     ]
   }
 }
