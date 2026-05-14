@@ -80,6 +80,7 @@ router.post("/:tipo", requirePermission("cadastros.manage"), async (req, res) =>
       try {
         item = await createCadastroDirect(tipo, data);
       } catch (err) {
+        console.error(`[cadastros] Falha ao criar ${tipo} no MySQL — operando em arquivo. Erro: ${err?.message || err}`);
         logOnce(`cadastro-create-${tipo}`, `Cadastro ${tipo} operando em arquivo (criação):`, err?.message || err);
       }
     }
@@ -87,12 +88,17 @@ router.post("/:tipo", requirePermission("cadastros.manage"), async (req, res) =>
       item = upsertCadastroFile(tipo, data);
     }
 
-    // Persist full record + fornecedoresVinculados to JSON file (no DB column, file is source of truth)
-    if (tipo === 'transportadoras' && Array.isArray(data.fornecedoresVinculados)) {
-      patchCadastroFileById(tipo, item.id, { ...item, fornecedoresVinculados: data.fornecedoresVinculados });
+    // Persist fornecedoresVinculados to JSON file (no DB column, file is source of truth).
+    const newVinculados = Array.isArray(data.fornecedoresVinculados) ? data.fornecedoresVinculados : [];
+    if (tipo === 'transportadoras') {
+      try {
+        patchCadastroFileById(tipo, item.id, { fornecedoresVinculados: newVinculados });
+      } catch (fileErr) {
+        console.error('[cadastros] Failed to patch fornecedoresVinculados:', fileErr?.message);
+      }
     }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CREATE", entidade: tipo.toUpperCase(), entidadeId: item.id, detalhes: data, ip: req.ip });
-    res.status(201).json({ ...item, fornecedoresVinculados: data.fornecedoresVinculados || [] });
+    res.status(201).json({ ...item, fornecedoresVinculados: newVinculados });
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -115,6 +121,7 @@ router.put("/:tipo/:id", requirePermission("cadastros.manage"), async (req, res)
       try {
         item = await updateCadastroDirect(tipo, req.params.id, data);
       } catch (err) {
+        console.error(`[cadastros] Falha ao atualizar ${tipo} no MySQL — operando em arquivo. Erro: ${err?.message || err}`);
         logOnce(`cadastro-update-${tipo}`, `Cadastro ${tipo} operando em arquivo (atualização):`, err?.message || err);
       }
     }
@@ -122,13 +129,19 @@ router.put("/:tipo/:id", requirePermission("cadastros.manage"), async (req, res)
       item = upsertCadastroFile(tipo, data, req.params.id);
     }
 
-    // Persist full record + fornecedoresVinculados to JSON file (no DB column, file is source of truth)
-    if (tipo === 'transportadoras' && Array.isArray(data.fornecedoresVinculados)) {
-      patchCadastroFileById(tipo, req.params.id, { ...item, fornecedoresVinculados: data.fornecedoresVinculados });
+    // Persist fornecedoresVinculados to JSON file (no DB column, file is source of truth).
+    // Always patch for transportadoras; preserve existing value if request omits the field.
+    let vinculados;
+    if (tipo === 'transportadoras') {
+      const fileRecord = readCadastroFile(tipo).find((t) => String(t.id) === String(item.id));
+      const existingVinculados = fileRecord?.fornecedoresVinculados || [];
+      vinculados = Array.isArray(data.fornecedoresVinculados) ? data.fornecedoresVinculados : existingVinculados;
+      try {
+        patchCadastroFileById(tipo, item.id, { fornecedoresVinculados: vinculados });
+      } catch (fileErr) {
+        console.error('[cadastros] Failed to patch fornecedoresVinculados:', fileErr?.message);
+      }
     }
-    const vinculados = tipo === 'transportadoras'
-      ? (data.fornecedoresVinculados || readCadastroFile(tipo).find((t) => String(t.id) === String(req.params.id))?.fornecedoresVinculados || [])
-      : undefined;
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "UPDATE", entidade: tipo.toUpperCase(), entidadeId: item.id, detalhes: data, ip: req.ip });
     res.json(vinculados !== undefined ? { ...item, fornecedoresVinculados: vinculados } : item);
   } catch (err) {
