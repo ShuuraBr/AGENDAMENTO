@@ -4,6 +4,7 @@ import path from "path";
 import { authRequired, requirePermission } from "../middlewares/auth.js";
 import { prisma } from "../utils/prisma.js";
 import { generateProtocol, generatePublicToken } from "../utils/security.js";
+import { createNotificacao } from "../utils/notifications.js";
 import { qrSvg } from "../utils/qrcode.js";
 import { sendMail } from "../utils/email.js";
 import { sendWhatsApp } from "../services/whatsapp.js";
@@ -1937,6 +1938,84 @@ router.patch("/:id(\\d+)/definir-doca", requirePermission("agendamentos.create")
     catch { updated = updateAgendamentoFile(found.id, { docaId }); }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "DEFINIR_DOCA", entidade: "AGENDAMENTO", entidadeId: found.id, detalhes: { docaId }, ip: req.ip });
     res.json({ ok: true, id: found.id, docaId });
+  } catch (err) { res.status(400).json({ message: err.message }); }
+});
+
+// POST /:id/solicitar-reagendamento — GESTOR solicita que OPERADOR reagende (cria notificação)
+router.post("/:id(\\d+)/solicitar-reagendamento", requirePermission("agendamentos.request_reschedule"), async (req, res) => {
+  try {
+    const found = await mustExist(req.params.id);
+    if (!found) return res.status(404).json({ message: "Agendamento não encontrado." });
+    const status = String(found.status || '').trim().toUpperCase() || 'PENDENTE_APROVACAO';
+    if (status !== 'PENDENTE_APROVACAO') {
+      return res.status(400).json({ message: `Só é possível solicitar reagendamento de agendamentos com status PENDENTE_APROVACAO. Status atual: ${status}.` });
+    }
+    const notif = createNotificacao({
+      tipo: 'SOLICITAR_REAGENDAMENTO',
+      agendamentoId: found.id,
+      protocolo: found.protocolo,
+      fornecedor: found.fornecedor,
+      dataAgendadaOriginal: found.dataAgendada,
+      requestedBy: { usuarioId: req.user.sub, nome: req.user.nome || req.user.email, perfil: req.user.perfil },
+      targetPerfis: ['OPERADOR', 'ADMIN']
+    });
+    await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "SOLICITAR_REAGENDAMENTO", entidade: "AGENDAMENTO", entidadeId: found.id, detalhes: { protocolo: found.protocolo }, ip: req.ip });
+    res.json({ ok: true, notificacaoId: notif.id });
+  } catch (err) { res.status(400).json({ message: err.message }); }
+});
+
+// POST /solicitar-reagendamento-lote — GESTOR solicita reagendamento para múltiplos IDs
+router.post("/solicitar-reagendamento-lote", requirePermission("agendamentos.request_reschedule"), async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Boolean) : [];
+    if (!ids.length) return res.status(400).json({ message: "Informe ao menos um ID." });
+    const results = [];
+    for (const id of ids) {
+      try {
+        const found = await mustExist(id);
+        if (!found) { results.push({ id, ok: false, message: "Não encontrado." }); continue; }
+        const status = String(found.status || '').trim().toUpperCase() || 'PENDENTE_APROVACAO';
+        if (status !== 'PENDENTE_APROVACAO') { results.push({ id, ok: false, message: `Status inválido: ${status}` }); continue; }
+        const notif = createNotificacao({
+          tipo: 'SOLICITAR_REAGENDAMENTO',
+          agendamentoId: found.id,
+          protocolo: found.protocolo,
+          fornecedor: found.fornecedor,
+          dataAgendadaOriginal: found.dataAgendada,
+          requestedBy: { usuarioId: req.user.sub, nome: req.user.nome || req.user.email, perfil: req.user.perfil },
+          targetPerfis: ['OPERADOR', 'ADMIN']
+        });
+        await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "SOLICITAR_REAGENDAMENTO", entidade: "AGENDAMENTO", entidadeId: found.id, detalhes: { protocolo: found.protocolo }, ip: req.ip });
+        results.push({ id, ok: true, notificacaoId: notif.id });
+      } catch (err) { results.push({ id, ok: false, message: err.message }); }
+    }
+    res.json({ results });
+  } catch (err) { res.status(400).json({ message: err.message }); }
+});
+
+// POST /encerrar-dia — cancela todos os PENDENTE_APROVACAO de uma data
+router.post("/encerrar-dia", requirePermission("agendamentos.request_reschedule"), async (req, res) => {
+  try {
+    const data = String(req.body?.data || '').trim();
+    if (!data || !/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({ message: "Informe a data no formato YYYY-MM-DD." });
+    let allItems = [];
+    try { allItems = await prisma.agendamento.findMany({ where: { dataAgendada: data } }); }
+    catch { allItems = readAgendamentos().filter((a) => String(a.dataAgendada) === data); }
+    const pendentes = allItems.filter((a) => {
+      const s = String(a.status || '').trim().toUpperCase() || 'PENDENTE_APROVACAO';
+      return s === 'PENDENTE_APROVACAO' || s === 'SOLICITADO';
+    });
+    const cancelados = [];
+    for (const ag of pendentes) {
+      try {
+        try { await prisma.agendamento.update({ where: { id: Number(ag.id) }, data: { status: 'CANCELADO', motivoCancelamento: 'Encerramento do dia pelo gestor.' } }); }
+        catch { updateAgendamentoFile(ag.id, { status: 'CANCELADO', motivoCancelamento: 'Encerramento do dia pelo gestor.' }); }
+        await unlinkRelatorioRowsFromAgendamento(ag.id).catch(() => {});
+        await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CANCELAR", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: { motivo: 'Encerramento do dia', data }, ip: req.ip });
+        cancelados.push(ag.id);
+      } catch { /* ignora erros individuais */ }
+    }
+    res.json({ ok: true, data, cancelados: cancelados.length, ids: cancelados });
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 

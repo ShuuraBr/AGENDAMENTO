@@ -47,8 +47,12 @@
       <button type="button" class="nav-btn" data-view="confirmacoes">Confirmações</button>
       <button type="button" class="nav-btn" data-view="consulta-nf">Consulta por NF</button>
       <button type="button" class="nav-btn" data-view="checkin">Check-in / Check-out QR</button>
+      <button type="button" id="btnNotificacoes" class="nav-btn notif-bell" title="Notificações" aria-label="Notificações">
+        &#128276;<span id="notifBadge" class="notif-badge hidden">0</span>
+      </button>
       <button type="button" id="btnLogout">Sair</button>
     </nav>
+    <div id="notifDropdown" class="notif-dropdown hidden"></div>
   </header>
 
   <main class="container">
@@ -380,6 +384,13 @@
         <div class="workflow-id-row">
           <button id="loadAgendamentos">Atualizar lista</button>
           <input id="agendamentoId" placeholder="ID do agendamento" />
+          <input id="encerrarDiaInput" type="date" title="Data para encerrar" />
+          <button id="btnEncerrarDia" class="btn-danger" title="Cancela todos os agendamentos PENDENTE_APROVAÇÃO da data selecionada">Encerrar dia</button>
+        </div>
+        <div id="confirmacoesSelecionadasToolbar" class="confirmacoes-toolbar hidden">
+          <span id="confirmacoesSelecionadasCount" style="font-size:13px;color:#475569;font-weight:600"></span>
+          <button id="btnSolicitarReagendamentoLote" class="btn-warning">Solicitar reagendamento</button>
+          <button id="btnDeselecionarTodos" class="btn-secondary" style="font-size:12px">Desselecionar todos</button>
         </div>
         <div class="row gap8 wrap mt12">
           <button id="btnAprovar">Aprovar</button>

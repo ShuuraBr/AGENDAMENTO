@@ -85,9 +85,9 @@ router.post("/:tipo", requirePermission("cadastros.manage"), async (req, res) =>
       item = upsertCadastroFile(tipo, data);
     }
 
-    // Persist fornecedoresVinculados to JSON file (no DB column, file is source of truth)
+    // Persist full record + fornecedoresVinculados to JSON file (no DB column, file is source of truth)
     if (tipo === 'transportadoras' && Array.isArray(data.fornecedoresVinculados)) {
-      patchCadastroFileById(tipo, item.id, { fornecedoresVinculados: data.fornecedoresVinculados });
+      patchCadastroFileById(tipo, item.id, { ...item, fornecedoresVinculados: data.fornecedoresVinculados });
     }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CREATE", entidade: tipo.toUpperCase(), entidadeId: item.id, detalhes: data, ip: req.ip });
     res.status(201).json({ ...item, fornecedoresVinculados: data.fornecedoresVinculados || [] });
@@ -120,9 +120,9 @@ router.put("/:tipo/:id", requirePermission("cadastros.manage"), async (req, res)
       item = upsertCadastroFile(tipo, data, req.params.id);
     }
 
-    // Persist fornecedoresVinculados to JSON file (no DB column, file is source of truth)
+    // Persist full record + fornecedoresVinculados to JSON file (no DB column, file is source of truth)
     if (tipo === 'transportadoras' && Array.isArray(data.fornecedoresVinculados)) {
-      patchCadastroFileById(tipo, req.params.id, { fornecedoresVinculados: data.fornecedoresVinculados });
+      patchCadastroFileById(tipo, req.params.id, { ...item, fornecedoresVinculados: data.fornecedoresVinculados });
     }
     const vinculados = tipo === 'transportadoras'
       ? (data.fornecedoresVinculados || readCadastroFile(tipo).find((t) => String(t.id) === String(req.params.id))?.fornecedoresVinculados || [])
