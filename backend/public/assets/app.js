@@ -3885,16 +3885,6 @@
       };
     }
 
-    function startNotifPolling() {
-      if (state.notifPollInterval) return;
-      loadNotificacoes();
-      state.notifPollInterval = setInterval(() => loadNotificacoes(), 30000);
-    }
-
-    function stopNotifPolling() {
-      if (state.notifPollInterval) { clearInterval(state.notifPollInterval); state.notifPollInterval = null; }
-    }
-
     // Bell toggle
     byId('btnNotificacoes')?.addEventListener('click', (e) => {
       e.stopPropagation();
