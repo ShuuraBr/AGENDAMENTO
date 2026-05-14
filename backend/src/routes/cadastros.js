@@ -166,16 +166,32 @@ router.post("/transportadoras/:id/vincular-fornecedores", requirePermission("cad
 
 // GET /transportadoras/por-fornecedor?nome=X
 // Retorna a transportadora padrão vinculada ao fornecedor
+// GET /transportadoras/por-fornecedor?nome=X
+// Retorna a transportadora padrão vinculada ao fornecedor
 router.get("/transportadoras/por-fornecedor", requirePermission("cadastros.view"), async (req, res) => {
   try {
     const nome = String(req.query?.nome || "").trim().toLowerCase();
     if (!nome) return res.status(400).json({ message: "Informe o nome do fornecedor." });
-    const items = readCadastroFile("transportadoras");
-    const match = items.find((t) => Array.isArray(t.fornecedoresVinculados) && t.fornecedoresVinculados.some((f) => String(f).trim().toLowerCase() === nome));
-    res.json(match || null);
+
+    // fornecedoresVinculados lives in the JSON file — find which transportadora matches
+    const fileItems = readCadastroFile("transportadoras");
+    const match = fileItems.find((t) => Array.isArray(t.fornecedoresVinculados) && t.fornecedoresVinculados.some((f) => String(f).trim().toLowerCase() === nome));
+    if (!match) return res.json(null);
+
+    // If MySQL is active the full record (nome, email, telefone) may only be there
+    if (directCadastrosEnabled()) {
+      try {
+        const dbItems = await listCadastroDirect("transportadoras");
+        const dbRecord = dbItems.find((t) => String(t.id) === String(match.id));
+        if (dbRecord) return res.json({ ...dbRecord, fornecedoresVinculados: match.fornecedoresVinculados });
+      } catch { /* fall through to file record */ }
+    }
+
+    res.json(match);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
 });
+
 
 export default router;
