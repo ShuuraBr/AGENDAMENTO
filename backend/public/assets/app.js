@@ -50,10 +50,7 @@
     OPERADOR: [
       "dashboard.view", "docas.view", "cadastros.view", "cadastros.manage",
       "agendamentos.view", "agendamentos.create", "agendamentos.consulta_nf",
-      "agendamentos.approve", "agendamentos.reprove", "agendamentos.reschedule",
-      "agendamentos.cancel", "agendamentos.start", "agendamentos.finish", "agendamentos.no_show",
-      "agendamentos.documentos", "agendamentos.notas", "agendamentos.notify",
-      "confirmacoes.view",
+      "agendamentos.documentos", "agendamentos.notas",
       "relatorio.view", "relatorio.terceirizado.view"
     ],
     PORTARIA: [
@@ -2151,6 +2148,14 @@
     } catch {}
   }
 
+  function updateConfirmacoesToolbar() {
+    const toolbar = byId('confirmacoesSelecionadasToolbar');
+    const countEl = byId('confirmacoesSelecionadasCount');
+    const n = state.confirmacoesSelecionados.size;
+    if (toolbar) toolbar.classList.toggle('hidden', n === 0);
+    if (countEl) countEl.textContent = `${n} agendamento${n !== 1 ? 's' : ''} selecionado${n !== 1 ? 's' : ''}`;
+  }
+
   function renderOperationalTable(items, { targetId, includeActions = false, includeSelect = false } = {}) {
     const wrap = byId(targetId);
     const allowDockActions = includeActions && hasPermission('agendamentos.definir_doca');
@@ -3820,14 +3825,6 @@
     });
 
     // ── Multi-seleção e botões da aba Confirmações ─────────────────────────────
-
-    function updateConfirmacoesToolbar() {
-      const toolbar = byId('confirmacoesSelecionadasToolbar');
-      const countEl = byId('confirmacoesSelecionadasCount');
-      const n = state.confirmacoesSelecionados.size;
-      if (toolbar) toolbar.classList.toggle('hidden', n === 0);
-      if (countEl) countEl.textContent = `${n} agendamento${n !== 1 ? 's' : ''} selecionado${n !== 1 ? 's' : ''}`;
-    }
 
     byId('btnDeselecionarTodos')?.addEventListener('click', () => {
       state.confirmacoesSelecionados.clear();
