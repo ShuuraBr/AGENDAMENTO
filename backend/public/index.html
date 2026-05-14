@@ -44,6 +44,7 @@
       <button type="button" class="nav-btn" data-view="docas">Painel de Docas</button>
       <button type="button" class="nav-btn" data-view="cadastros">Cadastros</button>
       <button type="button" class="nav-btn" data-view="agendamentos">Agendamentos</button>
+      <button type="button" class="nav-btn" data-view="confirmacoes">Confirmações</button>
       <button type="button" class="nav-btn" data-view="consulta-nf">Consulta por NF</button>
       <button type="button" class="nav-btn" data-view="checkin">Check-in / Check-out QR</button>
       <button type="button" id="btnLogout">Sair</button>
@@ -313,7 +314,7 @@
 
     <!-- Aba Agendamentos sem painel de consulta por NF -->
     <section id="agendamentos" class="view">
-      <div class="agendamentos-layout">
+      <div class="agendamentos-layout agendamentos-layout-single">
         <div class="card agendamento-form-card">
           <h2>Novo agendamento interno</h2>
           <form id="agendamentoForm" class="operator-form" autocomplete="off">
@@ -370,35 +371,37 @@
           </form>
           <p id="agendamentoMsg" class="msg"></p>
         </div>
+      </div>
+    </section>
 
-        <div class="card workflow-card-full">
-          <h2>Workflow operacional</h2>
-          <div class="workflow-id-row">
-            <button id="loadAgendamentos">Atualizar lista</button>
-            <input id="agendamentoId" placeholder="ID do agendamento" />
-          </div>
-          <div class="row gap8 wrap mt12">
-            <button id="btnAprovar">Aprovar</button>
-            <button id="btnReprovar">Reprovar</button>
-            <button id="btnReagendar">Reagendar</button>
-            <button id="btnCancelar">Cancelar</button>
-            <button id="btnEditarAgendamento">✏️ Editar</button>
-            <button id="btnIniciar">Iniciar descarga</button>
-            <button id="btnFinalizar">Finalizar</button>
-            <button id="btnNoShow">No-show</button>
-            <button id="btnVoucher">Voucher</button>
-            <button id="btnQr">QR Code</button>
-            <button id="btnEnviarInfos">Enviar informações</button>
-            <button id="btnResumoFinanceiro" class="btn-secondary">Enviar resumo financeiro</button>
-          </div>
-          <p id="operacaoMsg" class="msg"></p>
-          <div class="card inner mt16">
-            <h3>Histórico de ocorrências</h3>
-            <p class="hint">As NF marcadas como ocorrência ficam registradas aqui para acompanhamento operacional.</p>
-            <div id="ocorrenciasWorkflowList" class="mt12"></div>
-          </div>
-          <div id="agendamentosList" class="mt16"></div>
+    <section id="confirmacoes" class="view">
+      <div class="card workflow-card-full">
+        <h2>Confirmações</h2>
+        <div class="workflow-id-row">
+          <button id="loadAgendamentos">Atualizar lista</button>
+          <input id="agendamentoId" placeholder="ID do agendamento" />
         </div>
+        <div class="row gap8 wrap mt12">
+          <button id="btnAprovar">Aprovar</button>
+          <button id="btnReprovar">Reprovar</button>
+          <button id="btnReagendar">Reagendar</button>
+          <button id="btnCancelar">Cancelar</button>
+          <button id="btnEditarAgendamento">&#9998; Editar</button>
+          <button id="btnIniciar">Iniciar descarga</button>
+          <button id="btnFinalizar">Finalizar</button>
+          <button id="btnNoShow">No-show</button>
+          <button id="btnVoucher">Voucher</button>
+          <button id="btnQr">QR Code</button>
+          <button id="btnEnviarInfos">Enviar informações</button>
+          <button id="btnResumoFinanceiro" class="btn-secondary">Enviar resumo financeiro</button>
+        </div>
+        <p id="operacaoMsg" class="msg"></p>
+        <div class="card inner mt16">
+          <h3>Histórico de ocorrências</h3>
+          <p class="hint">As NF marcadas como ocorrência ficam registradas aqui para acompanhamento operacional.</p>
+          <div id="ocorrenciasWorkflowList" class="mt12"></div>
+        </div>
+        <div id="agendamentosList" class="mt16"></div>
       </div>
     </section>
 

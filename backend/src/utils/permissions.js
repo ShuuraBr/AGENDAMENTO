@@ -19,6 +19,7 @@ export const ALL_PERMISSIONS = [
   'agendamentos.approve',
   'agendamentos.reprove',
   'agendamentos.reschedule',
+  'agendamentos.request_reschedule',
   'agendamentos.cancel',
   'agendamentos.start',
   'agendamentos.finish',
@@ -27,6 +28,7 @@ export const ALL_PERMISSIONS = [
   'agendamentos.documentos',
   'agendamentos.notas',
   'agendamentos.notify',
+  'confirmacoes.view',
   'financeiro.summary',
   'relatorio.view',
   'relatorio.manage',
@@ -35,35 +37,29 @@ export const ALL_PERMISSIONS = [
 ];
 
 export const PROFILE_PERMISSIONS = {
+  // Acesso total
   ADMIN: [...ALL_PERMISSIONS],
-  GESTOR: ALL_PERMISSIONS.filter((permission) => permission !== 'users.manage'),
+
+  // Acesso total exceto gestão de usuários
+  GESTOR: ALL_PERMISSIONS.filter((p) => p !== 'users.manage'),
+
+  // Cria agendamentos e edita cadastros (exceto usuários); sem acesso à aba Confirmações
   OPERADOR: [
     'dashboard.view',
     'docas.view',
     'cadastros.view',
+    'cadastros.manage',
     'agendamentos.view',
     'agendamentos.create',
     'agendamentos.consulta_nf',
-    'agendamentos.definir_doca',
-    'agendamentos.approve',
-    'agendamentos.reprove',
-    'agendamentos.reschedule',
-    'agendamentos.cancel',
-    'agendamentos.start',
-    'agendamentos.finish',
-    'agendamentos.no_show',
-    'agendamentos.checkin',
     'agendamentos.documentos',
     'agendamentos.notas',
-    'agendamentos.notify',
     'relatorio.view',
     'relatorio.terceirizado.view'
   ],
+
+  // Apenas Check-in / Check-out QR
   PORTARIA: [
-    'docas.view',
-    'agendamentos.view',
-    'agendamentos.consulta_nf',
-    'agendamentos.no_show',
     'agendamentos.checkin'
   ]
 };

@@ -58,7 +58,8 @@
     dashboard: "dashboard.view",
     docas: "docas.view",
     cadastros: "cadastros.view",
-    agendamentos: "agendamentos.view",
+    agendamentos: "agendamentos.create",
+    confirmacoes: "confirmacoes.view",
     "consulta-nf": "agendamentos.consulta_nf",
     checkin: "agendamentos.checkin"
   };
@@ -625,8 +626,11 @@
   }
 
   function firstAllowedPrivateView() {
-    const candidates = ["dashboard", "docas", "agendamentos", "consulta-nf", "checkin", "cadastros"];
-    return candidates.find((viewId) => canAccessView(viewId)) || 'public-home';
+    const candidates = ["dashboard", "docas", "agendamentos", "confirmacoes", "consulta-nf", "checkin", "cadastros"];
+    // "checkin" has no VIEW_PERMISSIONS entry so canAccessView returns true for everyone;
+    // place it last so authenticated profiles with real views land there first.
+    return candidates.find((viewId) => canAccessView(viewId) && (VIEW_PERMISSIONS[viewId] ? hasPermission(VIEW_PERMISSIONS[viewId]) : false))
+      || (hasPermission('agendamentos.checkin') ? 'checkin' : 'public-home');
   }
 
   function isAdmin() {
@@ -679,6 +683,7 @@
       btnReprovar: 'agendamentos.reprove',
       btnReagendar: 'agendamentos.reschedule',
       btnCancelar: 'agendamentos.cancel',
+      btnEditarAgendamento: 'confirmacoes.view',
       btnIniciar: 'agendamentos.start',
       btnFinalizar: 'agendamentos.finish',
       btnNoShow: 'agendamentos.no_show',
@@ -686,7 +691,7 @@
       btnQr: 'agendamentos.view',
       btnEnviarInfos: 'agendamentos.notify',
       btnResumoFinanceiro: 'financeiro.summary',
-      loadAgendamentos: 'agendamentos.view',
+      loadAgendamentos: 'confirmacoes.view',
       loadDashboard: 'dashboard.view',
       loadDocas: 'docas.view'
     };
@@ -775,6 +780,11 @@
     document.querySelectorAll("[data-view]").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.view === target);
     });
+
+    if (target === 'confirmacoes' && logged) {
+      loadAgendamentos().catch(() => {});
+      loadAuditoria().catch(() => {});
+    }
   }
 
   function ensureModalHost() {
@@ -1984,7 +1994,7 @@
     if (!transpInput) return;
 
     // Helper: fill transportadora + email + phone from cadastro record
-        function applyTranspCadastro(transp) {
+    function applyTranspCadastro(transp) {
       if (!transp) return;
       if (transp.nome) transpInput.value = transp.nome;
       const emailTranspInput = form.querySelector('[name="emailTransportadora"]');
@@ -1996,14 +2006,12 @@
     }
 
     // Lookup transportadora by fornecedor name in cadastro
-        // Lookup transportadora by fornecedor name in cadastro
     async function fetchTranspByFornecedor(nomeFornecedor) {
       try {
         const data = await api(`/api/cadastros/transportadoras/por-fornecedor?nome=${encodeURIComponent(nomeFornecedor)}`);
         return Array.isArray(data) ? data[0] : (data || null);
       } catch { return null; }
     }
-
 
     if (fornecedores.length === 1) {
       const forn = fornecedores[0];
