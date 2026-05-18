@@ -17,26 +17,35 @@ export function queuePriority(status) {
   return map[status] || 99;
 }
 
-export async function assertJanelaDocaDisponivel({ docaId, janelaId, dataAgendada, ignoreAgendamentoId = null }) {
+export async function assertJanelaDocaDisponivel({ docaId, janelaId, dataAgendada, horaAgendada, ignoreAgendamentoId = null }) {
   let conflict = null;
 
+  // The real physical constraint is: one truck per doca per hour.
+  // Check by horaAgendada (specific time) when available; otherwise by janelaId (time-window category).
+  const hasHora = horaAgendada != null && String(horaAgendada).trim() !== '';
+  const hasJanela = janelaId != null && Number(janelaId) > 0;
+
   try {
-    conflict = await prisma.agendamento.findFirst({
-      where: {
-        id: ignoreAgendamentoId ? { not: Number(ignoreAgendamentoId) } : undefined,
-        docaId: Number(docaId),
-        janelaId: Number(janelaId),
-        dataAgendada: String(dataAgendada),
-        status: { in: ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"] }
-      }
-    });
+    const where = {
+      id: ignoreAgendamentoId ? { not: Number(ignoreAgendamentoId) } : undefined,
+      docaId: Number(docaId),
+      dataAgendada: String(dataAgendada),
+      status: { in: ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"] }
+    };
+    if (hasHora) where.horaAgendada = String(horaAgendada);
+    else if (hasJanela) where.janelaId = Number(janelaId);
+
+    conflict = await prisma.agendamento.findFirst({ where });
   } catch {
     conflict = readAgendamentos().find((item) => {
       if (ignoreAgendamentoId && Number(item?.id) === Number(ignoreAgendamentoId)) return false;
-      return Number(item?.docaId || item?.doca?.id || 0) === Number(docaId)
-        && Number(item?.janelaId || item?.janela?.id || 0) === Number(janelaId)
-        && String(item?.dataAgendada || '') === String(dataAgendada)
-        && ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"].includes(String(item?.status || ''));
+      if (Number(item?.docaId || item?.doca?.id || 0) !== Number(docaId)) return false;
+      if (String(item?.dataAgendada || '') !== String(dataAgendada)) return false;
+      if (!["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"].includes(String(item?.status || ''))) return false;
+      // Time-slot check: prefer horaAgendada; fall back to janelaId
+      if (hasHora) return String(item?.horaAgendada || '') === String(horaAgendada);
+      if (hasJanela) return Number(item?.janelaId || item?.janela?.id || 0) === Number(janelaId);
+      return false;
     }) || null;
   }
 

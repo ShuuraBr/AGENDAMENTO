@@ -523,18 +523,34 @@
 })();
 
   // ── Site watermark ──────────────────────────────────────────────────────
+  var _wmCurrentLabel = '';
+
   function buildSiteWatermark(label) {
     var el = document.getElementById('site-watermark');
     if (!el) return;
+    _wmCurrentLabel = label || '';
     el.innerHTML = '';
     if (!label) { el.classList.remove('wm-active'); return; }
-    var cols = 7, rows = 12;
+
+    // Responsive grid: fewer tiles on small screens to avoid crowding
+    var vw = window.innerWidth  || document.documentElement.clientWidth  || 800;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 600;
+    // Target ~160px horizontal spacing and ~90px vertical spacing between tiles
+    var cols = Math.max(2, Math.round(vw / 160));
+    var rows = Math.max(2, Math.round(vh / 90));
+
+    // Distribute evenly across the viewport using percentage positions
+    var colStep = 100 / cols;
+    var rowStep = 100 / rows;
+
     for (var i = 0; i < cols * rows; i++) {
       var col = i % cols, row = Math.floor(i / cols);
       var tile = document.createElement('div');
       tile.className = 'wm-tile';
-      tile.style.left = (col * 13.5) + '%';
-      tile.style.top  = (row * 8.5) + '%';
+      // Offset odd rows by half a column-step for a staggered look
+      var leftOffset = col * colStep + (row % 2 === 1 ? colStep / 2 : 0);
+      tile.style.left = leftOffset + '%';
+      tile.style.top  = (row * rowStep) + '%';
       tile.innerHTML = '<img src="/assets/Favicon.png" alt="" /><span>' + label.replace(/</g,'&lt;') + '</span>';
       el.appendChild(tile);
     }
@@ -552,6 +568,17 @@
       buildSiteWatermark(label);
     } catch(e) { buildSiteWatermark(''); }
   }
+
+  // Rebuild on resize so tile count adjusts to the new viewport dimensions
+  (function() {
+    var resizeTimer;
+    window.addEventListener('resize', function() {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function() {
+        if (_wmCurrentLabel) buildSiteWatermark(_wmCurrentLabel);
+      }, 200);
+    });
+  })();
   // ── end watermark ────────────────────────────────────────────────────────
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>

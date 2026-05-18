@@ -992,6 +992,101 @@
     });
   }
 
+  // ── Modal de edição inline de agendamento (PENDENTE_APROVACAO) ───────────────
+  async function openInlineEditModal(item) {
+    // Fetch available docas for the select
+    let docas = [];
+    try { docas = await api('/api/cadastros/docas'); } catch (_e) {}
+
+    const docaSelect = docas.length
+      ? `<div class="form-group">
+           <label>Doca</label>
+           <select id="ieDocaId">
+             <option value="">— manter atual —</option>
+             ${docas.map((d) => `<option value="${d.id}" ${Number(item.docaId) === Number(d.id) ? 'selected' : ''}>${escapeHtml(d.codigo || d.descricao || String(d.id))}</option>`).join('')}
+           </select>
+         </div>`
+      : '';
+
+    const html = `
+      <div class="form-grid" style="gap:12px;margin-top:4px">
+        <div class="form-group">
+          <label>Transportadora</label>
+          <input id="ieTransportadora" type="text" value="${escapeHtml(item.transportadora || '')}" placeholder="Nome da transportadora" />
+        </div>
+        <div class="form-group">
+          <label>Motorista</label>
+          <input id="ieMotorista" type="text" value="${escapeHtml(item.motorista || '')}" placeholder="Nome do motorista" />
+        </div>
+        <div class="form-group">
+          <label>CPF Motorista</label>
+          <input id="ieCpfMotorista" type="text" value="${escapeHtml(item.cpfMotorista || '')}" placeholder="000.000.000-00" />
+        </div>
+        <div class="form-group">
+          <label>Placa</label>
+          <input id="iePlaca" type="text" value="${escapeHtml(item.placa || '')}" placeholder="ABC-1234" />
+        </div>
+        <div class="form-group">
+          <label>Telefone motorista</label>
+          <input id="ieTelefone" type="text" value="${escapeHtml(item.telefoneMotorista || '')}" placeholder="(00) 00000-0000" />
+        </div>
+        <div class="form-group">
+          <label>Data agendada</label>
+          <input id="ieData" type="date" value="${escapeHtml(item.dataAgendada || '')}" />
+        </div>
+        <div class="form-group">
+          <label>Hora agendada</label>
+          <input id="ieHora" type="time" value="${escapeHtml(item.horaAgendada || '')}" />
+        </div>
+        ${docaSelect}
+        <div class="form-group form-group-full">
+          <label>Observações</label>
+          <input id="ieObs" type="text" value="${escapeHtml(item.observacoes || '')}" placeholder="Informações adicionais" />
+        </div>
+      </div>
+      <p id="ieMsgErr" style="color:#ef4444;font-size:13px;margin:8px 0 0;min-height:18px"></p>`;
+
+    const ok = await showHtmlModal({
+      title: `Editar agendamento — ${escapeHtml(item.protocolo || String(item.id))}`,
+      html,
+      confirmText: 'Salvar alterações',
+      cancelText: 'Cancelar',
+      wide: true
+    });
+    if (!ok) return;
+
+    // Collect values (modal is hidden but elements are still in DOM)
+    const patch = {};
+    const pick = (id, key, transform) => {
+      const el = byId(id);
+      if (!el) return;
+      const raw = el.tagName === 'SELECT' ? el.value : (el.value || '').trim();
+      if (raw !== '') patch[key] = transform ? transform(raw) : raw;
+    };
+    pick('ieTransportadora', 'transportadora');
+    pick('ieMotorista', 'motorista');
+    pick('ieCpfMotorista', 'cpfMotorista');
+    pick('iePlaca', 'placa');
+    pick('ieTelefone', 'telefoneMotorista');
+    pick('ieData', 'dataAgendada');
+    pick('ieHora', 'horaAgendada');
+    pick('ieObs', 'observacoes');
+    pick('ieDocaId', 'docaId', Number);
+
+    if (!Object.keys(patch).length) return;
+
+    try {
+      await api(`/api/agendamentos/${item.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+      const msgEl = byId('operacaoMsg');
+      if (msgEl) msgEl.textContent = 'Agendamento atualizado com sucesso.';
+      await Promise.allSettled([loadAgendamentos(), loadDashboard()]);
+    } catch (err) {
+      const msgEl = byId('operacaoMsg');
+      if (msgEl) msgEl.textContent = err.message || 'Erro ao salvar.';
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────────
+
   function buildMultipartFormData(payload = {}) {
     const form = new FormData();
     Object.entries(payload || {}).forEach(([key, value]) => {

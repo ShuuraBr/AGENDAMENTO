@@ -1089,7 +1089,7 @@ router.post("/solicitacao", async (req, res) => {
     };
     validateAgendamentoPayload(agendamentoPayload, true);
 
-    await assertJanelaDocaDisponivel({ docaId: doca.id, janelaId, dataAgendada: agendamentoPayload.dataAgendada });
+    await assertJanelaDocaDisponivel({ docaId: doca.id, janelaId, dataAgendada: agendamentoPayload.dataAgendada, horaAgendada: agendamentoPayload.horaAgendada });
 
     try {
       const full = await createPublicAgendamentoInDatabase({ agendamentoPayload, notas, cpfMotorista });

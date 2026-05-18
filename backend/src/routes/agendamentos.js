@@ -1391,7 +1391,7 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
     }
     payload.docaId = Number(payload.docaId || defaultDoca?.id || 1);
  
-    await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada });
+    await assertJanelaDocaDisponivel({ docaId: payload.docaId, janelaId: payload.janelaId, dataAgendada: payload.dataAgendada, horaAgendada: payload.horaAgendada });
  
     let item;
     try {
@@ -1532,6 +1532,7 @@ router.post("/:id(\\d+)/definir-doca", requirePermission("agendamentos.definir_d
         docaId,
         janelaId: found.janelaId,
         dataAgendada: found.dataAgendada,
+        horaAgendada: found.horaAgendada,
         ignoreAgendamentoId: found.id
       });
     } catch {}
@@ -1582,7 +1583,7 @@ router.post("/:id(\\d+)/aprovar", requirePermission("agendamentos.approve"), asy
       });
     }
  
-    await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada, ignoreAgendamentoId: found.id });
+    await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada, horaAgendada: merged.horaAgendada, ignoreAgendamentoId: found.id });
  
     const updated = await transition(req.params.id, "APROVADO", data, req);
     let item = await full(updated.id);
@@ -1642,7 +1643,7 @@ router.post("/:id(\\d+)/reagendar", requirePermission("agendamentos.reschedule")
         analysis: awarenessAnalysis
       });
     }
-    await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada, ignoreAgendamentoId: found.id });
+    await assertJanelaDocaDisponivel({ docaId: merged.docaId, janelaId: merged.janelaId, dataAgendada: merged.dataAgendada, horaAgendada: merged.horaAgendada, ignoreAgendamentoId: found.id });
  
     let item;
     try {
