@@ -1300,6 +1300,45 @@ router.post("/:id(\\d+)/analise-vencimento", requirePermission("agendamentos.res
   }
 });
  
+router.get('/janelas-disponiveis', requirePermission('agendamentos.view'), async (req, res) => {
+  const { dataAgendada, docaId, ignoreId } = req.query;
+  if (!dataAgendada) return res.status(400).json({ error: 'dataAgendada é obrigatório.' });
+  const ACTIVE = ['PENDENTE_APROVACAO', 'APROVADO', 'CHEGOU', 'EM_DESCARGA'];
+  let janelas = [];
+  let ocupados = [];
+  try {
+    [janelas, ocupados] = await Promise.all([
+      prisma.janela.findMany({ orderBy: { codigo: 'asc' } }),
+      prisma.agendamento.findMany({
+        where: {
+          dataAgendada: String(dataAgendada),
+          status: { in: ACTIVE },
+          ...(docaId ? { docaId: Number(docaId) } : {}),
+          ...(ignoreId ? { id: { not: Number(ignoreId) } } : {})
+        },
+        select: { id: true, horaAgendada: true, janelaId: true }
+      })
+    ]);
+  } catch {
+    janelas = readJanelas();
+    ocupados = readAgendamentos().filter((ag) =>
+      String(ag.dataAgendada) === String(dataAgendada) &&
+      ACTIVE.includes(String(ag.status)) &&
+      (!docaId || Number(ag.docaId || ag.doca?.id) === Number(docaId)) &&
+      (!ignoreId || Number(ag.id) !== Number(ignoreId))
+    );
+  }
+  const result = janelas.map((j) => {
+    const hora = deriveHourFromJanela({ janela: j });
+    const ocupado = ocupados.some((ag) =>
+      (hora && String(ag.horaAgendada || '') === hora) ||
+      (Number(ag.janelaId) === Number(j.id))
+    );
+    return { id: j.id, codigo: j.codigo, descricao: j.descricao || '', hora, disponivel: !ocupado, ocupado };
+  });
+  return res.json(result);
+});
+
 router.post("/notas/manual-alerta", requirePermission("agendamentos.notas"), async (req, res) => {
   try {
     const fornecedor = String(req.body?.fornecedor || '').trim();

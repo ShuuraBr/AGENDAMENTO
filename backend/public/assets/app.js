@@ -1642,6 +1642,28 @@
     return hora;
   }
 
+  async function loadJanelasDisponiveis(dataAgendada, docaId, ignoreId) {
+    const sel = byId('internalJanelaSelect');
+    if (!sel) return;
+    if (!dataAgendada) return;
+    try {
+      let url = `/api/agendamentos/janelas-disponiveis?dataAgendada=${encodeURIComponent(dataAgendada)}`;
+      if (docaId) url += `&docaId=${encodeURIComponent(docaId)}`;
+      if (ignoreId) url += `&ignoreId=${encodeURIComponent(ignoreId)}`;
+      const janelas = await api(url);
+      const currentVal = sel.value;
+      const available = Array.isArray(janelas) ? janelas.filter((j) => !j.ocupado) : [];
+      if (!available.length) return; // fallback: keep existing options if API returned empty
+      sel.innerHTML = available.map((j) => `<option value="${j.id}">${escapeHtml(j.codigo)}</option>`).join('');
+      if (currentVal && sel.querySelector(`option[value="${currentVal}"]`)) sel.value = currentVal;
+      sel.removeEventListener('change', syncInternalHoraFromJanela);
+      sel.addEventListener('change', syncInternalHoraFromJanela);
+      syncInternalHoraFromJanela();
+    } catch {
+      // silently keep existing options on error
+    }
+  }
+
   function buildNotasFromLines(text) {
     return String(text || '').split(/\n+/).map((line) => line.trim()).filter(Boolean).map((line) => ({ numeroNf: line, serie: '', chaveAcesso: '', volumes: 0, peso: 0, valorNf: 0, observacao: '' }));
   }
@@ -3619,6 +3641,10 @@
     applyInputMasks(document);
     const internalDateInput = byId("agendamentoForm")?.querySelector('[name="dataAgendada"]');
     if (internalDateInput && !internalDateInput.value) internalDateInput.value = new Date().toISOString().slice(0, 10);
+    // Quando a data mudar no formulário de criação, recarregar janelas disponíveis
+    internalDateInput?.addEventListener('change', (e) => {
+      loadJanelasDisponiveis(e.target.value, null, null);
+    });
 
     byId("btnLogout")?.addEventListener("click", logout);
 
