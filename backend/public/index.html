@@ -528,7 +528,7 @@
     if (!el) return;
     el.innerHTML = '';
     if (!label) { el.classList.remove('wm-active'); return; }
-    var cols = 6, rows = 8;
+    var cols = 7, rows = 12;
     for (var i = 0; i < cols * rows; i++) {
       var col = i % cols, row = Math.floor(i / cols);
       var tile = document.createElement('div');
