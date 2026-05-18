@@ -340,7 +340,11 @@ async function syncPayloadScheduleWithJanela(payload = {}, fallback = {}) {
   const janela = await resolveJanelaById(requestedJanelaId);
   const derivedHour = deriveHourFromJanela({ ...fallback, ...merged, janela: janela || merged?.janela || fallback?.janela });
   const dataAgendada = normalizeScheduleDateValue(merged?.dataAgendada || fallback?.dataAgendada || '');
-  const horaAgendada = derivedHour || normalizeScheduleTimeValue(merged?.horaAgendada || fallback?.horaAgendada || '');
+  // Prioridade: hora já existente no agendamento (fallback) → hora explícita no payload → hora derivada da janela.
+  // Isso evita que a janela sobrescreva a hora original de um agendamento já cadastrado.
+  const existingHora = normalizeScheduleTimeValue(fallback?.horaAgendada || '');
+  const explicitHora = normalizeScheduleTimeValue(payload?.horaAgendada || '');
+  const horaAgendada = existingHora || explicitHora || derivedHour || normalizeScheduleTimeValue(merged?.horaAgendada || '');
   return {
     ...merged,
     janelaId: janela?.id || merged?.janelaId || fallback?.janelaId || null,

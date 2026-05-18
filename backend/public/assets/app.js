@@ -3781,7 +3781,11 @@
       }
     });
     byId("btnAprovar")?.addEventListener("click", async () => handleOp(async () => {
-      const body = { janelaId: byId("internalJanelaSelect")?.value, horaAgendada: syncInternalHoraFromJanela() || undefined };
+      // Só envia janelaId — NÃO envia horaAgendada automaticamente da janela,
+      // pois isso sobrescreveria a hora original do agendamento (ex.: 08:00 → 15:00).
+      // O backend preserva a hora existente do agendamento.
+      const body = { janelaId: byId("internalJanelaSelect")?.value };
+      syncInternalHoraFromJanela(); // atualiza o input do form localmente, sem enviar ao servidor
       const awareness = await confirmAwarenessForExistingAgendamento(currentId(), body);
       if (awareness.analysis?.requiresAwareness && !awareness.confirmed) return;
       if (awareness.confirmed) body.confirmarCienciaVencimento = true;
