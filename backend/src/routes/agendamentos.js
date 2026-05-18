@@ -170,9 +170,9 @@ function resolveScheduleValues(item = {}, fallback = {}) {
   const preferredDerivedHour = derivedPrimaryHour || derivedFallbackHour;
   const dataAgendada = normalizeScheduleDateValue(isMissingScheduleValue(primaryDateCandidate) ? fallbackDateCandidate : primaryDateCandidate)
     || normalizeScheduleDateValue(fallbackDateCandidate);
-  const horaAgendada = preferredDerivedHour
-    || normalizeScheduleTimeValue(isMissingScheduleValue(primaryTimeCandidate) ? fallbackTimeCandidate : primaryTimeCandidate)
+  const horaAgendada = normalizeScheduleTimeValue(isMissingScheduleValue(primaryTimeCandidate) ? fallbackTimeCandidate : primaryTimeCandidate)
     || normalizeScheduleTimeValue(fallbackTimeCandidate)
+    || preferredDerivedHour
     || '';
   return { dataAgendada, horaAgendada };
 }

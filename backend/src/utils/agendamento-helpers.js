@@ -10,10 +10,10 @@ export function calculateTotals(notas = [], fallback = {}) {
   const valorTotalNfCalc = clean.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0);
 
   return {
-    quantidadeNotas: Number((fallback.quantidadeNotas ?? quantidadeNotasCalc) || 0),
-    quantidadeVolumes: Number((fallback.quantidadeVolumes ?? quantidadeVolumesCalc) || 0),
-    pesoTotalKg: Number((fallback.pesoTotalKg ?? pesoTotalKgCalc) || 0),
-    valorTotalNf: Number((fallback.valorTotalNf ?? valorTotalNfCalc) || 0)
+    quantidadeNotas: Number((fallback.quantidadeNotas || quantidadeNotasCalc) || 0),
+    quantidadeVolumes: Number((fallback.quantidadeVolumes || quantidadeVolumesCalc) || 0),
+    pesoTotalKg: Number((fallback.pesoTotalKg || pesoTotalKgCalc) || 0),
+    valorTotalNf: Number((fallback.valorTotalNf || valorTotalNfCalc) || 0)
   };
 }
 
