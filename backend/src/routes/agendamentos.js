@@ -1680,18 +1680,31 @@ router.post("/:id(\\d+)/reprovar", requirePermission("agendamentos.reprove"), as
  
 router.post("/:id(\\d+)/reagendar", requirePermission("agendamentos.reschedule"), async (req, res) => {
   try {
-    const found = await mustExist(req.params.id);
+    // Usa full() para garantir que notasFiscais e dados completos estejam disponíveis
+    const found = await full(req.params.id);
     if (!found) throw new Error("Agendamento não encontrado.");
     if (["FINALIZADO", "CANCELADO"].includes(found.status)) throw new Error("Não é possível reagendar esse status.");
- 
+
+    // syncPayloadScheduleWithJanela prioriza a hora EXISTENTE para evitar sobrescrita em
+    // transições de status. Para reagendamento queremos a hora EXPLÍCITA do usuário.
+    // Por isso usamos found como payload (sem horaAgendada) e depois aplicamos a hora nova.
     const merged = await syncPayloadScheduleWithJanela({
       ...found,
       dataAgendada: req.body?.dataAgendada || found.dataAgendada,
-      horaAgendada: req.body?.horaAgendada || found.horaAgendada,
       docaId: req.body?.docaId || found.docaId,
-      janelaId: req.body?.janelaId || found.janelaId
-    }, found);
-    validateAgendamentoPayload(merged, false);
+      janelaId: req.body?.janelaId || found.janelaId,
+      // Limpa a horaAgendada do found para não competir com a explícita
+      horaAgendada: null
+    }, { ...found, horaAgendada: null });
+    // Aplica a hora explícita após syncPayloadScheduleWithJanela
+    const horaExplicita = normalizeScheduleTimeValue(req.body?.horaAgendada || found.horaAgendada || '');
+    if (horaExplicita) merged.horaAgendada = horaExplicita;
+    // Valida apenas os campos de agenda — NFs/email/observações já foram validados na criação
+    if (!merged.fornecedor) throw new Error("Fornecedor é obrigatório.");
+    if (!merged.transportadora) throw new Error("Transportadora é obrigatória.");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(merged.dataAgendada || ''))) throw new Error("A data deve estar no formato YYYY-MM-DD.");
+    if (!/^\d{2}:\d{2}$/.test(String(merged.horaAgendada || ''))) throw new Error("A hora deve estar no formato HH:MM.");
+    if (!merged.janelaId) throw new Error("Janela é obrigatória.");
     const awarenessAnalysis = await buildAwarenessAnalysisFromPayload(found, merged);
     if (awarenessAnalysis?.requiresAwareness && !req.body?.confirmarCienciaVencimento) {
       return res.status(409).json({
