@@ -1554,6 +1554,20 @@ async function transition(id, target, data = {}, req) {
   } else {
     try { updated = await prisma.agendamento.update({ where: { id: Number(id) }, data: { ...data, status: target } }); }
     catch { updated = updateAgendamentoFile(id, { ...data, status: target }); }
+    // Verifica se o status foi realmente persistido (ENUM inválido no MySQL armazena '' silenciosamente)
+    const savedStatus = String(updated?.status || '').trim().toUpperCase() || 'PENDENTE_APROVACAO';
+    if (savedStatus !== target) {
+      // Força update direto via SQL raw para contornar ENUM não atualizado
+      try {
+        await prisma.$executeRawUnsafe(`UPDATE \`Agendamento\` SET \`status\` = ? WHERE \`id\` = ?`, target, Number(id));
+        await prisma.$executeRawUnsafe(`UPDATE \`agendamentos\` SET \`status\` = ? WHERE \`id\` = ?`, target, Number(id)).catch(() => {});
+        updated = { ...updated, status: target };
+      } catch {
+        // Fallback: persiste no arquivo e lança erro informativo
+        updateAgendamentoFile(id, { status: target });
+        throw new Error(`Status '${target}' não é aceito pelo banco de dados. Execute o script ALTERS_V13_STATUS_ENUM.sql para adicionar os valores faltantes ao ENUM.`);
+      }
+    }
   }
 
   await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: target, entidade: "AGENDAMENTO", entidadeId: updated.id, detalhes: data, ip: req.ip });
@@ -1728,8 +1742,8 @@ router.post("/:id(\\d+)/iniciar", requirePermission("agendamentos.start"), async
     const currentStatus = String(found.status || "").trim().toUpperCase() || "PENDENTE_APROVACAO";
     // Se ainda não chegou (PENDENTE ou APROVADO sem chegada registrada), registra chegada implícita
     const extra = { inicioDescargaEm: new Date() };
-    if (!found.chegadaEm && ["PENDENTE_APROVACAO", "APROVADO"].includes(currentStatus)) {
-      extra.chegadaEm = new Date();
+    if (!found.chegadaRealEm && !found.checkinEm && ["PENDENTE_APROVACAO", "APROVADO"].includes(currentStatus)) {
+      extra.chegadaRealEm = new Date();
     }
     if (!found.aprovadoEm && currentStatus === "PENDENTE_APROVACAO") {
       extra.aprovadoEm = new Date();
