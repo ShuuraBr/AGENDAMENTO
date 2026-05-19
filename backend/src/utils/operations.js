@@ -30,7 +30,7 @@ export async function assertJanelaDocaDisponivel({ docaId, janelaId, dataAgendad
       id: ignoreAgendamentoId ? { not: Number(ignoreAgendamentoId) } : undefined,
       docaId: Number(docaId),
       dataAgendada: String(dataAgendada),
-      status: { in: ["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"] }
+      status: { in: ["APROVADO", "CHEGOU", "EM_DESCARGA"] }
     };
     if (hasHora) where.horaAgendada = String(horaAgendada);
     else if (hasJanela) where.janelaId = Number(janelaId);
@@ -41,7 +41,7 @@ export async function assertJanelaDocaDisponivel({ docaId, janelaId, dataAgendad
       if (ignoreAgendamentoId && Number(item?.id) === Number(ignoreAgendamentoId)) return false;
       if (Number(item?.docaId || item?.doca?.id || 0) !== Number(docaId)) return false;
       if (String(item?.dataAgendada || '') !== String(dataAgendada)) return false;
-      if (!["PENDENTE_APROVACAO", "APROVADO", "CHEGOU", "EM_DESCARGA"].includes(String(item?.status || ''))) return false;
+      if (!["APROVADO", "CHEGOU", "EM_DESCARGA"].includes(String(item?.status || ''))) return false;
       // Time-slot check: prefer horaAgendada; fall back to janelaId
       if (hasHora) return String(item?.horaAgendada || '') === String(horaAgendada);
       if (hasJanela) return Number(item?.janelaId || item?.janela?.id || 0) === Number(janelaId);

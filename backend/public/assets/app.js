@@ -891,7 +891,8 @@
   function showView(id) {
     const logged = !!state.token && !isTokenExpired(state.token);
     let target = id;
-    if (logged && !canAccessView(target)) target = firstAllowedPrivateView();
+    // Usuário logado não deve ficar na tela de login — redirecionar para sua primeira view permitida
+    if (logged && (target === 'login' || !canAccessView(target))) target = firstAllowedPrivateView();
     if (!logged && VIEW_PERMISSIONS[target]) target = 'login';
 
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
@@ -3592,58 +3593,83 @@
   }
 
   function show2FAStep(email) {
-    const loginCard = byId('loginForm')?.closest('.card') || byId('loginForm')?.parentNode;
-    if (!loginCard) return;
-    const existing = byId('twoFAStep');
-    if (existing) { existing.style.display = 'block'; return; }
-    const div = document.createElement('div');
-    div.id = 'twoFAStep';
-    div.style.cssText = 'margin-top:16px;display:grid;gap:10px';
-    div.innerHTML = `
-      <p style="margin:0;font-size:14px;color:#334155">Digite o código de 6 dígitos enviado para seu e-mail:</p>
-      <input id="twoFACode" type="text" maxlength="6" placeholder="000000" inputmode="numeric"
-        style="font-size:28px;letter-spacing:10px;text-align:center;padding:14px;border-radius:12px;border:2px solid #2563eb;font-weight:700" />
-      <button id="btnVerify2FA" style="padding:12px;border-radius:12px;font-size:15px;font-weight:700">Verificar código</button>
-      <button id="btnResend2FA" style="background:#475569;padding:10px;border-radius:10px;font-size:13px">Reenviar código</button>
-      <p id="twoFAMsg" style="margin:0;font-size:13px;color:#ef4444"></p>`;
-    loginCard.appendChild(div);
+    // Remove existing step if any
+    byId('twoFAStep')?.remove();
 
-    div.querySelector('#btnVerify2FA').onclick = async () => {
-      const code = div.querySelector('#twoFACode').value.trim();
-      const msgEl = div.querySelector('#twoFAMsg');
+    // Build overlay modal (always centered, always visible)
+    const overlay = document.createElement('div');
+    overlay.id = 'twoFAStep';
+    overlay.style.cssText = [
+      'position:fixed;inset:0;z-index:9000',
+      'display:flex;align-items:center;justify-content:center',
+      'background:rgba(15,23,42,.55);backdrop-filter:blur(4px)'
+    ].join(';');
+
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:20px;padding:32px 28px;width:min(420px,92vw);box-shadow:0 24px 64px rgba(15,23,42,.28);display:grid;gap:14px;text-align:center">
+        <div style="font-size:40px;line-height:1">🔐</div>
+        <h3 style="margin:0;font-size:20px;color:#0f172a">Verificação em duas etapas</h3>
+        <p style="margin:0;font-size:14px;color:#475569">
+          Um código de 6 dígitos foi enviado para<br>
+          <strong>${escapeHtml(email)}</strong><br>
+          Verifique sua caixa de entrada.
+        </p>
+        <input id="twoFACode" type="text" maxlength="6" placeholder="000000" inputmode="numeric" autocomplete="one-time-code"
+          style="font-size:32px;letter-spacing:12px;text-align:center;padding:14px;border-radius:12px;border:2px solid #2563eb;font-weight:700;width:100%;box-sizing:border-box" />
+        <button id="btnVerify2FA" style="padding:14px;border-radius:12px;font-size:16px;font-weight:700;width:100%">Verificar código ✓</button>
+        <button id="btnResend2FA" style="background:#475569;padding:10px;border-radius:10px;font-size:13px;width:100%">Reenviar código</button>
+        <p id="twoFAMsg" style="margin:0;font-size:13px;color:#ef4444;min-height:16px"></p>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    const afterLogin = async (data) => {
+      overlay.remove();
+      state.token = data.token;
+      localStorage.setItem('token', data.token);
+      state.currentUser = data.user || null;
+      syncCurrentUserFromToken();
+      if (typeof refreshWatermark === 'function') refreshWatermark();
+      updateNav();
+      startNotifPolling();
+      await fillSelects();
+      const firstView = firstAllowedPrivateView();
+      showView(firstView);
+      if (firstView === 'dashboard') await loadDashboard().catch(() => {});
+      byId('loginMsg').textContent = `Logado como ${data.user.nome} (${data.user.perfil || 'colaborador'})`;
+    };
+
+    overlay.querySelector('#btnVerify2FA').onclick = async () => {
+      const code = overlay.querySelector('#twoFACode').value.trim();
+      const msgEl = overlay.querySelector('#twoFAMsg');
+      const btn = overlay.querySelector('#btnVerify2FA');
       if (code.length !== 6) { msgEl.textContent = 'Digite os 6 dígitos.'; return; }
+      btn.disabled = true; btn.textContent = 'Verificando…';
       try {
         const data = await api('/api/auth/verify-2fa', { method: 'POST', body: JSON.stringify({ email, code }) });
-        state.token = data.token;
-        localStorage.setItem('token', data.token);
-        state.currentUser = data.user || null;
-        syncCurrentUserFromToken();
-        if (typeof refreshWatermark === 'function') refreshWatermark();
-        div.remove();
-        updateNav();
-        startNotifPolling();
-        await fillSelects();
-        showView('dashboard');
-        await loadDashboard();
-        byId('loginMsg').textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
+        await afterLogin(data);
       } catch (err) {
-        msgEl.textContent = err.message || 'Código inválido.';
+        msgEl.textContent = err.message || 'Código inválido ou expirado.';
+        btn.disabled = false; btn.textContent = 'Verificar código ✓';
       }
     };
-    div.querySelector('#twoFACode').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') div.querySelector('#btnVerify2FA').click();
+
+    overlay.querySelector('#twoFACode').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') overlay.querySelector('#btnVerify2FA').click();
     });
-    div.querySelector('#btnResend2FA').onclick = async () => {
+
+    overlay.querySelector('#btnResend2FA').onclick = async () => {
+      const msgEl = overlay.querySelector('#twoFAMsg');
       try {
         const form = byId('loginForm');
         const fd = new FormData(form);
         await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, senha: fd.get('senha') || '' }) });
-        div.querySelector('#twoFAMsg').textContent = 'Novo código enviado!';
-        div.querySelector('#twoFAMsg').style.color = '#10b981';
-        setTimeout(() => { div.querySelector('#twoFAMsg').textContent = ''; div.querySelector('#twoFAMsg').style.color = '#ef4444'; }, 3000);
-      } catch (err) { div.querySelector('#twoFAMsg').textContent = err.message; }
+        msgEl.style.color = '#10b981'; msgEl.textContent = 'Novo código enviado!';
+        setTimeout(() => { msgEl.textContent = ''; msgEl.style.color = '#ef4444'; }, 3000);
+      } catch (err) { msgEl.textContent = err.message; }
     };
-    setTimeout(() => div.querySelector('#twoFACode')?.focus(), 50);
+
+    setTimeout(() => overlay.querySelector('#twoFACode')?.focus(), 80);
   }
 
   document.addEventListener("DOMContentLoaded", async () => {
