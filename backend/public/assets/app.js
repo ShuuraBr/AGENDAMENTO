@@ -850,7 +850,11 @@
     applyRoleAccess();
     if (logged) {
       const activeView = document.querySelector('.view.active')?.id || '';
-      if (activeView && !canAccessView(activeView)) showView(firstAllowedPrivateView());
+      // 'login' não tem VIEW_PERMISSIONS por isso canAccessView retorna true,
+      // mas usuário logado nunca deve ficar na tela de login
+      if (activeView === 'login' || (activeView && !canAccessView(activeView))) {
+        showView(firstAllowedPrivateView());
+      }
     }
     if (!logged && state.token) logout();
   }
@@ -3744,11 +3748,12 @@
         await fillSelects();
         if (!applyCheckinRouteContext({ autoValidate: true })) {
           const requestedView = new URLSearchParams(location.search).get("view");
-          if (requestedView === "consulta-nf") {
+          if (requestedView === "consulta-nf" && canAccessView("consulta-nf")) {
             showView("consulta-nf");
           } else {
-            showView("dashboard");
-            await loadDashboard();
+            const firstView = firstAllowedPrivateView();
+            showView(firstView);
+            if (firstView === "dashboard") await loadDashboard().catch(() => {});
           }
         }
         byId("loginMsg").textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
