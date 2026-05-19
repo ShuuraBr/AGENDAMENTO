@@ -2484,9 +2484,23 @@
 
     if (allowDockActions) {
       wrap.querySelectorAll('[data-select-agendamento]').forEach((btn) => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
+          const agId = btn.dataset.selectAgendamento || '';
           const field = byId('agendamentoId');
-          if (field) field.value = btn.dataset.selectAgendamento || '';
+          if (field) field.value = agId;
+          // Recarregar janelas disponíveis para o dia e doca deste agendamento
+          if (agId) {
+            try {
+              const item = await api(`/api/agendamentos/${agId}`);
+              if (item?.dataAgendada) {
+                await loadJanelasDisponiveis(
+                  item.dataAgendada,
+                  item.docaId || item.doca?.id || null,
+                  agId
+                );
+              }
+            } catch {}
+          }
         });
       });
       wrap.querySelectorAll('[data-definir-doca]').forEach((btn) => {
@@ -2549,6 +2563,7 @@
     if (!state.token || isTokenExpired(state.token)) return;
     if (!hasPermission('cadastros.view') && !hasPermission('agendamentos.create')) return;
     try {
+      // Carrega todas as janelas primeiro para garantir que o select não fique vazio
       const janelas = await api("/api/cadastros/janelas");
       const janelaOptions = janelas.map((j) => `<option value="${j.id}">${escapeHtml(j.codigo)}</option>`).join("");
       const janelaSelect = byId("internalJanelaSelect");
@@ -2559,6 +2574,9 @@
         syncInternalHoraFromJanela();
       }
       await Promise.allSettled([loadDocaOptions(), loadFilterOptions()]);
+      // Após carregar docas, filtrar janelas pela data atual do formulário
+      const dateInput = byId('agendamentoForm')?.querySelector('[name="dataAgendada"]');
+      if (dateInput?.value) await loadJanelasDisponiveis(dateInput.value, null, null);
     } catch {}
   }
 
