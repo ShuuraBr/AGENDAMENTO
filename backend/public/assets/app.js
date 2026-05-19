@@ -4112,11 +4112,11 @@
       const input = byId('encerrarDiaInput');
       const data = input?.value;
       if (!data) { byId('operacaoMsg').textContent = 'Selecione uma data para encerrar.'; return; }
-      const ok = await showAppModal({ title: 'Encerrar dia', message: `Cancelar todos os agendamentos com status PENDENTE_APROVAÇÃO em ${formatDateBR(data)}?\n\nEsta ação não pode ser desfeita.`, confirmText: 'Encerrar', cancelText: 'Cancelar', tone: 'warning' });
+      const ok = await showAppModal({ title: 'Encerrar dia', message: `Os agendamentos PENDENTES em ${formatDateBR(data)} serão marcados como REAGENDADOS e os operadores receberão uma notificação para remarcar.\n\nDeseja continuar?`, confirmText: 'Encerrar e notificar', cancelText: 'Cancelar', tone: 'warning' });
       if (!ok) return;
       try {
         const res = await api('/api/agendamentos/encerrar-dia', { method: 'POST', body: JSON.stringify({ data }) });
-        byId('operacaoMsg').textContent = `${res.cancelados} agendamento(s) cancelado(s) em ${formatDateBR(data)}.`;
+        byId('operacaoMsg').textContent = `${res.reagendados} agendamento(s) marcado(s) para reagendamento em ${formatDateBR(data)}. Operadores notificados.`;
         await loadAgendamentos();
       } catch (err) { byId('operacaoMsg').textContent = err.message; }
     });

@@ -1722,7 +1722,20 @@ router.post("/:id(\\d+)/cancelar", requirePermission("agendamentos.cancel"), asy
 });
  
 router.post("/:id(\\d+)/iniciar", requirePermission("agendamentos.start"), async (req, res) => {
-  try { res.json(await transition(req.params.id, "EM_DESCARGA", { inicioDescargaEm: new Date() }, req)); } catch (err) { res.status(400).json({ message: err.message }); }
+  try {
+    const found = await mustExist(req.params.id);
+    if (!found) throw new Error("Agendamento não encontrado.");
+    const currentStatus = String(found.status || "").trim().toUpperCase() || "PENDENTE_APROVACAO";
+    // Se ainda não chegou (PENDENTE ou APROVADO sem chegada registrada), registra chegada implícita
+    const extra = { inicioDescargaEm: new Date() };
+    if (!found.chegadaEm && ["PENDENTE_APROVACAO", "APROVADO"].includes(currentStatus)) {
+      extra.chegadaEm = new Date();
+    }
+    if (!found.aprovadoEm && currentStatus === "PENDENTE_APROVACAO") {
+      extra.aprovadoEm = new Date();
+    }
+    res.json(await transition(req.params.id, "EM_DESCARGA", extra, req));
+  } catch (err) { res.status(400).json({ message: err.message }); }
 });
  
 router.post("/:id(\\d+)/finalizar", requirePermission("agendamentos.finish"), uploadAvariaMiddleware, async (req, res) => {
@@ -2037,7 +2050,7 @@ router.post("/solicitar-reagendamento-lote", requirePermission("agendamentos.req
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
-// POST /encerrar-dia — cancela todos os PENDENTE_APROVACAO de uma data
+// POST /encerrar-dia — reagenda todos os PENDENTE_APROVACAO/SOLICITADO de uma data e notifica operadores
 router.post("/encerrar-dia", requirePermission("agendamentos.request_reschedule"), async (req, res) => {
   try {
     const data = String(req.body?.data || '').trim();
@@ -2049,17 +2062,32 @@ router.post("/encerrar-dia", requirePermission("agendamentos.request_reschedule"
       const s = String(a.status || '').trim().toUpperCase() || 'PENDENTE_APROVACAO';
       return s === 'PENDENTE_APROVACAO' || s === 'SOLICITADO';
     });
-    const cancelados = [];
+    const reagendados = [];
     for (const ag of pendentes) {
       try {
-        try { await prisma.agendamento.update({ where: { id: Number(ag.id) }, data: { status: 'CANCELADO', motivoCancelamento: 'Encerramento do dia pelo gestor.' } }); }
-        catch { updateAgendamentoFile(ag.id, { status: 'CANCELADO', motivoCancelamento: 'Encerramento do dia pelo gestor.' }); }
-        await unlinkRelatorioRowsFromAgendamento(ag.id).catch(() => {});
-        await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "CANCELAR", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: { motivo: 'Encerramento do dia', data }, ip: req.ip });
-        cancelados.push(ag.id);
+        // Muda para REAGENDADO (não CANCELADO) para preservar o agendamento e permitir remarcação
+        try {
+          await prisma.agendamento.update({ where: { id: Number(ag.id) }, data: { status: 'REAGENDADO', motivoCancelamento: 'Encerramento do dia pelo gestor. Aguarda reagendamento.' } });
+        } catch {
+          updateAgendamentoFile(ag.id, { status: 'REAGENDADO', motivoCancelamento: 'Encerramento do dia pelo gestor. Aguarda reagendamento.' });
+        }
+        // Cria notificação para que operador/admin reagende
+        try {
+          createNotificacao({
+            tipo: 'SOLICITAR_REAGENDAMENTO',
+            agendamentoId: ag.id,
+            protocolo: ag.protocolo,
+            fornecedor: ag.fornecedor,
+            dataAgendadaOriginal: ag.dataAgendada,
+            requestedBy: { usuarioId: req.user.sub, nome: req.user.nome || req.user.email, perfil: req.user.perfil },
+            targetPerfis: ['OPERADOR', 'ADMIN']
+          });
+        } catch { /* notificação não bloqueia o fluxo */ }
+        await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "REAGENDADO", entidade: "AGENDAMENTO", entidadeId: ag.id, detalhes: { motivo: 'Encerramento do dia', data }, ip: req.ip });
+        reagendados.push(ag.id);
       } catch { /* ignora erros individuais */ }
     }
-    res.json({ ok: true, data, cancelados: cancelados.length, ids: cancelados });
+    res.json({ ok: true, data, reagendados: reagendados.length, ids: reagendados });
   } catch (err) { res.status(400).json({ message: err.message }); }
 });
 
