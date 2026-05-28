@@ -48,8 +48,22 @@ function parseAllowedIps(raw) {
 }
 
 function normalizeIp(ip) {
-  // Remove ::ffff: prefix from IPv4-mapped IPv6 addresses
-  return ip ? ip.replace(/^::ffff:/, "") : ip;
+  return ip ? ip.trim().replace(/^::ffff:/, "") : "";
+}
+
+// Coleta todos os IPs da cadeia de proxies (lida com multi-hop do Hostinger)
+function getAllClientIps(req) {
+  const ips = new Set();
+
+  const forwarded = req.headers["x-forwarded-for"];
+  if (forwarded) {
+    forwarded.split(",").map(normalizeIp).filter(Boolean).forEach((ip) => ips.add(ip));
+  }
+
+  if (req.ip) ips.add(normalizeIp(req.ip));
+  if (req.socket?.remoteAddress) ips.add(normalizeIp(req.socket.remoteAddress));
+
+  return [...ips].filter(Boolean);
 }
 
 export function ipWhitelist(req, res, next) {
@@ -63,13 +77,12 @@ export function ipWhitelist(req, res, next) {
     return next();
   }
 
-  const clientIp = normalizeIp(req.ip);
+  const clientIps = getAllClientIps(req);
+  const isAllowed = clientIps.some((ip) => allowedIps.includes(ip));
 
-  if (allowedIps.includes(clientIp)) {
-    return next();
-  }
+  if (isAllowed) return next();
 
-  console.warn(`[IP_BLOCKED] ${clientIp} — ${req.method} ${req.path}`);
+  console.warn(`[IP_BLOCKED] ${clientIps.join(", ")} — ${req.method} ${req.path}`);
 
   // API requests get JSON; browser requests get the offline page
   if (req.path.startsWith("/api") || req.headers.accept?.includes("application/json")) {
