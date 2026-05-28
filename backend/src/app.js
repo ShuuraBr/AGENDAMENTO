@@ -6,6 +6,7 @@ import routes from "./routes/index.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { env } from "./config/env.js";
 import { authRequired } from "./middlewares/auth.js";
+import { ipWhitelist } from "./middlewares/ipWhitelist.js";
 
 let helmet;
 try {
@@ -29,6 +30,9 @@ const app = express();
 
 // ─── Trust proxy (necessário atrás de reverse proxy / Hostinger / cPanel) ───
 app.set("trust proxy", 1);
+
+// ─── IP Whitelist — bloqueia qualquer acesso fora da rede da empresa ───
+app.use(ipWhitelist);
 
 // ─── Security Headers (helmet) ───
 if (helmet) {
