@@ -6,6 +6,7 @@ import routes from "./routes/index.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { env } from "./config/env.js";
 import { authRequired } from "./middlewares/auth.js";
+import { ipWhitelist } from "./middlewares/ipWhitelist.js";
 
 let helmet;
 try {
