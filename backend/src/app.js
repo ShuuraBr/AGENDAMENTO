@@ -30,8 +30,6 @@ const app = express();
 // ─── Trust proxy (necessário atrás de reverse proxy / Hostinger / cPanel) ───
 app.set("trust proxy", 1);
 
-// ─── IP Whitelist — bloqueia qualquer acesso fora da rede da empresa ───
-app.use(ipWhitelist);
 
 // ─── Security Headers (helmet) ───
 if (helmet) {
