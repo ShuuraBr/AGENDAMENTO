@@ -39,5 +39,5 @@ export const env = {
   whatsappToken: process.env.WHATSAPP_TOKEN || "",
   whatsappBaseUrl: process.env.WHATSAPP_BASE_URL || "",
   whatsappApiUrl: process.env.WHATSAPP_API_URL || process.env.WHATSAPP_BASE_URL || "",
-  allowedIps: process.env.ALLOWED_IPS || "187.63.104.98,189.59.11.59"
+  allowedIps: process.env.ALLOWED_IPS || "187.63.104.98,189.59.11.59,127.0.0.1"
 };
