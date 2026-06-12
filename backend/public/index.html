@@ -214,10 +214,30 @@
 
       <!-- Tabela de agendamentos pendentes -->
       <div class="card mt16" id="pendingTableCard">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <h3 style="margin:0">Agendamentos pendentes / em andamento</h3>
-          <div style="display:flex;gap:8px">
-            <input id="pendingSearch" placeholder="Buscar..." style="padding:7px 12px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;width:200px" />
+        <div style="margin-bottom:14px">
+          <h3 style="margin:0 0 12px">Agendamentos pendentes / em andamento</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+            <div>
+              <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Nr. agendamento</div>
+              <input id="pendingFilterProtocolo" placeholder="Protocolo..." style="padding:7px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;width:150px" />
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Data</div>
+              <input id="pendingFilterData" type="date" style="padding:7px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px" />
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Fornecedor</div>
+              <input id="pendingFilterFornecedor" placeholder="Fornecedor..." style="padding:7px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;width:160px" />
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Transportadora</div>
+              <input id="pendingFilterTransportadora" placeholder="Transportadora..." style="padding:7px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;width:160px" />
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">NF</div>
+              <input id="pendingFilterNf" placeholder="Nº NF..." style="padding:7px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;width:100px" />
+            </div>
+            <button type="button" id="pendingFilterClear" style="padding:7px 14px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;font-size:13px;cursor:pointer;font-weight:600">Limpar</button>
           </div>
         </div>
         <div style="overflow-x:auto">
@@ -392,6 +412,29 @@
           <button id="btnResumoFinanceiro" class="btn-secondary">Enviar resumo financeiro</button>
         </div>
         <p id="operacaoMsg" class="msg"></p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:12px;padding:12px 0;border-top:1px solid #f1f5f9">
+          <div>
+            <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Nr. agendamento</div>
+            <input id="confirmFilterProtocolo" placeholder="Protocolo..." style="padding:7px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;width:150px" />
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Data</div>
+            <input id="confirmFilterData" type="date" style="padding:7px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px" />
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Fornecedor</div>
+            <input id="confirmFilterFornecedor" placeholder="Fornecedor..." style="padding:7px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;width:160px" />
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">Transportadora</div>
+            <input id="confirmFilterTransportadora" placeholder="Transportadora..." style="padding:7px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;width:160px" />
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;color:#64748b;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em">NF</div>
+            <input id="confirmFilterNf" placeholder="Nº NF..." style="padding:7px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;width:100px" />
+          </div>
+          <button type="button" id="confirmFilterClear" style="padding:7px 14px;border-radius:9px;border:1px solid #cbd5e1;background:#fff;font-size:13px;cursor:pointer;font-weight:600">Limpar</button>
+        </div>
         <div class="card inner mt16">
           <h3>Histórico de ocorrências</h3>
           <p class="hint">As NF marcadas como ocorrência ficam registradas aqui para acompanhamento operacional.</p>
