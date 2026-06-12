@@ -2887,7 +2887,7 @@
     if (kpis) {
       kpis.className = 'kpi-grid';
       kpis.innerHTML = '';
-      const kpiModalMap = { finalizados: 'FINALIZADO', cancelados: 'CANCELADO', noShow: 'NO_SHOW', reagendados: 'REAGENDADO' };
+      const kpiModalMap = { pendentes: 'PENDENTE_APROVACAO', aprovados: 'APROVADO', finalizados: 'FINALIZADO', cancelados: 'CANCELADO', noShow: 'NO_SHOW', reagendados: 'REAGENDADO' };
       Object.entries(kpiData || {}).forEach(([k, v]) => {
         if (hiddenKpis.has(String(k || ''))) return;
         const div = document.createElement('div');
@@ -2932,14 +2932,34 @@
     const pending = allAgendamentos.filter((ag) => activeStatuses.has(String(ag.status||'').toUpperCase()));
     renderPendingTable(pending);
 
-    // Wire search
-    const searchInput = byId('pendingSearch');
-    if (searchInput && !searchInput.dataset.bound) {
-      searchInput.dataset.bound = '1';
-      searchInput.addEventListener('input', () => {
-        const term = searchInput.value.trim().toLowerCase();
-        const filtered = term ? pending.filter((ag) => JSON.stringify(ag).toLowerCase().includes(term)) : pending;
-        renderPendingTable(filtered);
+    // Wire dashboard pending filters
+    function applyPendingFilters() {
+      const norm = (s) => String(s || '').toLowerCase();
+      const vProtocolo = norm(byId('pendingFilterProtocolo')?.value || '');
+      const vData = (byId('pendingFilterData')?.value || '').trim();
+      const vFornecedor = norm(byId('pendingFilterFornecedor')?.value || '');
+      const vTransportadora = norm(byId('pendingFilterTransportadora')?.value || '');
+      const vNf = norm(byId('pendingFilterNf')?.value || '');
+      const filtered = pending.filter((ag) => {
+        if (vProtocolo && !norm(ag.protocolo).includes(vProtocolo)) return false;
+        if (vData && !String(ag.dataAgendada || '').includes(vData)) return false;
+        if (vFornecedor && !norm(ag.fornecedor).includes(vFornecedor)) return false;
+        if (vTransportadora && !norm(ag.transportadora).includes(vTransportadora)) return false;
+        if (vNf && !(ag.notasFiscais || []).some((nf) => norm(nf.numeroNf).includes(vNf))) return false;
+        return true;
+      });
+      renderPendingTable(filtered);
+    }
+    ['pendingFilterProtocolo','pendingFilterData','pendingFilterFornecedor','pendingFilterTransportadora','pendingFilterNf'].forEach((id) => {
+      const el = byId(id);
+      if (el && !el.dataset.bound) { el.dataset.bound = '1'; el.addEventListener('input', applyPendingFilters); }
+    });
+    const pendingClearBtn = byId('pendingFilterClear');
+    if (pendingClearBtn && !pendingClearBtn.dataset.bound) {
+      pendingClearBtn.dataset.bound = '1';
+      pendingClearBtn.addEventListener('click', () => {
+        ['pendingFilterProtocolo','pendingFilterData','pendingFilterFornecedor','pendingFilterTransportadora','pendingFilterNf'].forEach((id) => { const el = byId(id); if (el) el.value = ''; });
+        renderPendingTable(pending);
       });
     }
 
@@ -3270,19 +3290,49 @@
     await fillSelects();
   }
 
+  function renderFilteredAgendamentos() {
+    const inConfirmacoes = !!byId('confirmacoes')?.classList.contains('active');
+    const norm = (s) => String(s || '').toLowerCase();
+    const vProtocolo = norm(byId('confirmFilterProtocolo')?.value || '');
+    const vData = (byId('confirmFilterData')?.value || '').trim();
+    const vFornecedor = norm(byId('confirmFilterFornecedor')?.value || '');
+    const vTransportadora = norm(byId('confirmFilterTransportadora')?.value || '');
+    const vNf = norm(byId('confirmFilterNf')?.value || '');
+    let list = state.lastAgendamentos || [];
+    if (vProtocolo) list = list.filter((ag) => norm(ag.protocolo).includes(vProtocolo));
+    if (vData) list = list.filter((ag) => String(ag.dataAgendada || '').includes(vData));
+    if (vFornecedor) list = list.filter((ag) => norm(ag.fornecedor).includes(vFornecedor));
+    if (vTransportadora) list = list.filter((ag) => norm(ag.transportadora).includes(vTransportadora));
+    if (vNf) list = list.filter((ag) => (ag.notasFiscais || []).some((nf) => norm(nf.numeroNf).includes(vNf)));
+    renderOperationalTable(list, {
+      targetId: 'agendamentosList',
+      includeActions: false,
+      includeSelect: inConfirmacoes && hasPermission('agendamentos.request_reschedule'),
+    });
+  }
+
   async function loadAgendamentos() {
     if (!hasPermission('agendamentos.view')) return;
     const params = new URLSearchParams();
     Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
     const items = await api(`/api/agendamentos?${params.toString()}`);
-    const inConfirmacoes = !!byId('confirmacoes')?.classList.contains('active');
+    state.lastAgendamentos = items || [];
     state.confirmacoesSelecionados = new Set();
-    renderOperationalTable(items || [], {
-      targetId: 'agendamentosList',
-      includeActions: false,
-      includeSelect: inConfirmacoes && hasPermission('agendamentos.request_reschedule'),
-    });
+    renderFilteredAgendamentos();
     updateConfirmacoesToolbar();
+    // Wire confirm filters (idempotent via dataset.bound)
+    ['confirmFilterProtocolo','confirmFilterData','confirmFilterFornecedor','confirmFilterTransportadora','confirmFilterNf'].forEach((id) => {
+      const el = byId(id);
+      if (el && !el.dataset.bound) { el.dataset.bound = '1'; el.addEventListener('input', renderFilteredAgendamentos); }
+    });
+    const confirmClearBtn = byId('confirmFilterClear');
+    if (confirmClearBtn && !confirmClearBtn.dataset.bound) {
+      confirmClearBtn.dataset.bound = '1';
+      confirmClearBtn.addEventListener('click', () => {
+        ['confirmFilterProtocolo','confirmFilterData','confirmFilterFornecedor','confirmFilterTransportadora','confirmFilterNf'].forEach((id) => { const el = byId(id); if (el) el.value = ''; });
+        renderFilteredAgendamentos();
+      });
+    }
     await Promise.allSettled([maybeShowMissingRelatorioAlerts(items || []), loadAuditoria()]);
   }
 
