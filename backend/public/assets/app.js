@@ -2935,12 +2935,14 @@
     // Wire dashboard pending filters
     function applyPendingFilters() {
       const norm = (s) => String(s || '').toLowerCase();
+      const vStatus = (byId('pendingFilterStatus')?.value || '').trim();
       const vProtocolo = norm(byId('pendingFilterProtocolo')?.value || '');
       const vData = (byId('pendingFilterData')?.value || '').trim();
       const vFornecedor = norm(byId('pendingFilterFornecedor')?.value || '');
       const vTransportadora = norm(byId('pendingFilterTransportadora')?.value || '');
       const vNf = norm(byId('pendingFilterNf')?.value || '');
       const filtered = pending.filter((ag) => {
+        if (vStatus && String(ag.status || '').toUpperCase() !== vStatus) return false;
         if (vProtocolo && !norm(ag.protocolo).includes(vProtocolo)) return false;
         if (vData && !String(ag.dataAgendada || '').includes(vData)) return false;
         if (vFornecedor && !norm(ag.fornecedor).includes(vFornecedor)) return false;
@@ -2950,7 +2952,7 @@
       });
       renderPendingTable(filtered);
     }
-    ['pendingFilterProtocolo','pendingFilterData','pendingFilterFornecedor','pendingFilterTransportadora','pendingFilterNf'].forEach((id) => {
+    ['pendingFilterStatus','pendingFilterProtocolo','pendingFilterData','pendingFilterFornecedor','pendingFilterTransportadora','pendingFilterNf'].forEach((id) => {
       const el = byId(id);
       if (el && !el.dataset.bound) { el.dataset.bound = '1'; el.addEventListener('input', applyPendingFilters); }
     });
@@ -2958,7 +2960,7 @@
     if (pendingClearBtn && !pendingClearBtn.dataset.bound) {
       pendingClearBtn.dataset.bound = '1';
       pendingClearBtn.addEventListener('click', () => {
-        ['pendingFilterProtocolo','pendingFilterData','pendingFilterFornecedor','pendingFilterTransportadora','pendingFilterNf'].forEach((id) => { const el = byId(id); if (el) el.value = ''; });
+        ['pendingFilterStatus','pendingFilterProtocolo','pendingFilterData','pendingFilterFornecedor','pendingFilterTransportadora','pendingFilterNf'].forEach((id) => { const el = byId(id); if (el) el.value = ''; });
         renderPendingTable(pending);
       });
     }
@@ -3293,12 +3295,14 @@
   function renderFilteredAgendamentos() {
     const inConfirmacoes = !!byId('confirmacoes')?.classList.contains('active');
     const norm = (s) => String(s || '').toLowerCase();
+    const vStatus = (byId('confirmFilterStatus')?.value || '').trim();
     const vProtocolo = norm(byId('confirmFilterProtocolo')?.value || '');
     const vData = (byId('confirmFilterData')?.value || '').trim();
     const vFornecedor = norm(byId('confirmFilterFornecedor')?.value || '');
     const vTransportadora = norm(byId('confirmFilterTransportadora')?.value || '');
     const vNf = norm(byId('confirmFilterNf')?.value || '');
     let list = state.lastAgendamentos || [];
+    if (vStatus) list = list.filter((ag) => String(ag.status || '').toUpperCase() === vStatus);
     if (vProtocolo) list = list.filter((ag) => norm(ag.protocolo).includes(vProtocolo));
     if (vData) list = list.filter((ag) => String(ag.dataAgendada || '').includes(vData));
     if (vFornecedor) list = list.filter((ag) => norm(ag.fornecedor).includes(vFornecedor));
@@ -3321,7 +3325,7 @@
     renderFilteredAgendamentos();
     updateConfirmacoesToolbar();
     // Wire confirm filters (idempotent via dataset.bound)
-    ['confirmFilterProtocolo','confirmFilterData','confirmFilterFornecedor','confirmFilterTransportadora','confirmFilterNf'].forEach((id) => {
+    ['confirmFilterStatus','confirmFilterProtocolo','confirmFilterData','confirmFilterFornecedor','confirmFilterTransportadora','confirmFilterNf'].forEach((id) => {
       const el = byId(id);
       if (el && !el.dataset.bound) { el.dataset.bound = '1'; el.addEventListener('input', renderFilteredAgendamentos); }
     });
@@ -3329,7 +3333,7 @@
     if (confirmClearBtn && !confirmClearBtn.dataset.bound) {
       confirmClearBtn.dataset.bound = '1';
       confirmClearBtn.addEventListener('click', () => {
-        ['confirmFilterProtocolo','confirmFilterData','confirmFilterFornecedor','confirmFilterTransportadora','confirmFilterNf'].forEach((id) => { const el = byId(id); if (el) el.value = ''; });
+        ['confirmFilterStatus','confirmFilterProtocolo','confirmFilterData','confirmFilterFornecedor','confirmFilterTransportadora','confirmFilterNf'].forEach((id) => { const el = byId(id); if (el) el.value = ''; });
         renderFilteredAgendamentos();
       });
     }
