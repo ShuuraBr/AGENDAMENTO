@@ -130,6 +130,10 @@ async function sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, hor
   if (voucherUrl) {
     qp['3'] = voucherUrl;
   }
+  // Garante envio mesmo quando a conversa já está aberta no Duotalk
+  if (!baseUrl.includes('sendToOpen')) {
+    qp.sendToOpen = '1';
+  }
   const templateParams = new URLSearchParams(qp);
   const apiUrl = `${baseUrl}${separator}${templateParams.toString()}`;
   console.log(`[WHATSAPP] URL com query params: ${apiUrl}`);
