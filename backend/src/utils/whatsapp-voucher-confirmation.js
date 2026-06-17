@@ -115,6 +115,7 @@ const VOUCHER_ALLOWED_STATUSES = new Set(["APROVADO", "CHEGOU", "EM_DESCARGA", "
 export async function sendVoucherWhatsApp(agendamento) {
   const telefone = agendamento.telefoneMotorista;
   const voucherUrl = buildVoucherUrl(agendamento);
+  console.log(`[WHATSAPP-VOUCHER] Enviando voucher → agendamentoId=${agendamento.id}, to=${telefone}, publicTokenFornecedor=${agendamento.publicTokenFornecedor || '(vazio)'}, voucherUrl=${voucherUrl || '(vazio)'}`);
   const sentWhats = await sendWhatsApp({
     to: telefone,
     name: agendamento.motorista || agendamento.nomeMotorista || "Motorista",
@@ -122,6 +123,7 @@ export async function sendVoucherWhatsApp(agendamento) {
     dataAgendada: formatDateBR(agendamento?.dataAgendada),
     horaAgendada: formatHourLabel(agendamento?.horaAgendada),
   });
+  console.log(`[WHATSAPP-VOUCHER] Resultado → ok=${sentWhats?.ok}, simulated=${sentWhats?.simulated}, reason=${sentWhats?.reason || '-'}`);
 
   await prisma.agendamento.update({
     where: { id: Number(agendamento.id) },
@@ -152,6 +154,7 @@ function normalizeReplyText(text) {
  */
 export async function processIncomingWhatsAppReply({ phone, text }) {
   const normalizedPhone = normalizePhone(phone);
+  console.log(`[WHATSAPP-REPLY] Processando resposta → phone=${phone}, normalizedPhone=${normalizedPhone}, text="${text}"`);
   if (!normalizedPhone) {
     return { handled: false, reason: "Telefone ausente ou inválido no webhook." };
   }
@@ -165,13 +168,16 @@ export async function processIncomingWhatsAppReply({ phone, text }) {
   });
 
   if (!agendamento) {
+    console.warn(`[WHATSAPP-REPLY] Nenhum agendamento PENDENTE encontrado para telefone=${normalizedPhone}. Pode indicar migração V14 não executada, status já alterado, ou telefone diferente do armazenado.`);
     return { handled: false, reason: "Nenhum agendamento com confirmação pendente para este telefone." };
   }
 
+  console.log(`[WHATSAPP-REPLY] Agendamento encontrado → id=${agendamento.id}, status=${agendamento.status}, whatsappConfirmacaoStatus=${agendamento.whatsappConfirmacaoStatus}`);
   const normalizedText = normalizeReplyText(text);
   const now = new Date();
 
   if (AFFIRMATIVE_REGEX.test(normalizedText)) {
+    console.log(`[WHATSAPP-REPLY] Resposta AFIRMATIVA → atualizando para ACEITOU (agendamentoId=${agendamento.id})`);
     await prisma.agendamento.update({
       where: { id: Number(agendamento.id) },
       data: {
@@ -183,8 +189,12 @@ export async function processIncomingWhatsAppReply({ phone, text }) {
     // Se o agendamento já estiver aprovado quando o motorista responder,
     // envia o voucher imediatamente. Caso contrário aguarda a aprovação.
     let sentVoucher = null;
-    if (VOUCHER_ALLOWED_STATUSES.has(String(agendamento.status || '').toUpperCase())) {
+    const agendamentoStatusUpper = String(agendamento.status || '').toUpperCase();
+    if (VOUCHER_ALLOWED_STATUSES.has(agendamentoStatusUpper)) {
+      console.log(`[WHATSAPP-REPLY] Agendamento já ${agendamentoStatusUpper} → enviando voucher agora.`);
       sentVoucher = await sendVoucherWhatsApp(agendamento);
+    } else {
+      console.log(`[WHATSAPP-REPLY] Agendamento ainda não aprovado (status=${agendamentoStatusUpper}) → voucher será enviado na aprovação.`);
     }
 
     await auditLog({
@@ -197,6 +207,7 @@ export async function processIncomingWhatsAppReply({ phone, text }) {
   }
 
   if (NEGATIVE_REGEX.test(normalizedText)) {
+    console.log(`[WHATSAPP-REPLY] Resposta NEGATIVA → atualizando para RECUSOU (agendamentoId=${agendamento.id})`);
     await prisma.agendamento.update({
       where: { id: Number(agendamento.id) },
       data: {
@@ -215,6 +226,7 @@ export async function processIncomingWhatsAppReply({ phone, text }) {
 
   // Resposta não reconhecida: não altera o status, deixa o watcher
   // de timeout/reenvio decidir o que fazer.
+  console.warn(`[WHATSAPP-REPLY] Resposta não reconhecida como sim/não → text="${text}", normalizedText="${normalizedText}"`);
   return { handled: false, reason: "Resposta não reconhecida como sim/não.", agendamentoId: agendamento.id, texto: text };
 }
 

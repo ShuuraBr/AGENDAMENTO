@@ -1064,24 +1064,27 @@ async function sendApprovalNotifications(item, req) {
     if (sent.sent) targets.push("transportadora/fornecedor");
   }
  
-  console.log(`[WHATSAPP-APPROVAL] telefoneMotorista="${normalizedItem.telefoneMotorista || ''}", confirmacaoStatus="${normalizedItem.whatsappConfirmacaoStatus || 'null'}"`);
+  const confirmacaoStatus = String(normalizedItem.whatsappConfirmacaoStatus || '').toUpperCase();
+  console.log(`[WHATSAPP-APPROVAL] telefoneMotorista="${normalizedItem.telefoneMotorista || ''}", confirmacaoStatus="${confirmacaoStatus || 'null (migração V14 não executada?)'}", agendamentoId=${normalizedItem.id}`);
   if (normalizedItem.telefoneMotorista) {
-    const confirmacaoStatus = String(normalizedItem.whatsappConfirmacaoStatus || '').toUpperCase();
     if (confirmacaoStatus === CONFIRMACAO_STATUS.ACEITOU) {
       // Motorista já confirmou antes da aprovação — envia o voucher agora.
+      console.log('[WHATSAPP-APPROVAL] Status ACEITOU → enviando voucher agora.');
       const sentVoucher = await sendVoucherWhatsApp(normalizedItem);
+      console.log(`[WHATSAPP-APPROVAL] Resultado voucher → ok=${sentVoucher?.ok}, simulated=${sentVoucher?.simulated}, reason=${sentVoucher?.reason || '-'}`);
       results.push({ tipo: "whatsapp-voucher-motorista", to: normalizedItem.telefoneMotorista, ...sentVoucher });
     } else if (confirmacaoStatus === CONFIRMACAO_STATUS.RECUSOU) {
-      console.log('[WHATSAPP-APPROVAL] Motorista recusou receber mensagens — voucher WhatsApp NÃO enviado.');
+      console.log('[WHATSAPP-APPROVAL] Status RECUSOU → voucher WhatsApp NÃO enviado (email enviado normalmente).');
       results.push({ tipo: "whatsapp-voucher-motorista", skipped: true, reason: "Motorista recusou receber mensagens via WhatsApp." });
     } else if (confirmacaoStatus === CONFIRMACAO_STATUS.PENDENTE) {
       // Confirmação enviada na criação mas ainda sem resposta.
       // O voucher será enviado pelo webhook quando o motorista responder "sim".
-      console.log('[WHATSAPP-APPROVAL] Confirmação WhatsApp ainda pendente — voucher será enviado após resposta do motorista.');
+      console.log('[WHATSAPP-APPROVAL] Status PENDENTE → voucher será enviado após resposta do motorista.');
       results.push({ tipo: "whatsapp-voucher-motorista", skipped: true, reason: "Aguardando resposta do motorista à confirmação WhatsApp." });
     } else {
-      // Sem confirmação prévia (agendamento criado antes desta funcionalidade).
+      // Sem confirmação prévia (agendamento criado antes desta funcionalidade ou migração não executada).
       // Envia a confirmação agora.
+      console.log(`[WHATSAPP-APPROVAL] Status vazio/desconhecido ("${confirmacaoStatus}") → enviando confirmação. ATENÇÃO: verifique se a migração V14 foi executada.`);
       const sentConfirmacao = await requestVoucherConfirmation(normalizedItem, { actor: req.user });
       results.push({ tipo: "whatsapp-confirmacao-motorista", to: normalizedItem.telefoneMotorista, ...sentConfirmacao });
     }
