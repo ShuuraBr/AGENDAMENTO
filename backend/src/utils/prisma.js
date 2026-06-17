@@ -36,7 +36,8 @@ const modelConfigs = {
 };
 
 const tableCache = new Map();
-const columnsCache = new Map();
+const columnsCache = new Map(); // value: { info, cachedAt }
+const COLUMNS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 min — allows hot-applied migrations to be picked up
 let disabledReason = '';
 
 function qid(value) {
@@ -138,10 +139,11 @@ async function resolveTableName(modelName, ctx) {
 async function getTableColumns(modelName, ctx) {
   const tableName = await resolveTableName(modelName, ctx);
   const cacheKey = `${ctx.cachePrefix}:${tableName || modelName}`;
-  if (columnsCache.has(cacheKey)) return columnsCache.get(cacheKey);
+  const cached = columnsCache.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < COLUMNS_CACHE_TTL_MS) return cached.info;
   if (!tableName) {
     const empty = { list: [], set: new Set(), map: new Map() };
-    columnsCache.set(cacheKey, empty);
+    columnsCache.set(cacheKey, { info: empty, cachedAt: Date.now() });
     return empty;
   }
   const rows = await ctx.query(`SHOW COLUMNS FROM ${qid(tableName)}`);
@@ -149,7 +151,7 @@ async function getTableColumns(modelName, ctx) {
   const set = new Set(list);
   const map = new Map(list.map((column) => [String(column).toLowerCase(), column]));
   const info = { list, set, map };
-  columnsCache.set(cacheKey, info);
+  columnsCache.set(cacheKey, { info, cachedAt: Date.now() });
   return info;
 }
 
