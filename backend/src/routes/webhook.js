@@ -34,18 +34,19 @@ function extractPhoneAndText(body = {}) {
     return { phone: directMessage.from, text };
   }
 
-  // Formato Duotalk com campo de resposta de botão na raiz
-  const duotalkPhone = body.phone || body.from || body.sender || body.contact?.phone || body.contact?.wa_id;
-  const duotalkText =
-    body.message || body.text || body.body || body.response ||
-    body.button_response?.text || body.button_response?.payload;
-  if (duotalkPhone) return { phone: duotalkPhone, text: duotalkText };
+  // Formato Duotalk Templates (webhook de resposta de campanha com botão)
+  // Campos confirmados pelo payload real: telefone, buttonPayload, buttonText
+  if (body.telefone) {
+    return {
+      phone: body.telefone,
+      text: body.buttonPayload || body.buttonText || body.message || body.text,
+    };
+  }
 
   // Genérico
-  return {
-    phone: body.telefone || body.numero || body.wa_id,
-    text: body.mensagem || body.texto || body.content,
-  };
+  const duotalkPhone = body.phone || body.from || body.sender || body.contact?.phone || body.contact?.wa_id;
+  const duotalkText = body.message || body.text || body.body || body.response || body.button_response?.text || body.button_response?.payload;
+  return { phone: duotalkPhone, text: duotalkText };
 }
 
 router.post("/whatsapp", async (req, res) => {

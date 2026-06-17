@@ -405,6 +405,19 @@
     return `<span class="badge ${statusTone(status, semaforo)}">${escapeHtml(statusLabel(status))}</span>`;
   }
 
+  function renderWhatsappConfirmacaoBadge(status) {
+    const map = {
+      PENDENTE:    { label: '⏳ Aguardando', color: '#f59e0b' },
+      ACEITOU:     { label: '✅ Aceitou',    color: '#10b981' },
+      RECUSOU:     { label: '❌ Recusou',    color: '#ef4444' },
+      SEM_CONTATO: { label: '📵 Sem contato', color: '#94a3b8' },
+    };
+    const s = String(status || '').toUpperCase();
+    if (!s || !map[s]) return '<span style="color:#cbd5e1;font-size:11px">-</span>';
+    const { label, color } = map[s];
+    return `<span style="padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;background:${color}20;color:${color};white-space:nowrap">${label}</span>`;
+  }
+
   function renderNotasTable(notas) {
     if (!Array.isArray(notas) || !notas.length) return '<p class="hint">Sem notas fiscais cadastradas.</p>';
     return `<table class="table"><thead><tr><th>Número NF</th><th>Série</th><th>Chave</th><th>Volumes</th></tr></thead><tbody>${notas.map((nota) => `<tr><td>${escapeHtml(nota.numeroNf || "-")}</td><td>${escapeHtml(nota.serie || "-")}</td><td>${escapeHtml(nota.chaveAcesso || "-")}</td><td>${escapeHtml(formatDecimalBR(nota.volumes ?? 0, 3))}</td></tr>`).join("")}</tbody></table>`;
@@ -2408,6 +2421,7 @@
             <th>Fornecedor</th>
             <th>Transportadora</th>
             <th>Motorista</th>
+            <th>WhatsApp</th>
             <th>Placa</th>
             <th>Data</th>
             <th>Hora</th>
@@ -2430,6 +2444,7 @@
               <td>${escapeHtml(item.fornecedor || '')}</td>
               <td>${escapeHtml(item.transportadora || '')}</td>
               <td>${escapeHtml(item.motorista || '')}</td>
+              <td>${renderWhatsappConfirmacaoBadge(item.whatsappConfirmacaoStatus)}</td>
               <td>${escapeHtml(item.placa || '')}</td>
               <td>${escapeHtml(formatDateBR(item.dataAgendada || '') || '')}</td>
               <td>${escapeHtml(formatHour(item.horaAgendada || '') || '')}</td>
