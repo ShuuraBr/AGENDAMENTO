@@ -5,6 +5,7 @@ import cadastrosRoutes from "./cadastros.js";
 import agendamentosRoutes from "./agendamentos.js";
 import notificacoesRoutes from "./notificacoes.js";
 import publicRoutes from "./public.js";
+import webhookRoutes from "./webhook.js";
 import { pingDatabase } from "../utils/db-fallback.js";
 import { verifyMailTransport } from "../utils/email.js";
 import { getUploadDirectoriesHealth } from "../utils/upload-policy.js";
@@ -79,5 +80,6 @@ router.use("/cadastros", cadastrosRoutes);
 router.use("/agendamentos", agendamentosRoutes);
 router.use("/notificacoes", notificacoesRoutes);
 router.use("/public", publicRoutes);
+router.use("/webhook", webhookRoutes);
 
 export default router;

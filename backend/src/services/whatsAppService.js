@@ -28,12 +28,57 @@ export async function sendWhatsApp({ to, message, name, voucherUrl, dataAgendada
 
   if (provider === 'duotalk') {
     console.log('[WHATSAPP] Chamando sendViaDuotalk...');
-    const result = await sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, horaAgendada });
+    const result = await sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, horaAgendada, apiUrl: env.whatsappApiUrl });
     console.log('[WHATSAPP] Resultado Duotalk:', JSON.stringify(result));
     return result;
   }
 
   console.log(`[WHATSAPP] Provider "${env.whatsappProvider}" não reconhecido.`);
+  return {
+    ok: false,
+    simulated: true,
+    reason: `Provider "${env.whatsappProvider}" não possui implementação. Use "duotalk" ou "mock".`,
+  };
+}
+
+/**
+ * Envia a mensagem de confirmação ("deseja receber mensagens sobre este
+ * agendamento?") usando um template separado (WHATSAPP_CONFIRMACAO_API_URL).
+ *
+ * Mensagens de WhatsApp Business iniciadas pela empresa (fora de uma janela
+ * de atendimento de 24h aberta pelo cliente) precisam de um template
+ * pré-aprovado — por isso não é possível reaproveitar o template do voucher
+ * com um texto livre diferente. É necessário cadastrar este novo template no
+ * provedor (Duotalk) perguntando se o motorista deseja receber mensagens
+ * sobre o agendamento (sim/não), e configurar a URL dele em
+ * WHATSAPP_CONFIRMACAO_API_URL.
+ *
+ * @param {object} opts
+ * @param {string} opts.to              – Telefone do destinatário
+ * @param {string} [opts.name]          – Nome do destinatário
+ * @param {string} [opts.dataAgendada]  – Data agendada formatada (dd/mm/aaaa) → {{1}}
+ * @param {string} [opts.horaAgendada]  – Hora agendada (HH:mm) → {{2}}
+ */
+export async function sendWhatsAppConfirmacao({ to, name, dataAgendada, horaAgendada } = {}) {
+  console.log(`[WHATSAPP-CONFIRMACAO] sendWhatsAppConfirmacao chamado → to=${to}, name=${name}, provider=${env.whatsappProvider}, apiUrl=${env.whatsappConfirmacaoApiUrl ? 'SET' : 'EMPTY'}`);
+
+  if (env.whatsappProvider === 'mock') {
+    return { ok: false, simulated: true, provider: 'mock', to };
+  }
+
+  if (!env.whatsappConfirmacaoApiUrl) {
+    console.log('[WHATSAPP-CONFIRMACAO] WHATSAPP_CONFIRMACAO_API_URL não configurada. Retornando simulado.');
+    return { ok: false, simulated: true, reason: 'Template de confirmação não configurado (WHATSAPP_CONFIRMACAO_API_URL ausente)' };
+  }
+
+  const provider = String(env.whatsappProvider || '').toLowerCase();
+
+  if (provider === 'duotalk') {
+    const result = await sendViaDuotalk({ to, name, dataAgendada, horaAgendada, apiUrl: env.whatsappConfirmacaoApiUrl });
+    console.log('[WHATSAPP-CONFIRMACAO] Resultado Duotalk:', JSON.stringify(result));
+    return result;
+  }
+
   return {
     ok: false,
     simulated: true,
@@ -58,7 +103,7 @@ function formatDateBR(value) {
  * enviando name e phone no body, e as variáveis do template como
  * query params (&queryParams=true&1=data&2=hora).
  */
-async function sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, horaAgendada }) {
+async function sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, horaAgendada, apiUrl: apiUrlOverride }) {
   let phone = String(to || '').replace(/\D/g, '');
   if (!phone) {
     return { ok: false, simulated: false, provider: 'duotalk', reason: 'Telefone vazio ou inválido' };
@@ -74,8 +119,8 @@ async function sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, hor
   const contactName = name || 'Motorista';
 
   // Monta a URL com as variáveis do template como query params
-  // {{1}}=data, {{2}}=hora, {{3}}=link do voucher PDF
-  const baseUrl = env.whatsappApiUrl;
+  // {{1}}=data, {{2}}=hora, {{3}}=link do voucher PDF (quando aplicável)
+  const baseUrl = apiUrlOverride || env.whatsappApiUrl;
   const separator = baseUrl.includes('?') ? '&' : '?';
   const qp = {
     queryParams: 'true',

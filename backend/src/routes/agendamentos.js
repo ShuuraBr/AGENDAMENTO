@@ -7,7 +7,7 @@ import { generateProtocol, generatePublicToken } from "../utils/security.js";
 import { createNotificacao } from "../utils/notifications.js";
 import { qrSvg } from "../utils/qrcode.js";
 import { sendMail } from "../utils/email.js";
-import { sendWhatsApp } from "../services/whatsapp.js";
+import { requestVoucherConfirmation } from "../utils/whatsapp-voucher-confirmation.js";
 import { calculateTotals, normalizeCpf } from "../utils/agendamento-helpers.js";
 import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile, addDocumentoFile, addNotaFile, readAuditLogs, readJanelas } from "../utils/file-store.js";
 import { validateAgendamentoPayload, validateNf, validateStatusTransition, normalizeChaveAcesso } from "../utils/validators.js";
@@ -1066,15 +1066,11 @@ async function sendApprovalNotifications(item, req) {
  
   console.log(`[WHATSAPP-APPROVAL] telefoneMotorista="${normalizedItem.telefoneMotorista || ''}", motorista="${normalizedItem.motorista || ''}", voucherUrl="${links.voucher || ''}"`);
   if (normalizedItem.telefoneMotorista) {
-    const sentWhats = await sendWhatsApp({
-      to: normalizedItem.telefoneMotorista,
-      message: commonText,
-      name: normalizedItem.motorista || normalizedItem.nomeMotorista || 'Motorista',
-      voucherUrl: links.voucher,
-      dataAgendada: formatDateBR(normalizedItem?.dataAgendada),
-      horaAgendada: formatHourLabel(normalizedItem?.horaAgendada),
-    });
-    results.push({ tipo: "whatsapp-motorista", to: normalizedItem.telefoneMotorista, ...sentWhats });
+    // O voucher não é mais enviado direto pelo WhatsApp: primeiro perguntamos
+    // se o motorista deseja receber mensagens sobre o agendamento. O voucher
+    // só é enviado se ele responder "sim" (ver utils/whatsapp-voucher-confirmation.js).
+    const sentConfirmacao = await requestVoucherConfirmation(normalizedItem, { actor: req.user });
+    results.push({ tipo: "whatsapp-confirmacao-motorista", to: normalizedItem.telefoneMotorista, ...sentConfirmacao });
   } else {
     console.log('[WHATSAPP-APPROVAL] telefoneMotorista vazio — WhatsApp NÃO enviado.');
   }

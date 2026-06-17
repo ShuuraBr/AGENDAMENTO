@@ -19,9 +19,24 @@ if (!process.env.DATABASE_URL && process.env.DB_HOST) {
 
 const { default: app } = await import("./app.js");
 const { startRelatorioImportWatcher } = await import("./utils/relatorio-entradas.js");
+const { runVoucherConfirmationWatcherTick } = await import("./utils/whatsapp-voucher-confirmation.js");
 
 const PORT = Number(process.env.PORT || 3000);
 const shouldStartWatcher = ['1', 'true', 'yes', 'on'].includes(String(process.env.RELATORIO_IMPORT_WATCHER || '0').toLowerCase());
+
+const WHATSAPP_CONFIRMACAO_WATCH_INTERVAL_MS = 60 * 1000;
+
+function startWhatsAppConfirmationWatcher() {
+  const tick = () => {
+    runVoucherConfirmationWatcherTick().catch((error) => {
+      console.error('Falha na verificação de confirmações de WhatsApp pendentes:', error?.message || error);
+    });
+  };
+  tick();
+  const handle = setInterval(tick, WHATSAPP_CONFIRMACAO_WATCH_INTERVAL_MS);
+  handle.unref?.();
+  return handle;
+}
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`[OK] Servidor rodando na porta ${PORT}`);
@@ -34,6 +49,13 @@ const server = app.listen(PORT, "0.0.0.0", () => {
     }
   } else {
     console.log('[OK] Monitor automático da planilha de entradas desativado por configuração.');
+  }
+
+  try {
+    startWhatsAppConfirmationWatcher();
+    console.log('[OK] Monitor de confirmação de voucher via WhatsApp ativado.');
+  } catch (error) {
+    console.error('[WARN] Falha ao ativar monitor de confirmação de voucher via WhatsApp:', error?.message || error);
   }
 });
 

@@ -38,5 +38,11 @@ export const env = {
   whatsappProvider: process.env.WHATSAPP_PROVIDER || "stub",
   whatsappToken: process.env.WHATSAPP_TOKEN || "",
   whatsappBaseUrl: process.env.WHATSAPP_BASE_URL || "",
-  whatsappApiUrl: process.env.WHATSAPP_API_URL || process.env.WHATSAPP_BASE_URL || ""
+  whatsappApiUrl: process.env.WHATSAPP_API_URL || process.env.WHATSAPP_BASE_URL || "",
+  // Template separado para a mensagem de "deseja receber mensagens sobre este agendamento?".
+  // Precisa ser um template de WhatsApp Business aprovado (mensagem iniciada pela empresa),
+  // configurado no provedor (Duotalk) com a mesma lógica de queryParams do template do voucher.
+  whatsappConfirmacaoApiUrl: process.env.WHATSAPP_CONFIRMACAO_API_URL || "",
+  // Token simples para validar a origem do webhook de respostas do WhatsApp (opcional).
+  whatsappWebhookSecret: process.env.WHATSAPP_WEBHOOK_SECRET || ""
 };
