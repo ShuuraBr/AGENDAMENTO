@@ -43,6 +43,9 @@ export const env = {
   // Precisa ser um template de WhatsApp Business aprovado (mensagem iniciada pela empresa),
   // configurado no provedor (Duotalk) com a mesma lógica de queryParams do template do voucher.
   whatsappConfirmacaoApiUrl: process.env.WHATSAPP_CONFIRMACAO_API_URL || "",
+  // Endpoint Duotalk para enviar mensagem de texto em conversa ABERTA (sessão 24h).
+  // Diferente da campanha (WHATSAPP_API_URL) que só funciona para conversas novas.
+  whatsappVoucherTextApiUrl: process.env.WHATSAPP_VOUCHER_TEXT_API_URL || "",
   // Token simples para validar a origem do webhook de respostas do WhatsApp (opcional).
   whatsappWebhookSecret: process.env.WHATSAPP_WEBHOOK_SECRET || ""
 };

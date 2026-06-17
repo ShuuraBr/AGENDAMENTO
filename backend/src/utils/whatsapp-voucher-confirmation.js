@@ -15,7 +15,7 @@
 // chamado pelo webhook que recebe as respostas do provedor de WhatsApp.
 
 import { prisma } from "./prisma.js";
-import { sendWhatsApp, sendWhatsAppConfirmacao } from "../services/whatsAppService.js";
+import { sendWhatsApp, sendWhatsAppConfirmacao, sendVoucherTextMessage } from "../services/whatsAppService.js";
 import { auditLog } from "./audit.js";
 import { env } from "../config/env.js";
 
@@ -115,14 +115,19 @@ const VOUCHER_ALLOWED_STATUSES = new Set(["APROVADO", "CHEGOU", "EM_DESCARGA", "
 export async function sendVoucherWhatsApp(agendamento) {
   const telefone = agendamento.telefoneMotorista;
   const voucherUrl = buildVoucherUrl(agendamento);
-  console.log(`[WHATSAPP-VOUCHER] Enviando voucher → agendamentoId=${agendamento.id}, to=${telefone}, publicTokenFornecedor=${agendamento.publicTokenFornecedor || '(vazio)'}, voucherUrl=${voucherUrl || '(vazio)'}`);
-  const sentWhats = await sendWhatsApp({
-    to: telefone,
-    name: agendamento.motorista || agendamento.nomeMotorista || "Motorista",
-    voucherUrl,
-    dataAgendada: formatDateBR(agendamento?.dataAgendada),
-    horaAgendada: formatHourLabel(agendamento?.horaAgendada),
-  });
+  const nome = agendamento.motorista || agendamento.nomeMotorista || "Motorista";
+  const dataAgendada = formatDateBR(agendamento?.dataAgendada);
+  const horaAgendada = formatHourLabel(agendamento?.horaAgendada);
+  console.log(`[WHATSAPP-VOUCHER] Enviando voucher → agendamentoId=${agendamento.id}, to=${telefone}, voucherUrl=${voucherUrl || '(vazio)'}`);
+
+  // Prefere enviar como mensagem de texto na conversa aberta (janela 24h).
+  // Fallback para campanha se a URL de texto não estiver configurada.
+  let sentWhats;
+  if (env.whatsappVoucherTextApiUrl) {
+    sentWhats = await sendVoucherTextMessage({ to: telefone, name: nome, dataAgendada, horaAgendada, voucherUrl });
+  } else {
+    sentWhats = await sendWhatsApp({ to: telefone, name: nome, voucherUrl, dataAgendada, horaAgendada });
+  }
   console.log(`[WHATSAPP-VOUCHER] Resultado → ok=${sentWhats?.ok}, simulated=${sentWhats?.simulated}, reason=${sentWhats?.reason || '-'}`);
 
   await prisma.agendamento.update({

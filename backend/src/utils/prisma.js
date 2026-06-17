@@ -489,6 +489,57 @@ async function hydrateRelations(modelName, row, include, ctx) {
   return row;
 }
 
+// Batch version of hydrateAgendamentoRelations — fetches all related records in 4 parallel
+// queries (IN clauses) instead of 4 queries per row, dramatically reducing DB round-trips
+// when listing many agendamentos.
+async function batchHydrateAgendamentos(rows, include, ctx, select) {
+  if (!rows.length) return [];
+
+  const ids = rows.map((r) => Number(r.id)).filter(Boolean);
+  const docaIds = [...new Set(rows.map((r) => r.docaId).filter(Boolean).map(Number))];
+  const janelaIds = [...new Set(rows.map((r) => r.janelaId).filter(Boolean).map(Number))];
+
+  const [notasFiscaisAll, documentosAll, docasAll, janelasAll] = await Promise.all([
+    include.notasFiscais && ids.length
+      ? createModelApi('notaFiscal', ctx).findMany({ where: { agendamentoId: { in: ids } }, orderBy: { id: 'asc' } })
+      : Promise.resolve([]),
+    include.documentos && ids.length
+      ? createModelApi('documento', ctx).findMany({ where: { agendamentoId: { in: ids } }, orderBy: { id: 'asc' } })
+      : Promise.resolve([]),
+    include.doca && docaIds.length
+      ? createModelApi('doca', ctx).findMany({ where: { id: { in: docaIds } } })
+      : Promise.resolve([]),
+    include.janela && janelaIds.length
+      ? createModelApi('janela', ctx).findMany({ where: { id: { in: janelaIds } } })
+      : Promise.resolve([]),
+  ]);
+
+  const notasByAg = new Map();
+  for (const nota of notasFiscaisAll) {
+    const key = Number(nota.agendamentoId);
+    if (!notasByAg.has(key)) notasByAg.set(key, []);
+    notasByAg.get(key).push(nota);
+  }
+  const docsByAg = new Map();
+  for (const doc of documentosAll) {
+    const key = Number(doc.agendamentoId);
+    if (!docsByAg.has(key)) docsByAg.set(key, []);
+    docsByAg.get(key).push(doc);
+  }
+  const docasById = new Map(docasAll.map((d) => [Number(d.id), d]));
+  const janelasById = new Map(janelasAll.map((j) => [Number(j.id), j]));
+
+  return rows.map((row) => {
+    const id = Number(row.id);
+    const output = { ...row };
+    if (include.notasFiscais) output.notasFiscais = notasByAg.get(id) || [];
+    if (include.documentos) output.documentos = docsByAg.get(id) || [];
+    if (include.doca) output.doca = row.docaId ? docasById.get(Number(row.docaId)) || null : null;
+    if (include.janela) output.janela = row.janelaId ? janelasById.get(Number(row.janelaId)) || null : null;
+    return select ? applySelect(output, select) : output;
+  });
+}
+
 function createModelApi(modelName, ctx) {
   return {
     async findMany(options = {}) {
@@ -500,6 +551,11 @@ function createModelApi(modelName, ctx) {
       const offset = Number(options.skip || 0) > 0 ? ` OFFSET ${Number(options.skip)}` : '';
       const sql = `SELECT * FROM ${qid(tableName)}${where.sql ? ` WHERE ${where.sql}` : ''}${orderBy}${limit}${offset}`;
       const rows = await ctx.query(sql, where.params);
+      // Use batch hydration for agendamento lists with includes to avoid N+1 queries.
+      if (modelName === 'agendamento' && options.include && rows.length > 1) {
+        const normalizedRows = (rows || []).map((row) => normalizeRow(modelName, row));
+        return batchHydrateAgendamentos(normalizedRows, options.include, ctx, options.select);
+      }
       const normalizedRows = [];
       for (const row of rows || []) {
         let item = normalizeRow(modelName, row);

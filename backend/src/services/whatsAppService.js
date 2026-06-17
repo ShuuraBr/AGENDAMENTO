@@ -184,7 +184,9 @@ async function sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, hor
   // Monta a URL com as variáveis do template como query params
   // Template voucher:      {1}=nome, {2}=data, {3}=hora, {4}=link
   // Template confirmação:  {1}=data, {2}=hora  (nome via {NOME_CONTATO} no template)
-  const baseUrl = apiUrlOverride || env.whatsappApiUrl;
+  // Hostinger armazena URLs com barras invertidas antes dos % (ex: Pedro\%20Henrique).
+  // O fetch() rejeita barras invertidas — removemos antes de qualquer uso.
+  const baseUrl = (apiUrlOverride || env.whatsappApiUrl).replace(/\\/g, '');
   const separator = baseUrl.includes('?') ? '&' : '?';
   // voucherUrl é passado apenas para o template do voucher; confirmação não o passa.
   // Template voucher:     body.name={NOME_CONTATO}, {2}=data, {3}=hora, {4}=link

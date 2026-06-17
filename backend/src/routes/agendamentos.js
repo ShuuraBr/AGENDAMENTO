@@ -240,14 +240,9 @@ async function countScheduledNotesForDate(dataAgendada = '') {
   if (!date) return { totalAgendamentosNoDia: 0, totalNotasNoDia: 0 };
  
   try {
-    const items = await prisma.agendamento.findMany({
-      where: { dataAgendada: date },
-      include: { notasFiscais: true }
-    });
-    const totalNotasNoDia = (items || []).reduce((acc, item) => {
-      const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais.length : 0;
-      return acc + Number(item?.quantidadeNotas || notas || 0);
-    }, 0);
+    // Usa quantidadeNotas do próprio agendamento — evita carregar notasFiscais via include.
+    const items = await prisma.agendamento.findMany({ where: { dataAgendada: date } });
+    const totalNotasNoDia = (items || []).reduce((acc, item) => acc + Number(item?.quantidadeNotas || 0), 0);
     return { totalAgendamentosNoDia: Number(items?.length || 0), totalNotasNoDia };
   } catch {
     const items = readAgendamentos().filter((item) => String(item?.dataAgendada || '') === date);
@@ -904,6 +899,37 @@ async function safeNotificationSummary(agendamentoId) {
     return { ...EMPTY_NOTIFICATIONS };
   }
 }
+
+// Busca notificações para N agendamentos em 1 query (IN clause) em vez de N queries.
+async function batchNotificationSummary(ids = []) {
+  if (!ids.length) return new Map();
+  try {
+    const logs = await prisma.logAuditoria.findMany({
+      where: { entidade: "AGENDAMENTO", entidadeId: { in: ids.map(Number) } },
+      orderBy: { createdAt: "desc" }
+    });
+    const byId = new Map(ids.map((id) => [Number(id), []]));
+    for (const log of logs) {
+      const id = Number(log.entidadeId);
+      if (byId.has(id)) byId.get(id).push(log);
+    }
+    const result = new Map();
+    for (const [id, itemLogs] of byId) {
+      const findLog = (acao, predicate = () => true) => itemLogs.find((log) => {
+        if (log.acao !== acao) return false;
+        try { return predicate(JSON.parse(log.detalhes || '{}') || {}); } catch { return false; }
+      });
+      result.set(id, {
+        voucherMotorista: !!findLog("ENVIAR_INFORMACOES", (d) => Array.isArray(d.targets) && d.targets.includes("motorista")),
+        voucherTransportadoraFornecedor: !!findLog("ENVIAR_INFORMACOES", (d) => Array.isArray(d.targets) && d.targets.includes("transportadora/fornecedor")),
+        confirmacaoTransportadoraFornecedor: !!findLog("ENVIAR_CONFIRMACAO", (d) => Array.isArray(d.targets) && d.targets.includes("transportadora/fornecedor")),
+      });
+    }
+    return result;
+  } catch {
+    return new Map();
+  }
+}
  
 async function createAgendamentoInDatabase(payload) {
   const notas = Array.isArray(payload.notasFiscais) ? payload.notasFiscais : [];
@@ -966,6 +992,7 @@ async function createAgendamentoInDatabase(payload) {
 async function sendScheduleCreatedNotice(item, req, actor = req.user) {
   const normalizedItem = normalizeScheduleItem(item);
   if (!normalizedItem?.emailTransportadora) {
+    console.warn(`[EMAIL-CRIACAO] E-mail de solicitação NÃO enviado — agendamentoId=${normalizedItem?.id || '?'}: campo emailTransportadora está vazio.`);
     return { sent: false, reason: "Não há e-mail da transportadora/fornecedor cadastrado." };
   }
  
@@ -1220,7 +1247,8 @@ router.get("/", requirePermission("agendamentos.view"), async (req, res) => {
       include: { notasFiscais: true, documentos: true, doca: true, janela: true },
       orderBy: { id: "desc" }
     });
-    const payload = await Promise.all(items.map(async (i) => enrichResponseItem({ ...calculateTotals(i.notasFiscais || [], i), ...i, semaforo: trafficColor(i.status), notificacoes: await safeNotificationSummary(i.id) })));
+    const notifMap = await batchNotificationSummary(items.map((i) => i.id));
+    const payload = await Promise.all(items.map(async (i) => enrichResponseItem({ ...calculateTotals(i.notasFiscais || [], i), ...i, semaforo: trafficColor(i.status), notificacoes: notifMap.get(Number(i.id)) || { ...EMPTY_NOTIFICATIONS } })));
     return res.json(payload);
   } catch {
     try {
@@ -1474,15 +1502,16 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
         });
       }
       return res.status(201).json(await enrichResponseItem({ ...(fullItem || item), notificacaoCriacao }));
-    } catch {
+    } catch (notifErr) {
+      console.error('[EMAIL-CRIACAO] Erro ao enviar notificação pós-criação:', notifErr?.message || notifErr);
       return res.status(201).json(await enrichResponseItem(item));
     }
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
 });
- 
- 
+
+
 router.get('/ocorrencias', requirePermission('agendamentos.view'), async (req, res) => {
   const limit = Math.max(5, Math.min(100, Number(req.query?.limit || 30)));
   try {
