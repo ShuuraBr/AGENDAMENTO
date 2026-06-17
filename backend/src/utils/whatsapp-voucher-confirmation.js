@@ -109,8 +109,10 @@ export async function requestVoucherConfirmation(agendamento, { actor } = {}) {
   return { sent: true, tipo: "whatsapp-confirmacao", to: telefone, ...sentWhats };
 }
 
+const VOUCHER_ALLOWED_STATUSES = new Set(["APROVADO", "CHEGOU", "EM_DESCARGA", "FINALIZADO"]);
+
 /** Envia de fato o voucher pelo WhatsApp (usado após a confirmação "sim"). */
-async function sendVoucherWhatsApp(agendamento) {
+export async function sendVoucherWhatsApp(agendamento) {
   const telefone = agendamento.telefoneMotorista;
   const voucherUrl = buildVoucherUrl(agendamento);
   const sentWhats = await sendWhatsApp({
@@ -177,7 +179,14 @@ export async function processIncomingWhatsAppReply({ phone, text }) {
         whatsappConfirmacaoRespondidoEm: now,
       },
     });
-    const sentVoucher = await sendVoucherWhatsApp(agendamento);
+
+    // Se o agendamento já estiver aprovado quando o motorista responder,
+    // envia o voucher imediatamente. Caso contrário aguarda a aprovação.
+    let sentVoucher = null;
+    if (VOUCHER_ALLOWED_STATUSES.has(String(agendamento.status || '').toUpperCase())) {
+      sentVoucher = await sendVoucherWhatsApp(agendamento);
+    }
+
     await auditLog({
       acao: "CONFIRMACAO_WHATSAPP_ACEITA",
       entidade: "AGENDAMENTO",

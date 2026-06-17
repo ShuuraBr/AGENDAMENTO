@@ -7,7 +7,7 @@ import { generateProtocol, generatePublicToken } from "../utils/security.js";
 import { createNotificacao } from "../utils/notifications.js";
 import { qrSvg } from "../utils/qrcode.js";
 import { sendMail } from "../utils/email.js";
-import { requestVoucherConfirmation } from "../utils/whatsapp-voucher-confirmation.js";
+import { requestVoucherConfirmation, sendVoucherWhatsApp, CONFIRMACAO_STATUS } from "../utils/whatsapp-voucher-confirmation.js";
 import { calculateTotals, normalizeCpf } from "../utils/agendamento-helpers.js";
 import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile, addDocumentoFile, addNotaFile, readAuditLogs, readJanelas } from "../utils/file-store.js";
 import { validateAgendamentoPayload, validateNf, validateStatusTransition, normalizeChaveAcesso } from "../utils/validators.js";
@@ -1064,13 +1064,27 @@ async function sendApprovalNotifications(item, req) {
     if (sent.sent) targets.push("transportadora/fornecedor");
   }
  
-  console.log(`[WHATSAPP-APPROVAL] telefoneMotorista="${normalizedItem.telefoneMotorista || ''}", motorista="${normalizedItem.motorista || ''}", voucherUrl="${links.voucher || ''}"`);
+  console.log(`[WHATSAPP-APPROVAL] telefoneMotorista="${normalizedItem.telefoneMotorista || ''}", confirmacaoStatus="${normalizedItem.whatsappConfirmacaoStatus || 'null'}"`);
   if (normalizedItem.telefoneMotorista) {
-    // O voucher não é mais enviado direto pelo WhatsApp: primeiro perguntamos
-    // se o motorista deseja receber mensagens sobre o agendamento. O voucher
-    // só é enviado se ele responder "sim" (ver utils/whatsapp-voucher-confirmation.js).
-    const sentConfirmacao = await requestVoucherConfirmation(normalizedItem, { actor: req.user });
-    results.push({ tipo: "whatsapp-confirmacao-motorista", to: normalizedItem.telefoneMotorista, ...sentConfirmacao });
+    const confirmacaoStatus = String(normalizedItem.whatsappConfirmacaoStatus || '').toUpperCase();
+    if (confirmacaoStatus === CONFIRMACAO_STATUS.ACEITOU) {
+      // Motorista já confirmou antes da aprovação — envia o voucher agora.
+      const sentVoucher = await sendVoucherWhatsApp(normalizedItem);
+      results.push({ tipo: "whatsapp-voucher-motorista", to: normalizedItem.telefoneMotorista, ...sentVoucher });
+    } else if (confirmacaoStatus === CONFIRMACAO_STATUS.RECUSOU) {
+      console.log('[WHATSAPP-APPROVAL] Motorista recusou receber mensagens — voucher WhatsApp NÃO enviado.');
+      results.push({ tipo: "whatsapp-voucher-motorista", skipped: true, reason: "Motorista recusou receber mensagens via WhatsApp." });
+    } else if (confirmacaoStatus === CONFIRMACAO_STATUS.PENDENTE) {
+      // Confirmação enviada na criação mas ainda sem resposta.
+      // O voucher será enviado pelo webhook quando o motorista responder "sim".
+      console.log('[WHATSAPP-APPROVAL] Confirmação WhatsApp ainda pendente — voucher será enviado após resposta do motorista.');
+      results.push({ tipo: "whatsapp-voucher-motorista", skipped: true, reason: "Aguardando resposta do motorista à confirmação WhatsApp." });
+    } else {
+      // Sem confirmação prévia (agendamento criado antes desta funcionalidade).
+      // Envia a confirmação agora.
+      const sentConfirmacao = await requestVoucherConfirmation(normalizedItem, { actor: req.user });
+      results.push({ tipo: "whatsapp-confirmacao-motorista", to: normalizedItem.telefoneMotorista, ...sentConfirmacao });
+    }
   } else {
     console.log('[WHATSAPP-APPROVAL] telefoneMotorista vazio — WhatsApp NÃO enviado.');
   }
@@ -1450,6 +1464,12 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
       const fullItem = await full(item.id);
       await sendFinanceAwarenessIfNeeded({ agendamento: fullItem || item, payload, actor: req.user });
       const notificacaoCriacao = await sendScheduleCreatedNotice(fullItem || item, req, req.user);
+      const normalizedForWhats = normalizeScheduleItem(fullItem || item);
+      if (normalizedForWhats?.telefoneMotorista) {
+        requestVoucherConfirmation(normalizedForWhats, { actor: req.user }).catch((err) => {
+          console.error('[WHATSAPP-CREATE] Falha ao enviar confirmação WhatsApp:', err?.message || err);
+        });
+      }
       return res.status(201).json(await enrichResponseItem({ ...(fullItem || item), notificacaoCriacao }));
     } catch {
       return res.status(201).json(await enrichResponseItem(item));
