@@ -86,6 +86,69 @@ export async function sendWhatsAppConfirmacao({ to, name, dataAgendada, horaAgen
   };
 }
 
+/**
+ * Monta o texto do voucher no mesmo formato da mensagem original.
+ */
+export function buildVoucherMessageText({ name, dataAgendada, horaAgendada, voucherUrl }) {
+  const linhas = [
+    `Olá, ${name || 'Motorista'}! O seu agendamento de descarga foi confirmado para o dia ${dataAgendada || '-'} às ${horaAgendada || '-'}. 🚚`,
+    '',
+    '📄 O seu voucher de liberação encontra-se no link abaixo.',
+    voucherUrl || '',
+    '',
+    '⚠️ Avisos Importantes:',
+    '* Chegue com antecedência ao local.',
+    '* É obrigatório o uso de EPI (Equipamento de Proteção Individual).',
+    '* O motorista deve estar obrigatoriamente acompanhado de um auxiliar para realizar a descarga.',
+    '',
+    'Boa viagem e conduza com segurança!',
+    'Digite "sair" para não receber novas mensagens',
+  ];
+  return linhas.join('\n');
+}
+
+/**
+ * Envia o voucher como mensagem de texto livre (sessão aberta) via Duotalk.
+ * Usa WHATSAPP_VOUCHER_TEXT_API_URL — endpoint do Duotalk para enviar texto em
+ * conversa já aberta (diferente da campanha, que exige conversa nova).
+ *
+ * Exemplo de URL esperada: https://api.duotalk.io/api/v1/message  (verificar docs)
+ */
+export async function sendVoucherTextMessage({ to, name, dataAgendada, horaAgendada, voucherUrl } = {}) {
+  const textApiUrl = env.whatsappVoucherTextApiUrl;
+  console.log(`[WHATSAPP-VOUCHER-TEXT] sendVoucherTextMessage → to=${to}, textApiUrl=${textApiUrl ? 'SET' : 'EMPTY'}`);
+
+  if (!textApiUrl) {
+    console.log('[WHATSAPP-VOUCHER-TEXT] WHATSAPP_VOUCHER_TEXT_API_URL não configurada. Retornando simulado.');
+    return { ok: false, simulated: true, reason: 'WHATSAPP_VOUCHER_TEXT_API_URL não configurada' };
+  }
+
+  let phone = String(to || '').replace(/\D/g, '');
+  if (!phone) return { ok: false, reason: 'Telefone vazio ou inválido' };
+  if (phone.length <= 11) phone = `55${phone}`;
+
+  const message = buildVoucherMessageText({ name, dataAgendada, horaAgendada, voucherUrl });
+  console.log(`[WHATSAPP-VOUCHER-TEXT] Enviando para ${phone}: ${message.substring(0, 80)}...`);
+
+  try {
+    const response = await fetch(textApiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, message }),
+    });
+    const text = await response.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+
+    if (response.ok) {
+      return { ok: true, simulated: false, provider: 'duotalk-text', to: phone, data };
+    }
+    return { ok: false, simulated: false, provider: 'duotalk-text', to: phone, status: response.status, reason: data?.message || data?.error || text };
+  } catch (err) {
+    return { ok: false, simulated: false, provider: 'duotalk-text', to: phone, reason: err.message || String(err) };
+  }
+}
+
 /** Formata data ISO ou Date para dd/mm/aaaa */
 function formatDateBR(value) {
   if (!value) return '-';
@@ -119,21 +182,17 @@ async function sendViaDuotalk({ to, name, message, voucherUrl, dataAgendada, hor
   const contactName = name || 'Motorista';
 
   // Monta a URL com as variáveis do template como query params
-  // {{1}}=data, {{2}}=hora, {{3}}=link do voucher PDF (quando aplicável)
+  // Template voucher:      {1}=nome, {2}=data, {3}=hora, {4}=link
+  // Template confirmação:  {1}=data, {2}=hora  (nome via {NOME_CONTATO} no template)
   const baseUrl = apiUrlOverride || env.whatsappApiUrl;
   const separator = baseUrl.includes('?') ? '&' : '?';
-  const qp = {
-    queryParams: 'true',
-    '1': dataAgendada || '-',
-    '2': horaAgendada || '-',
-  };
-  if (voucherUrl) {
-    qp['3'] = voucherUrl;
-  }
-  // Garante envio mesmo quando a conversa já está aberta no Duotalk
-  if (!baseUrl.includes('sendToOpen')) {
-    qp.sendToOpen = '1';
-  }
+  // voucherUrl é passado apenas para o template do voucher; confirmação não o passa.
+  // Template voucher:     body.name={NOME_CONTATO}, {2}=data, {3}=hora, {4}=link
+  // Template confirmação: body.name={NOME_CONTATO}, {1}=data, {2}=hora
+  const isVoucher = voucherUrl !== undefined;
+  const qp = isVoucher
+    ? { queryParams: 'true', '2': dataAgendada || '-', '3': horaAgendada || '-', '4': voucherUrl || '' }
+    : { queryParams: 'true', '1': dataAgendada || '-', '2': horaAgendada || '-' };
   const templateParams = new URLSearchParams(qp);
   const apiUrl = `${baseUrl}${separator}${templateParams.toString()}`;
   console.log(`[WHATSAPP] URL com query params: ${apiUrl}`);
