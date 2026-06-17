@@ -159,7 +159,10 @@ export async function processIncomingWhatsAppReply({ phone, text }) {
     return { handled: false, reason: "Telefone ausente ou inválido no webhook." };
   }
 
-  const agendamento = await prisma.agendamento.findFirst({
+  // Busca TODOS os agendamentos pendentes do telefone para resolver todos de uma vez.
+  // Assim uma única resposta "Sim" ou "Não" encerra todas as confirmações em aberto
+  // para este motorista, evitando que o watcher reenvie confirmações para registros antigos.
+  const pendentes = await prisma.agendamento.findMany({
     where: {
       whatsappConfirmacaoStatus: CONFIRMACAO_STATUS.PENDENTE,
       whatsappConfirmacaoTelefone: normalizedPhone,
@@ -167,67 +170,73 @@ export async function processIncomingWhatsAppReply({ phone, text }) {
     orderBy: { id: "desc" },
   });
 
-  if (!agendamento) {
+  if (!pendentes.length) {
     console.warn(`[WHATSAPP-REPLY] Nenhum agendamento PENDENTE encontrado para telefone=${normalizedPhone}. Pode indicar migração V14 não executada, status já alterado, ou telefone diferente do armazenado.`);
     return { handled: false, reason: "Nenhum agendamento com confirmação pendente para este telefone." };
   }
 
-  console.log(`[WHATSAPP-REPLY] Agendamento encontrado → id=${agendamento.id}, status=${agendamento.status}, whatsappConfirmacaoStatus=${agendamento.whatsappConfirmacaoStatus}`);
+  console.log(`[WHATSAPP-REPLY] ${pendentes.length} agendamento(s) PENDENTE(s) encontrado(s) para telefone=${normalizedPhone}: ids=[${pendentes.map((a) => a.id).join(', ')}]`);
   const normalizedText = normalizeReplyText(text);
   const now = new Date();
 
   if (AFFIRMATIVE_REGEX.test(normalizedText)) {
-    console.log(`[WHATSAPP-REPLY] Resposta AFIRMATIVA → atualizando para ACEITOU (agendamentoId=${agendamento.id})`);
-    await prisma.agendamento.update({
-      where: { id: Number(agendamento.id) },
-      data: {
-        whatsappConfirmacaoStatus: CONFIRMACAO_STATUS.ACEITOU,
-        whatsappConfirmacaoRespondidoEm: now,
-      },
-    });
+    console.log(`[WHATSAPP-REPLY] Resposta AFIRMATIVA → atualizando ${pendentes.length} agendamento(s) para ACEITOU`);
 
-    // Se o agendamento já estiver aprovado quando o motorista responder,
-    // envia o voucher imediatamente. Caso contrário aguarda a aprovação.
-    let sentVoucher = null;
-    const agendamentoStatusUpper = String(agendamento.status || '').toUpperCase();
-    if (VOUCHER_ALLOWED_STATUSES.has(agendamentoStatusUpper)) {
-      console.log(`[WHATSAPP-REPLY] Agendamento já ${agendamentoStatusUpper} → enviando voucher agora.`);
-      sentVoucher = await sendVoucherWhatsApp(agendamento);
-    } else {
-      console.log(`[WHATSAPP-REPLY] Agendamento ainda não aprovado (status=${agendamentoStatusUpper}) → voucher será enviado na aprovação.`);
+    let totalVouchersEnviados = 0;
+    for (const agendamento of pendentes) {
+      await prisma.agendamento.update({
+        where: { id: Number(agendamento.id) },
+        data: {
+          whatsappConfirmacaoStatus: CONFIRMACAO_STATUS.ACEITOU,
+          whatsappConfirmacaoRespondidoEm: now,
+        },
+      });
+
+      // Se já aprovado, envia voucher imediatamente; senão aguarda aprovação.
+      const agendamentoStatusUpper = String(agendamento.status || '').toUpperCase();
+      if (VOUCHER_ALLOWED_STATUSES.has(agendamentoStatusUpper)) {
+        console.log(`[WHATSAPP-REPLY] Agendamento id=${agendamento.id} já ${agendamentoStatusUpper} → enviando voucher agora.`);
+        const sentVoucher = await sendVoucherWhatsApp(agendamento);
+        if (sentVoucher?.ok) totalVouchersEnviados += 1;
+      } else {
+        console.log(`[WHATSAPP-REPLY] Agendamento id=${agendamento.id} ainda não aprovado (status=${agendamentoStatusUpper}) → voucher será enviado na aprovação.`);
+      }
+
+      await auditLog({
+        acao: "CONFIRMACAO_WHATSAPP_ACEITA",
+        entidade: "AGENDAMENTO",
+        entidadeId: agendamento.id,
+        detalhes: { telefone: normalizedPhone, texto: text, voucherEnviado: VOUCHER_ALLOWED_STATUSES.has(String(agendamento.status || '').toUpperCase()) },
+      });
     }
 
-    await auditLog({
-      acao: "CONFIRMACAO_WHATSAPP_ACEITA",
-      entidade: "AGENDAMENTO",
-      entidadeId: agendamento.id,
-      detalhes: { telefone: normalizedPhone, texto: text, voucherEnviado: !!sentVoucher?.ok },
-    });
-    return { handled: true, status: CONFIRMACAO_STATUS.ACEITOU, agendamentoId: agendamento.id, voucherEnviado: !!sentVoucher?.ok };
+    return { handled: true, status: CONFIRMACAO_STATUS.ACEITOU, agendamentosIds: pendentes.map((a) => a.id), vouchersEnviados: totalVouchersEnviados };
   }
 
   if (NEGATIVE_REGEX.test(normalizedText)) {
-    console.log(`[WHATSAPP-REPLY] Resposta NEGATIVA → atualizando para RECUSOU (agendamentoId=${agendamento.id})`);
-    await prisma.agendamento.update({
-      where: { id: Number(agendamento.id) },
-      data: {
-        whatsappConfirmacaoStatus: CONFIRMACAO_STATUS.RECUSOU,
-        whatsappConfirmacaoRespondidoEm: now,
-      },
-    });
-    await auditLog({
-      acao: "CONFIRMACAO_WHATSAPP_RECUSADA",
-      entidade: "AGENDAMENTO",
-      entidadeId: agendamento.id,
-      detalhes: { telefone: normalizedPhone, texto: text },
-    });
-    return { handled: true, status: CONFIRMACAO_STATUS.RECUSOU, agendamentoId: agendamento.id };
+    console.log(`[WHATSAPP-REPLY] Resposta NEGATIVA → atualizando ${pendentes.length} agendamento(s) para RECUSOU`);
+    for (const agendamento of pendentes) {
+      await prisma.agendamento.update({
+        where: { id: Number(agendamento.id) },
+        data: {
+          whatsappConfirmacaoStatus: CONFIRMACAO_STATUS.RECUSOU,
+          whatsappConfirmacaoRespondidoEm: now,
+        },
+      });
+      await auditLog({
+        acao: "CONFIRMACAO_WHATSAPP_RECUSADA",
+        entidade: "AGENDAMENTO",
+        entidadeId: agendamento.id,
+        detalhes: { telefone: normalizedPhone, texto: text },
+      });
+    }
+    return { handled: true, status: CONFIRMACAO_STATUS.RECUSOU, agendamentosIds: pendentes.map((a) => a.id) };
   }
 
   // Resposta não reconhecida: não altera o status, deixa o watcher
   // de timeout/reenvio decidir o que fazer.
   console.warn(`[WHATSAPP-REPLY] Resposta não reconhecida como sim/não → text="${text}", normalizedText="${normalizedText}"`);
-  return { handled: false, reason: "Resposta não reconhecida como sim/não.", agendamentoId: agendamento.id, texto: text };
+  return { handled: false, reason: "Resposta não reconhecida como sim/não.", agendamentosIds: pendentes.map((a) => a.id), texto: text };
 }
 
 /**
