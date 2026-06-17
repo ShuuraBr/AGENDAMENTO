@@ -407,27 +407,14 @@ function normalizeSpreadsheetRow(row = {}) {
 function applyEntradaVolumesToNotes(notas = [], volumeByEntrada = new Map()) {
   return (Array.isArray(notas) ? notas : []).map((nota) => {
     const entrada = normalizeCellValue(nota?.entrada || '');
-    if (!entrada) {
-      return {
-        ...nota,
-        volumes: 0,
-        volumeExibicao: 'Volume não identificado'
-      };
-    }
+    // Nota sem código de entrada (inserida manualmente): mantém os volumes salvos no banco.
+    if (!entrada) return nota;
     if (volumeByEntrada.has(entrada)) {
       const volumeDb = volumeByEntrada.get(entrada);
-      return {
-        ...nota,
-        volumes: volumeDb,
-        volumeExibicao: String(volumeDb)
-      };
+      return { ...nota, volumes: volumeDb, volumeExibicao: String(volumeDb) };
     }
-    // Não encontrado na tabela
-    return {
-      ...nota,
-      volumes: 0,
-      volumeExibicao: 'Volume não identificado'
-    };
+    // Entrada não encontrada na tabela de volumes: mantém os volumes salvos no banco como fallback.
+    return nota;
   });
 }
  

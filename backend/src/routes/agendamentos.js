@@ -1495,12 +1495,6 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
       const fullItem = await full(item.id);
       await sendFinanceAwarenessIfNeeded({ agendamento: fullItem || item, payload, actor: req.user });
       const notificacaoCriacao = await sendScheduleCreatedNotice(fullItem || item, req, req.user);
-      const normalizedForWhats = normalizeScheduleItem(fullItem || item);
-      if (normalizedForWhats?.telefoneMotorista) {
-        requestVoucherConfirmation(normalizedForWhats, { actor: req.user }).catch((err) => {
-          console.error('[WHATSAPP-CREATE] Falha ao enviar confirmação WhatsApp:', err?.message || err);
-        });
-      }
       return res.status(201).json(await enrichResponseItem({ ...(fullItem || item), notificacaoCriacao }));
     } catch (notifErr) {
       console.error('[EMAIL-CRIACAO] Erro ao enviar notificação pós-criação:', notifErr?.message || notifErr);
