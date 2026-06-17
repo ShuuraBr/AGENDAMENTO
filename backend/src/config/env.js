@@ -23,9 +23,9 @@ const ephemeralJwtSecret = crypto.randomBytes(64).toString("hex");
 export const env = {
   port: Number(process.env.PORT || 3000),
   nodeEnv: process.env.NODE_ENV || "development",
-  frontendUrl: process.env.FRONTEND_URL || "http://localhost:5173",
+  frontendUrl: process.env.FRONTEND_URL || "https://agenda.objetivaatacadista.com.br",
   jwtSecret: process.env.JWT_SECRET || ephemeralJwtSecret,
-  corsOrigins: process.env.CORS_ORIGINS || process.env.FRONTEND_URL || "http://localhost:5173",
+  corsOrigins: process.env.CORS_ORIGINS || process.env.FRONTEND_URL || "https://agenda.objetivaatacadista.com.br",
   smtpHost: process.env.SMTP_HOST || "",
   smtpPort: Number(process.env.SMTP_PORT || 465),
   smtpSecure: String(process.env.SMTP_SECURE || "true") === "true",
