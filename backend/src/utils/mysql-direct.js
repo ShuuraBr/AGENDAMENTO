@@ -51,7 +51,7 @@ function getMysqlConfig() {
       connectionLimit: Number(process.env.MYSQL_DIRECT_POOL_LIMIT || 5),
       queueLimit: 0,
       namedPlaceholders: false,
-      timezone: 'Z'
+      timezone: 'local'
     };
   } catch {
     return null;
@@ -83,6 +83,13 @@ export async function getMysqlPool() {
     mysqlPoolPromise = (async () => {
       const mysql = await loadMysqlModule();
       const pool = mysql.createPool(getMysqlConfig());
+      // Define o timezone da sessão MySQL como BRT para que CURRENT_TIMESTAMP
+      // grave horário de Brasília em vez de UTC.
+      pool.on('connection', (connection) => {
+        connection.query("SET time_zone = 'America/Sao_Paulo'", (err) => {
+          if (err) console.error('[MYSQL] Falha ao definir time_zone:', err?.message || err);
+        });
+      });
       await pool.query('SELECT 1');
       return pool;
     })().catch((error) => {
