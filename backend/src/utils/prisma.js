@@ -58,9 +58,10 @@ function snakeToCamel(value = '') {
 function formatDateOnly(value) {
   if (value == null || value === '') return value;
   if (value instanceof Date) {
-    const year = value.getFullYear();
-    const month = String(value.getMonth() + 1).padStart(2, '0');
-    const day = String(value.getDate()).padStart(2, '0');
+    // Usa métodos UTC porque mysql2 com timezone:'Z' retorna Date em UTC.
+    const year = value.getUTCFullYear();
+    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(value.getUTCDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
   }
   const raw = String(value);
@@ -71,7 +72,8 @@ function formatDateOnly(value) {
 function formatTimeOnly(value) {
   if (value == null || value === '') return value;
   if (value instanceof Date) {
-    return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}:${String(value.getSeconds()).padStart(2, '0')}`;
+    // Usa métodos UTC porque mysql2 com timezone:'Z' retorna Date em UTC.
+    return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}:${String(value.getUTCSeconds()).padStart(2, '0')}`;
   }
   const raw = String(value).trim();
   if (/^\d{2}:\d{2}$/.test(raw)) return `${raw}:00`;
@@ -82,12 +84,30 @@ function formatDateTime(value) {
   if (value == null || value === '') return value;
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  const seconds = String(date.getSeconds()).padStart(2, '0');
+  // Usa métodos UTC porque mysql2 com timezone:'Z' retorna Date em UTC.
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+// Para timestamps gerados pelo sistema (createdAt, updatedAt, etc.) armazenados em UTC,
+// converte para horário de Brasília (BRT = UTC-3) na exibição.
+// Brasil não tem horário de verão desde 2019, então o offset é sempre -3h.
+function formatDateTimeBRT(value) {
+  if (value == null || value === '') return value;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const brt = new Date(date.getTime() - 3 * 60 * 60 * 1000);
+  const year = brt.getUTCFullYear();
+  const month = String(brt.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(brt.getUTCDate()).padStart(2, '0');
+  const hours = String(brt.getUTCHours()).padStart(2, '0');
+  const minutes = String(brt.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(brt.getUTCSeconds()).padStart(2, '0');
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
@@ -203,6 +223,12 @@ function normalizeRow(modelName, row = {}) {
     if (!(key in normalized)) normalized[key] = value;
   }
 
+  // Timestamps automáticos do sistema são armazenados em UTC pelo mysql2 (timezone:'Z').
+  // Converte para BRT (UTC-3) na leitura para exibição correta no Brasil.
+  for (const tsField of ['createdAt', 'updatedAt', 'importedAt']) {
+    if (normalized[tsField] instanceof Date) normalized[tsField] = formatDateTimeBRT(normalized[tsField]);
+  }
+
   if (modelName === 'fornecedor' || modelName === 'transportadora') {
     if (!normalized.nome && normalized.razaoSocial) normalized.nome = normalized.razaoSocial;
   }
@@ -215,10 +241,18 @@ function normalizeRow(modelName, row = {}) {
     else if (normalized.dataAgendada) normalized.dataAgendada = formatDateOnly(normalized.dataAgendada);
     if (normalized.horaAgendada) normalized.horaAgendada = formatTimeOnly(normalized.horaAgendada).slice(0, 5);
     if (normalized.chegadaRealEm && !normalized.checkinEm) normalized.checkinEm = normalized.chegadaRealEm;
+    // Timestamps operacionais do agendamento também em BRT
+    for (const tsField of ['aprovadoEm', 'canceladoEm', 'checkinEm', 'chegadaRealEm', 'inicioDescargaEm', 'fimDescargaEm', 'lgpdConsentAt', 'whatsappConfirmacaoEnviadoEm', 'whatsappConfirmacaoUltimoEnvioEm', 'whatsappConfirmacaoRespondidoEm', 'voucherWhatsappEnviadoEm']) {
+      if (normalized[tsField] instanceof Date) normalized[tsField] = formatDateTimeBRT(normalized[tsField]);
+    }
+  }
+  if (modelName === 'logAuditoria') {
+    if (normalized.createdAt instanceof Date) normalized.createdAt = formatDateTimeBRT(normalized.createdAt);
   }
   if (modelName === 'usuario') {
     if (!normalized.senhaHash && normalized.senha_hash) normalized.senhaHash = normalized.senha_hash;
     if (typeof normalized.perfil === 'string') normalized.perfilNome = normalized.perfil;
+    if (normalized.ultimoLoginEm instanceof Date) normalized.ultimoLoginEm = formatDateTimeBRT(normalized.ultimoLoginEm);
   }
   return normalized;
 }
