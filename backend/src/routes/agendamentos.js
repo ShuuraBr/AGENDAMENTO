@@ -1104,16 +1104,20 @@ async function sendApprovalNotifications(item, req) {
       console.log('[WHATSAPP-APPROVAL] Status RECUSOU → voucher WhatsApp NÃO enviado (email enviado normalmente).');
       results.push({ tipo: "whatsapp-voucher-motorista", skipped: true, reason: "Motorista recusou receber mensagens via WhatsApp." });
     } else if (confirmacaoStatus === CONFIRMACAO_STATUS.PENDENTE) {
-      // Confirmação enviada na criação mas ainda sem resposta.
+      // Confirmação enviada na criação, ainda aguardando resposta.
       // O voucher será enviado pelo webhook quando o motorista responder "sim".
       console.log('[WHATSAPP-APPROVAL] Status PENDENTE → voucher será enviado após resposta do motorista.');
       results.push({ tipo: "whatsapp-voucher-motorista", skipped: true, reason: "Aguardando resposta do motorista à confirmação WhatsApp." });
-    } else {
-      // Sem confirmação prévia (agendamento criado antes desta funcionalidade ou migração não executada).
-      // Envia a confirmação agora.
-      console.log(`[WHATSAPP-APPROVAL] Status vazio/desconhecido ("${confirmacaoStatus}") → enviando confirmação. ATENÇÃO: verifique se a migração V14 foi executada.`);
+    } else if (confirmacaoStatus === CONFIRMACAO_STATUS.SEM_CONTATO) {
+      // Motorista não respondeu antes da aprovação — reenvia a confirmação.
+      console.log('[WHATSAPP-APPROVAL] Status SEM_CONTATO → reenviando confirmação ao aprovar.');
       const sentConfirmacao = await requestVoucherConfirmation(normalizedItem, { actor: req.user });
       results.push({ tipo: "whatsapp-confirmacao-motorista", to: normalizedItem.telefoneMotorista, ...sentConfirmacao });
+    } else {
+      // Status nulo/vazio: confirmação já foi enviada na criação (ou migração V14 não executada).
+      // Não reenvia — aguarda a resposta que chegará pelo webhook.
+      console.log(`[WHATSAPP-APPROVAL] Status "${confirmacaoStatus || 'vazio'}" → confirmação enviada na criação, aguardando resposta. Se isso for inesperado, verifique se a migração V14 foi executada.`);
+      results.push({ tipo: "whatsapp-voucher-motorista", skipped: true, reason: "Confirmação já enviada na criação do agendamento." });
     }
   } else {
     console.log('[WHATSAPP-APPROVAL] telefoneMotorista vazio — WhatsApp NÃO enviado.');
@@ -1495,6 +1499,12 @@ router.post("/", requirePermission("agendamentos.create"), async (req, res) => {
       const fullItem = await full(item.id);
       await sendFinanceAwarenessIfNeeded({ agendamento: fullItem || item, payload, actor: req.user });
       const notificacaoCriacao = await sendScheduleCreatedNotice(fullItem || item, req, req.user);
+      const normalizedForWhats = normalizeScheduleItem(fullItem || item);
+      if (normalizedForWhats?.telefoneMotorista) {
+        requestVoucherConfirmation(normalizedForWhats, { actor: req.user }).catch((err) => {
+          console.error('[WHATSAPP-CREATE] Falha ao enviar confirmação WhatsApp:', err?.message || err);
+        });
+      }
       return res.status(201).json(await enrichResponseItem({ ...(fullItem || item), notificacaoCriacao }));
     } catch (notifErr) {
       console.error('[EMAIL-CRIACAO] Erro ao enviar notificação pós-criação:', notifErr?.message || notifErr);
