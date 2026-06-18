@@ -23,9 +23,9 @@ function formatCpf(value) {
 function formatDateBR(value) {
   if (!value) return '-';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const year = String(value.getUTCFullYear());
-    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(value.getUTCDate()).padStart(2, '0');
+    const year = String(value.getFullYear());
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
     return `${day}/${month}/${year}`;
   }
   const raw = String(value).trim();
@@ -43,7 +43,16 @@ function parseJanelaCodigo(codigo = '') {
 
 function normalizeVoucherAgendamento(agendamento = {}) {
   const janelaCodigo = agendamento?.janela?.codigo || agendamento?.janela || '';
-  const horaAgendada = parseJanelaCodigo(janelaCodigo).horaInicio || String(agendamento?.horaAgendada || '').trim() || '';
+  // Prioriza horaAgendada do DB; fallback para hora de início da janela
+  const rawHoraValue = agendamento?.horaAgendada;
+  let horaFromField = '';
+  if (rawHoraValue instanceof Date && !Number.isNaN(rawHoraValue.getTime())) {
+    horaFromField = `${String(rawHoraValue.getHours()).padStart(2, '0')}:${String(rawHoraValue.getMinutes()).padStart(2, '0')}`;
+  } else {
+    const matchHora = String(rawHoraValue || '').trim().match(/^(\d{2}:\d{2})/);
+    horaFromField = matchHora ? matchHora[1] : '';
+  }
+  const horaAgendada = horaFromField || parseJanelaCodigo(janelaCodigo).horaInicio || '';
   return { ...agendamento, horaAgendada, dataAgendada: agendamento?.dataAgendada || '' };
 }
 

@@ -43,6 +43,9 @@ function formatDateBR(value) {
 
 function formatHourLabel(value) {
   if (!value) return "-";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
+  }
   const raw = String(value).trim();
   const match = raw.match(/^(\d{2}):(\d{2})/);
   return match ? `${match[1]}:${match[2]}` : raw || "-";

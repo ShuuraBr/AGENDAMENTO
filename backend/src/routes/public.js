@@ -130,14 +130,14 @@ function normalizeScheduleDateValue(value) {
 function normalizeScheduleTimeValue(value) {
   if (!value) return "";
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}`;
+    return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
   }
   const raw = String(value).trim();
   const match = raw.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
   if (match) return `${match[1]}:${match[2]}`;
   const native = new Date(raw);
   if (!Number.isNaN(native.getTime())) {
-    return `${String(native.getUTCHours()).padStart(2, '0')}:${String(native.getUTCMinutes()).padStart(2, '0')}`;
+    return `${String(native.getHours()).padStart(2, '0')}:${String(native.getMinutes()).padStart(2, '0')}`;
   }
   return raw;
 }
