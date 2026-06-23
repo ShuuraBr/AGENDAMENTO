@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { processIncomingWhatsAppReply } from "../utils/whatsapp-voucher-confirmation.js";
+import { processarRespostaSupervisor } from "../utils/relatorio-supervisores.js";
 import { env } from "../config/env.js";
 
 const router = Router();
@@ -52,9 +53,12 @@ function extractPhoneAndText(body = {}) {
 router.post("/whatsapp", async (req, res) => {
   // Responde rápido — o provedor espera 200 OK em pouco tempo.
   try {
-    if (env.whatsappWebhookSecret) {
+    if (env.whatsappWebhookSecret || env.whatsappWebhookSecret2) {
       const provided = req.query?.secret || req.headers["x-webhook-secret"];
-      if (provided !== env.whatsappWebhookSecret) {
+      const valid =
+        (env.whatsappWebhookSecret  && provided === env.whatsappWebhookSecret) ||
+        (env.whatsappWebhookSecret2 && provided === env.whatsappWebhookSecret2);
+      if (!valid) {
         return res.status(401).json({ ok: false, message: "Webhook secret inválido." });
       }
     }
@@ -67,6 +71,13 @@ router.post("/whatsapp", async (req, res) => {
       return res.status(200).json({ ok: true, handled: false, reason: "Telefone não encontrado no payload." });
     }
 
+    // Tenta primeiro como resposta de opt-in de supervisor.
+    const supervisorResult = processarRespostaSupervisor({ phone, text });
+    if (supervisorResult.handled) {
+      return res.status(200).json({ ok: true, ...supervisorResult });
+    }
+
+    // Caso contrário, processa como resposta de motorista (voucher/confirmação).
     const result = await processIncomingWhatsAppReply({ phone, text });
     return res.status(200).json({ ok: true, ...result });
   } catch (error) {
