@@ -3885,6 +3885,7 @@
         payload.pesoTotalKg = parseNumberBR(byId('internalPesoTotalKg')?.value || 0);
         payload.valorTotalNf = parseNumberBR(byId('internalValorTotalNf')?.value || 0);
         if (!payload.fornecedor && !payload.fornecedorPendenteInterno) throw new Error('Selecione ou informe um fornecedor.');
+        if (!payload.telefoneMotorista) throw new Error('Telefone do motorista é obrigatório.');
         // Permite agendamento com 0 NFs (fornecedor manual / sem relatório)
         delete payload.fornecedorPendenteInterno;
         const awareness = await confirmAwarenessForPayload(payload);
@@ -4006,6 +4007,7 @@
         const payload = Object.fromEntries(new FormData(e.target).entries());
         payload.cpfMotorista = String(payload.cpfMotorista || '').replace(/\D/g, '');
         payload.telefoneMotorista = String(payload.telefoneMotorista || '').replace(/\D/g, '');
+        if (!payload.telefoneMotorista) throw new Error('Telefone do motorista é obrigatório.');
         payload.dataAgendada = normalizeDateToIso(payload.dataAgendada);
         payload.horaAgendada = formatHour(payload.horaAgendada);
         payload.lgpdConsent = !!e.target.querySelector('[name="lgpdConsent"]')?.checked;
