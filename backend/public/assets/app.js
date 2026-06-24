@@ -1978,11 +1978,13 @@
         if (dueA !== dueB) return dueA - dueB;
         return String(a.numeroNf || '').localeCompare(String(b.numeroNf || ''), 'pt-BR');
       });
+      const searchTermNormalized = searchTerm.replace(/\./g, '');
       const notas = searchTerm
         ? notasOrdenadas.filter((nota) => {
             const numero = String(nota.numeroNf || '').toLowerCase();
             const serie = String(nota.serie || '').toLowerCase();
-            return numero.includes(searchTerm) || serie.includes(searchTerm);
+            const numeroNormalized = numero.replace(/\./g, '');
+            return numero.includes(searchTerm) || numeroNormalized.includes(searchTermNormalized) || serie.includes(searchTerm);
           })
         : notasOrdenadas;
       return { fornecedor, nomeFornecedor, notas };
