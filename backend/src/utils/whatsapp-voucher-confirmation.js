@@ -22,6 +22,29 @@ import { env } from "../config/env.js";
 export const RESEND_AFTER_MS = 20 * 60 * 1000;
 export const TIMEOUT_AFTER_MS = 40 * 60 * 1000;
 
+// Intervalo mínimo entre vouchers para o mesmo telefone (evita duplicatas por race condition).
+const VOUCHER_DEDUP_MS = 5 * 60 * 1000;
+
+// Locks in-memory por telefone para serializar envios concorrentes.
+// Impede que múltiplos agendamentos criados simultaneamente disparem múltiplas confirmações.
+const confirmacaoLocks = new Map(); // phone → Promise
+const voucherLocks = new Map();     // phone → Promise
+
+async function withPhoneLock(lockMap, phone, fn) {
+  // Aguarda lock anterior do mesmo telefone terminar
+  const prev = lockMap.get(phone);
+  if (prev) await prev.catch(() => {});
+  let release;
+  const lock = new Promise((res) => { release = res; });
+  lockMap.set(phone, lock);
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (lockMap.get(phone) === lock) lockMap.delete(phone);
+  }
+}
+
 export const CONFIRMACAO_STATUS = {
   PENDENTE: "PENDENTE",
   ACEITOU: "ACEITOU",
@@ -75,8 +98,14 @@ export async function requestVoucherConfirmation(agendamento, { actor } = {}) {
   if (!telefone) {
     return { sent: false, reason: "Não há telefone do motorista cadastrado." };
   }
-
   const normalizedPhone = normalizePhone(telefone);
+  return withPhoneLock(confirmacaoLocks, normalizedPhone, () =>
+    _requestVoucherConfirmacaoLocked(agendamento, normalizedPhone, { actor })
+  );
+}
+
+async function _requestVoucherConfirmacaoLocked(agendamento, normalizedPhone, { actor } = {}) {
+  const telefone = agendamento.telefoneMotorista;
   const now = new Date();
 
   // Se já existe outra confirmação PENDENTE para este telefone, não envia nova mensagem.
@@ -148,6 +177,37 @@ const VOUCHER_ALLOWED_STATUSES = new Set(["APROVADO", "CHEGOU", "EM_DESCARGA", "
 /** Envia de fato o voucher pelo WhatsApp (usado após a confirmação "sim"). */
 export async function sendVoucherWhatsApp(agendamento) {
   const telefone = agendamento.telefoneMotorista;
+  if (!telefone) return { sent: false, ok: false, reason: "Sem telefone." };
+  const normalizedPhone = normalizePhone(telefone);
+  return withPhoneLock(voucherLocks, normalizedPhone, () =>
+    _sendVoucherWhatsAppLocked(agendamento, normalizedPhone)
+  );
+}
+
+async function _sendVoucherWhatsAppLocked(agendamento, normalizedPhone) {
+  const telefone = agendamento.telefoneMotorista;
+
+  // Deduplicação: não envia se outro agendamento para o mesmo telefone recebeu voucher recentemente.
+  const cutoff = new Date(Date.now() - VOUCHER_DEDUP_MS);
+  const recentVoucher = await prisma.agendamento.findFirst({
+    where: {
+      whatsappConfirmacaoTelefone: normalizedPhone,
+      voucherWhatsappEnviado: 1,
+      voucherWhatsappEnviadoEm: { gte: cutoff },
+      id: { not: Number(agendamento.id) },
+    },
+    select: { id: true },
+  });
+
+  if (recentVoucher) {
+    console.log(`[WHATSAPP-VOUCHER] Voucher já enviado recentemente (agendamento id=${recentVoucher.id}) para telefone=${normalizedPhone}. Marcando agendamento id=${agendamento.id} sem reenviar.`);
+    await prisma.agendamento.update({
+      where: { id: Number(agendamento.id) },
+      data: { voucherWhatsappEnviado: 1, voucherWhatsappEnviadoEm: new Date() },
+    });
+    return { ok: false, sent: false, reason: `Voucher já enviado recentemente para este telefone (agendamento id=${recentVoucher.id}).` };
+  }
+
   const voucherUrl = buildVoucherUrl(agendamento);
   const nome = agendamento.motorista || agendamento.nomeMotorista || "Motorista";
   const dataAgendada = formatDateBR(agendamento?.dataAgendada);
@@ -221,7 +281,7 @@ export async function processIncomingWhatsAppReply({ phone, text }) {
   if (AFFIRMATIVE_REGEX.test(normalizedText)) {
     console.log(`[WHATSAPP-REPLY] Resposta AFIRMATIVA → atualizando ${pendentes.length} agendamento(s) para ACEITOU`);
 
-    let totalVouchersEnviados = 0;
+    // Marca todos como ACEITOU
     for (const agendamento of pendentes) {
       await prisma.agendamento.update({
         where: { id: Number(agendamento.id) },
@@ -230,22 +290,31 @@ export async function processIncomingWhatsAppReply({ phone, text }) {
           whatsappConfirmacaoRespondidoEm: now,
         },
       });
+    }
 
-      // Se já aprovado, envia voucher imediatamente; senão aguarda aprovação.
-      const agendamentoStatusUpper = String(agendamento.status || '').toUpperCase();
-      if (VOUCHER_ALLOWED_STATUSES.has(agendamentoStatusUpper)) {
-        console.log(`[WHATSAPP-REPLY] Agendamento id=${agendamento.id} já ${agendamentoStatusUpper} → enviando voucher agora.`);
-        const sentVoucher = await sendVoucherWhatsApp(agendamento);
-        if (sentVoucher?.ok) totalVouchersEnviados += 1;
-      } else {
-        console.log(`[WHATSAPP-REPLY] Agendamento id=${agendamento.id} ainda não aprovado (status=${agendamentoStatusUpper}) → voucher será enviado na aprovação.`);
+    // Envia voucher apenas para o agendamento APROVADO mais recente.
+    // Os demais receberão o voucher individualmente na aprovação via sendApprovalNotifications.
+    // Isso evita que N agendamentos aprovados gerem N vouchers simultâneos para o mesmo telefone.
+    const aprovados = pendentes.filter((a) => VOUCHER_ALLOWED_STATUSES.has(String(a.status || '').toUpperCase()));
+    aprovados.sort((a, b) => Number(b.id) - Number(a.id)); // mais recente primeiro
+    let totalVouchersEnviados = 0;
+
+    if (aprovados.length > 0) {
+      const principal = aprovados[0];
+      console.log(`[WHATSAPP-REPLY] ${aprovados.length} agendamento(s) aprovado(s). Enviando voucher apenas para o mais recente: id=${principal.id}.`);
+      const sentVoucher = await sendVoucherWhatsApp(principal);
+      if (sentVoucher?.ok) totalVouchersEnviados = 1;
+      if (aprovados.length > 1) {
+        console.log(`[WHATSAPP-REPLY] Demais aprovados (ids=[${aprovados.slice(1).map((a) => a.id).join(', ')}]) marcados sem reenvio de voucher — já contam com confirmação.`);
       }
+    }
 
+    for (const agendamento of pendentes) {
       await auditLog({
         acao: "CONFIRMACAO_WHATSAPP_ACEITA",
         entidade: "AGENDAMENTO",
         entidadeId: agendamento.id,
-        detalhes: { telefone: normalizedPhone, texto: text, voucherEnviado: VOUCHER_ALLOWED_STATUSES.has(String(agendamento.status || '').toUpperCase()) },
+        detalhes: { telefone: normalizedPhone, texto: text, voucherEnviado: agendamento.id === aprovados[0]?.id },
       });
     }
 
