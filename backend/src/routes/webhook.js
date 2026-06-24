@@ -71,13 +71,23 @@ router.post("/whatsapp", async (req, res) => {
       return res.status(200).json({ ok: true, handled: false, reason: "Telefone não encontrado no payload." });
     }
 
-    // Tenta primeiro como resposta de opt-in de supervisor.
-    const supervisorResult = processarRespostaSupervisor({ phone, text });
-    if (supervisorResult.handled) {
-      return res.status(200).json({ ok: true, ...supervisorResult });
+    // Detecta se a resposta veio do template de confirmação de voucher (motorista).
+    // O Duotalk inclui "intencao" e "templateTitle" no payload para identificar o template.
+    // Quando é "Recebimento", a resposta pertence ao fluxo de voucher — não ao opt-in de supervisor.
+    const intencao = String(req.body?.intencao || req.body?.operador || '');
+    const isVoucherFlow = /recebimento/i.test(intencao) ||
+      /recebimento/i.test(String(req.body?.templateTitle || '')) ||
+      /tp_recebimento/i.test(String(req.body?.templateName || ''));
+
+    if (!isVoucherFlow) {
+      // Tenta primeiro como resposta de opt-in de supervisor.
+      const supervisorResult = processarRespostaSupervisor({ phone, text });
+      if (supervisorResult.handled) {
+        return res.status(200).json({ ok: true, ...supervisorResult });
+      }
     }
 
-    // Caso contrário, processa como resposta de motorista (voucher/confirmação).
+    // Processa como resposta de motorista (voucher/confirmação).
     const result = await processIncomingWhatsAppReply({ phone, text });
     return res.status(200).json({ ok: true, ...result });
   } catch (error) {

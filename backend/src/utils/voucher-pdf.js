@@ -64,14 +64,60 @@ async function qrDataUrl(text) {
   return QRCode.toDataURL(text, { margin: 1, errorCorrectionLevel: 'M', width: 220 });
 }
 
+// ── Constantes de layout dos campos ─────────────────────────────────────────
+const VALUE_FONT_SIZE = 9;   // fonte fixa e legível para valores
+const LABEL_FONT_SIZE = 8.5;
+const MIN_BOX_H = 22;        // altura mínima da caixa
+const BOX_PAD_V = 8;         // padding vertical interno (4px cima + 4px baixo)
+const BOX_PAD_H = 7;         // padding horizontal interno
+const LABEL_H = 14;          // espaço reservado acima da caixa para o label
+const FIELD_GAP = 6;         // espaço entre campos da mesma coluna
+
+// Retorna a altura necessária para o valor caber com quebra de linha na largura dada
+function calcBoxH(doc, value, textW) {
+  doc.font('Helvetica-Bold').fontSize(VALUE_FONT_SIZE);
+  const textH = doc.heightOfString(String(value || '-'), { width: textW });
+  return Math.max(MIN_BOX_H, Math.ceil(textH) + BOX_PAD_V);
+}
+
+// Calcula a altura total de uma coluna sem renderizar (para dimensionar o card pai)
+function measureColumnH(doc, fields, colW) {
+  const textW = colW - BOX_PAD_H * 2;
+  return fields.reduce((acc, { value }, i) => {
+    return acc + LABEL_H + calcBoxH(doc, value, textW) + (i < fields.length - 1 ? FIELD_GAP : 0);
+  }, 0);
+}
+
+// Renderiza uma coluna de campos e retorna a Y final
+function renderColumn(doc, fields, colX, colW, startY) {
+  const textW = colW - BOX_PAD_H * 2;
+  let y = startY;
+  fields.forEach(({ label, value }, i) => {
+    const text  = String(value || '-');
+    const boxH  = calcBoxH(doc, value, textW);
+
+    doc.font('Helvetica').fontSize(LABEL_FONT_SIZE).fillColor('#334155')
+      .text(label, colX, y, { lineBreak: false });
+
+    doc.roundedRect(colX, y + LABEL_H, colW, boxH, 4)
+      .fillAndStroke('#f1f5f9', '#c5cdd8');
+
+    doc.font('Helvetica-Bold').fontSize(VALUE_FONT_SIZE).fillColor('#0f172a')
+      .text(text, colX + BOX_PAD_H, y + LABEL_H + 4, { width: textW, lineBreak: true });
+
+    y += LABEL_H + boxH + (i < fields.length - 1 ? FIELD_GAP : 0);
+  });
+  return y;
+}
+
 export async function generateVoucherPdf(agendamento, options = {}) {
   const normalized = normalizeVoucherAgendamento(agendamento);
   const baseUrl = options.baseUrl || `http://localhost:${process.env.PORT || 3000}`;
-  const checkinToken = normalized.checkinToken || '';
+  const checkinToken  = normalized.checkinToken || '';
   const checkoutToken = normalized.checkoutToken || '';
-  const checkinUrl = `${baseUrl}/?view=checkin&id=${encodeURIComponent(normalized.id)}&token=${encodeURIComponent(checkinToken)}`;
+  const checkinUrl  = `${baseUrl}/?view=checkin&id=${encodeURIComponent(normalized.id)}&token=${encodeURIComponent(checkinToken)}`;
   const checkoutUrl = `${baseUrl}/?view=checkout&id=${encodeURIComponent(normalized.id)}&token=${encodeURIComponent(checkoutToken)}`;
-  const qrCheckin = await qrDataUrl(checkinUrl);
+  const qrCheckin  = await qrDataUrl(checkinUrl);
   const qrCheckout = await qrDataUrl(checkoutUrl);
   const logo = loadLogo();
 
@@ -79,151 +125,157 @@ export async function generateVoucherPdf(agendamento, options = {}) {
   const chunks = [];
   doc.on('data', (chunk) => chunks.push(chunk));
 
-  const W = doc.page.width;   // 595.28
+  const W   = doc.page.width;   // 595.28
   const PAD = 28;
-  const CW = W - PAD * 2;    // 539.28
+  const CW  = W - PAD * 2;     // 539.28
 
   // ── HEADER ──────────────────────────────────────────────────────────────────
-  const HDR_H = 90;
+  const HDR_H = 84;
   doc.rect(0, 0, W, HDR_H).fill('#0f2a4d');
+  if (logo) doc.image(logo, PAD, 18, { fit: [148, 44] });
 
-  if (logo) doc.image(logo, PAD, 20, { fit: [148, 44] });
-
-  // Title: two explicit lines to prevent accidental wrapping collision
   const titleX = 238;
   const titleW = W - titleX - PAD;
   doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(16)
-    .text('Voucher Operacional de', titleX, 18, { width: titleW, align: 'right', lineBreak: false });
+    .text('Voucher de Agendamento', titleX, 15, { width: titleW, align: 'right', lineBreak: false });
   doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(16)
-    .text('Agendamento', titleX, 38, { width: titleW, align: 'right', lineBreak: false });
-  doc.fillColor('#cbd5e1').font('Helvetica').fontSize(8.5)
-    .text(`Protocolo: ${normalized.protocolo || '-'}`, titleX, 64, { width: titleW, align: 'right', lineBreak: false });
+    .text('de descarga', titleX, 35, { width: titleW, align: 'right', lineBreak: false });
+  doc.fillColor('#cbd5e1').font('Helvetica-Bold').fontSize(9)
+    .text(`Protocolo: ${normalized.protocolo || '-'}`, titleX, 60, { width: titleW, align: 'right', lineBreak: false });
 
   // ── SECTION 1: DADOS PRINCIPAIS ─────────────────────────────────────────────
   //
-  // 15 campos em grid 2 colunas, 8 linhas (7 pares + 1 solo)
-  // ROW_H = 32px → garante espaço para label + valor sem sobrepor
+  // Col 1 (esq): Status | Transportadora | CPF do motorista | Motorista | Placa
+  // Col 2 (cen): Fornecedor(es) | Token do motorista | Token Fornecedor | Qtd Volumes
+  // Col 3 (dir): Data agendada | Doca | Hora | Janela | Qtd notas | Peso total
   //
-  const ROW_H = 32;
-  const FIELD_ROWS = 8; // ceil(15/2)
+  const INNER_X = PAD + 16;
+  const INNER_W = CW - 32;
+  const COL_GAP = 10;
+  const COL_W   = Math.floor((INNER_W - COL_GAP * 2) / 3);  // ≈ 162
+  const COL1X   = INNER_X;
+  const COL2X   = INNER_X + COL_W + COL_GAP;
+  const COL3X   = INNER_X + (COL_W + COL_GAP) * 2;
+
+  const col1Fields = [
+    { label: 'Status',           value: normalized.status || '-' },
+    { label: 'Transportadora',   value: normalized.transportadora || '-' },
+    { label: 'CPF do motorista', value: formatCpf(normalized.cpfMotorista) },
+    { label: 'Motorista',        value: normalized.motorista || '-' },
+    { label: 'Placa',            value: normalized.placa || '-' },
+  ];
+
+  const col2Fields = [
+    { label: 'Fornecedor(es)',        value: normalized.fornecedor || '-' },
+    { label: 'Token do motorista',    value: normalized.publicTokenMotorista || '-' },
+    { label: 'Token do Fornecedor',   value: normalized.publicTokenFornecedor || '-' },
+    { label: 'Quantidade de Volumes', value: formatNumberBR(normalized.quantidadeVolumes || 0) },
+  ];
+
+  const col3Fields = [
+    { label: 'Data agendada',       value: formatDateBR(normalized.dataAgendada) },
+    { label: 'Doca',                value: normalized.doca?.codigo || normalized.doca || 'A DEFINIR' },
+    { label: 'Hora',                value: normalized.horaAgendada || '-' },
+    { label: 'Janela',              value: normalized.janela?.codigo || normalized.janela || '-' },
+    { label: 'Quantidade de notas', value: String(normalized.quantidadeNotas ?? 0) },
+    { label: 'Peso total',          value: formatWeightKg(normalized.pesoTotalKg || 0) },
+  ];
+
+  // Altura da seção ditada pela coluna mais alta
+  const colH1 = measureColumnH(doc, col1Fields, COL_W);
+  const colH2 = measureColumnH(doc, col2Fields, COL_W);
+  const colH3 = measureColumnH(doc, col3Fields, COL_W);
+  const S1ContentH = Math.max(colH1, colH2, colH3);
   const S1Y = HDR_H + 14;
-  const S1H = 48 + FIELD_ROWS * ROW_H + 10; // = 314
+  const S1H = 38 + S1ContentH + 18;
 
   doc.roundedRect(PAD, S1Y, CW, S1H, 10).fillAndStroke('#f8fafc', '#dbe2ea');
   doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(12)
-    .text('Dados principais', PAD + 16, S1Y + 14, { lineBreak: false });
-  doc.moveTo(PAD + 16, S1Y + 35).lineTo(PAD + CW - 16, S1Y + 35)
+    .text('Dados principais:', PAD + 16, S1Y + 14, { lineBreak: false });
+  doc.moveTo(PAD + 16, S1Y + 34).lineTo(PAD + CW - 16, S1Y + 34)
     .strokeColor('#dbe2ea').lineWidth(0.8).stroke();
 
-  const COL1X = PAD + 16;
-  const COL2X = PAD + Math.round(CW / 2) + 6;
-  const COL_W = Math.round(CW / 2) - 22;
-
-  const fields = [
-    ['Status',                 normalized.status || '-'],
-    ['Fornecedor',             normalized.fornecedor || '-'],
-    ['Transportadora',         normalized.transportadora || '-'],
-    ['Motorista',              normalized.motorista || '-'],
-    ['CPF do motorista',       formatCpf(normalized.cpfMotorista)],
-    ['Placa',                  normalized.placa || '-'],
-    ['Data agendada',          formatDateBR(normalized.dataAgendada)],
-    ['Hora',                   normalized.horaAgendada || '-'],
-    ['Doca',                   normalized.doca?.codigo || normalized.doca || 'A DEFINIR'],
-    ['Janela',                 normalized.janela?.codigo || normalized.janela || '-'],
-    ['Token do motorista',     normalized.publicTokenMotorista || '-'],
-    ['Token do fornecedor',    normalized.publicTokenFornecedor || '-'],
-    ['Quantidade de notas',    String(normalized.quantidadeNotas ?? 0)],
-    ['Quantidade de volumes',  formatNumberBR(normalized.quantidadeVolumes || 0, 0, 3)],
-    ['Peso total',             formatWeightKg(normalized.pesoTotalKg || 0)]
-  ];
-
-  let fY = S1Y + 44;
-  fields.forEach((entry, index) => {
-    const x = index % 2 === 0 ? COL1X : COL2X;
-    doc.font('Helvetica').fontSize(7).fillColor('#64748b')
-      .text(entry[0], x, fY, { width: COL_W, lineBreak: false });
-    doc.font('Helvetica-Bold').fontSize(9.5).fillColor('#0f172a')
-      .text(String(entry[1] || '-'), x, fY + 10, { width: COL_W, lineBreak: false, ellipsis: true });
-    if (index % 2 === 1) fY += ROW_H;
-  });
+  const fY = S1Y + 38;
+  renderColumn(doc, col1Fields, COL1X, COL_W, fY);
+  renderColumn(doc, col2Fields, COL2X, COL_W, fY);
+  renderColumn(doc, col3Fields, COL3X, COL_W, fY);
 
   // ── SECTION 2: NOTAS FISCAIS E OBSERVAÇÕES ──────────────────────────────────
-  const S2Y = S1Y + S1H + 12;
-  const S2H = 118;
-  doc.roundedRect(PAD, S2Y, CW, S2H, 10).fillAndStroke('#ffffff', '#dbe2ea');
-  doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(12)
-    .text('Notas fiscais e observações', PAD + 16, S2Y + 14, { lineBreak: false });
-  doc.moveTo(PAD + 16, S2Y + 35).lineTo(PAD + CW - 16, S2Y + 35)
-    .strokeColor('#dbe2ea').lineWidth(0.8).stroke();
+  const S2Y = S1Y + S1H + 10;
 
   const notas = Array.isArray(normalized.notasFiscais) ? normalized.notasFiscais : [];
   const notasTexto = notas.length
-    ? notas.map((nota) => String(nota?.numeroNf || '').trim()).filter(Boolean).join(' / ')
+    ? notas.map((n) => String(n?.numeroNf || '').trim()).filter(Boolean).join(' / ')
     : 'Sem notas fiscais cadastradas.';
+  const obsTexto = String(normalized.observacoes || '-');
 
-  doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#64748b')
-    .text('Notas fiscais', PAD + 16, S2Y + 42, { lineBreak: false });
-  doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a')
-    .text(notasTexto, PAD + 16, S2Y + 54, { width: CW - 32, height: 24, ellipsis: true });
+  const s2Fields = [
+    { label: 'Notas fiscais:', value: notasTexto },
+    { label: 'Observações:',   value: obsTexto },
+  ];
 
-  if (normalized.observacoes) {
-    doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#64748b')
-      .text('Observações', PAD + 16, S2Y + 82, { lineBreak: false });
-    doc.font('Helvetica').fontSize(8.5).fillColor('#0f172a')
-      .text(String(normalized.observacoes), PAD + 16, S2Y + 94, { width: CW - 32, height: 18, ellipsis: true });
-  }
+  const S2ContentH = measureColumnH(doc, s2Fields, INNER_W);
+  const S2H = 38 + S2ContentH + 16;
+
+  doc.roundedRect(PAD, S2Y, CW, S2H, 10).fillAndStroke('#f8fafc', '#dbe2ea');
+  doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(12)
+    .text('Notas fiscais e Observações:', PAD + 16, S2Y + 14, { lineBreak: false });
+  doc.moveTo(PAD + 16, S2Y + 34).lineTo(PAD + CW - 16, S2Y + 34)
+    .strokeColor('#dbe2ea').lineWidth(0.8).stroke();
+
+  renderColumn(doc, s2Fields, INNER_X, INNER_W, S2Y + 38);
 
   // ── SECTION 3: QR CODES ─────────────────────────────────────────────────────
-  const S3Y = S2Y + S2H + 12;
-  const QR_SIZE = 142;
-  const QR_BOX_W = Math.round((CW - 12) / 2); // ~263
-  const QR_BOX_H = 34 + QR_SIZE + 6 + 22 + 16 + 10; // = 230
-  const QR_GAP = CW - QR_BOX_W * 2; // ~13
+  const S3Y = S2Y + S2H + 10;
+  const QR_SIZE  = 132;
+  const QR_BOX_W = Math.round((CW - 12) / 2);
+  const QR_GAP   = CW - QR_BOX_W * 2;
+  const QR_BOX_H = 32 + QR_SIZE + 8 + 20 + 14 + 10;  // = 216
 
-  const leftBoxX = PAD;
-  const rightBoxX = PAD + QR_BOX_W + QR_GAP;
+  const lBoxX = PAD;
+  const rBoxX = PAD + QR_BOX_W + QR_GAP;
 
-  doc.roundedRect(leftBoxX, S3Y, QR_BOX_W, QR_BOX_H, 10).fillAndStroke('#f8fafc', '#dbe2ea');
-  doc.roundedRect(rightBoxX, S3Y, QR_BOX_W, QR_BOX_H, 10).fillAndStroke('#f8fafc', '#dbe2ea');
+  doc.roundedRect(lBoxX, S3Y, QR_BOX_W, QR_BOX_H, 10).fillAndStroke('#f8fafc', '#dbe2ea');
+  doc.roundedRect(rBoxX, S3Y, QR_BOX_W, QR_BOX_H, 10).fillAndStroke('#f8fafc', '#dbe2ea');
 
   doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(11)
-    .text('QR Code de check-in', leftBoxX + 14, S3Y + 12, { lineBreak: false });
+    .text('QR Code de check-in',  lBoxX + 14, S3Y + 12, { lineBreak: false });
   doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(11)
-    .text('QR Code de check-out', rightBoxX + 14, S3Y + 12, { lineBreak: false });
+    .text('QR Code de check-out', rBoxX + 14, S3Y + 12, { lineBreak: false });
 
-  const qrImgOffset = Math.round((QR_BOX_W - QR_SIZE) / 2);
-  doc.image(qrCheckin,  leftBoxX  + qrImgOffset, S3Y + 34, { fit: [QR_SIZE, QR_SIZE] });
-  doc.image(qrCheckout, rightBoxX + qrImgOffset, S3Y + 34, { fit: [QR_SIZE, QR_SIZE] });
+  const qrOff = Math.round((QR_BOX_W - QR_SIZE) / 2);
+  doc.image(qrCheckin,  lBoxX + qrOff, S3Y + 32, { fit: [QR_SIZE, QR_SIZE] });
+  doc.image(qrCheckout, rBoxX + qrOff, S3Y + 32, { fit: [QR_SIZE, QR_SIZE] });
 
-  const descY  = S3Y + 34 + QR_SIZE + 6;
-  const tokenY = descY + 22;
-  const urlY   = tokenY + 16;
+  const descY  = S3Y + 32 + QR_SIZE + 8;
+  const tokenY = descY + 20;
+  const urlY   = tokenY + 14;
 
   doc.font('Helvetica').fontSize(7.5).fillColor('#475569')
     .text('Use este QR no recebimento para registrar a chegada do veículo.',
-      leftBoxX + 14, descY, { width: QR_BOX_W - 28, height: 20, ellipsis: true });
+      lBoxX + 14, descY, { width: QR_BOX_W - 28, height: 18, ellipsis: true });
   doc.font('Helvetica').fontSize(7.5).fillColor('#475569')
     .text('Use este QR ao finalizar a operação e registrar a saída do veículo.',
-      rightBoxX + 14, descY, { width: QR_BOX_W - 28, height: 20, ellipsis: true });
+      rBoxX + 14, descY, { width: QR_BOX_W - 28, height: 18, ellipsis: true });
 
   doc.font('Helvetica-Bold').fontSize(8).fillColor('#0f172a')
-    .text(`Token: ${checkinToken || '-'}`, leftBoxX + 14, tokenY, { width: QR_BOX_W - 28, lineBreak: false });
+    .text(`Token: ${checkinToken  || '-'}`, lBoxX + 14, tokenY, { width: QR_BOX_W - 28, lineBreak: false });
   doc.font('Helvetica-Bold').fontSize(8).fillColor('#0f172a')
-    .text(`Token: ${checkoutToken || '-'}`, rightBoxX + 14, tokenY, { width: QR_BOX_W - 28, lineBreak: false });
+    .text(`Token: ${checkoutToken || '-'}`, rBoxX + 14, tokenY, { width: QR_BOX_W - 28, lineBreak: false });
 
   doc.font('Helvetica').fontSize(6).fillColor('#94a3b8')
-    .text(checkinUrl,  leftBoxX + 14, urlY, { width: QR_BOX_W - 28, lineBreak: false, ellipsis: true });
+    .text(checkinUrl,  lBoxX + 14, urlY, { width: QR_BOX_W - 28, lineBreak: false, ellipsis: true });
   doc.font('Helvetica').fontSize(6).fillColor('#94a3b8')
-    .text(checkoutUrl, rightBoxX + 14, urlY, { width: QR_BOX_W - 28, lineBreak: false, ellipsis: true });
+    .text(checkoutUrl, rBoxX + 14, urlY, { width: QR_BOX_W - 28, lineBreak: false, ellipsis: true });
 
   // ── ORIENTAÇÕES OPERACIONAIS ─────────────────────────────────────────────────
   const ORIY = S3Y + QR_BOX_H + 14;
   doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(10)
-    .text('Orientações operacionais', PAD, ORIY, { lineBreak: false });
+    .text('Orientações operacionais:', PAD, ORIY, { lineBreak: false });
   doc.fillColor('#475569').font('Helvetica').fontSize(8)
     .text(
       'Compareça com 10 minutos de antecedência e apresente este voucher na portaria ou no recebimento. O motorista deve estar utilizando EPI (botina, cinta lombar, luvas e, se necessário, capacete) e acompanhado de um auxiliar para descarregar.',
-      PAD, ORIY + 15, { width: CW }
+      PAD, ORIY + 14, { width: CW }
     );
 
   doc.end();
