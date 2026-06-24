@@ -7,7 +7,7 @@ import { generateProtocol, generatePublicToken } from "../utils/security.js";
 import { createNotificacao } from "../utils/notifications.js";
 import { qrSvg } from "../utils/qrcode.js";
 import { sendMail } from "../utils/email.js";
-import { requestVoucherConfirmation, sendVoucherWhatsApp, CONFIRMACAO_STATUS } from "../utils/whatsapp-voucher-confirmation.js";
+import { requestVoucherConfirmation, sendVoucherWhatsApp, CONFIRMACAO_STATUS, normalizePhone } from "../utils/whatsapp-voucher-confirmation.js";
 import { calculateTotals, normalizeCpf } from "../utils/agendamento-helpers.js";
 import { readAgendamentos, findAgendamentoFile, updateAgendamentoFile, createAgendamentoFile, addDocumentoFile, addNotaFile, readAuditLogs, readJanelas } from "../utils/file-store.js";
 import { validateAgendamentoPayload, validateNf, validateStatusTransition, normalizeChaveAcesso } from "../utils/validators.js";
@@ -25,7 +25,14 @@ import { logTechnicalEvent } from "../utils/telemetry.js";
  
 const router = Router();
 router.use(authRequired);
- 
+
+// Dedup de e-mails: evita duplicatas para o mesmo telefone/motorista em janela curta.
+// Ambos os mapas resetam ao reiniciar o servidor — adequado para janelas de minutos.
+const APPROVAL_EMAIL_DEDUP_MS = 30 * 60 * 1000;   // 30 min entre e-mails de aprovação por telefone
+const CREATION_EMAIL_DEDUP_MS = 5 * 60 * 1000;    // 5 min entre e-mails de criação por telefone
+const approvalEmailSentAtByPhone = new Map();
+const creationEmailSentAtByPhone = new Map();
+
 const upload = createDocumentUpload();
 const uploadMiddleware = wrapMulter(upload.single("arquivo"));
 const avariaUpload = createAvariaImageUpload();
@@ -995,7 +1002,18 @@ async function sendScheduleCreatedNotice(item, req, actor = req.user) {
     console.warn(`[EMAIL-CRIACAO] E-mail de solicitação NÃO enviado — agendamentoId=${normalizedItem?.id || '?'}: campo emailTransportadora está vazio.`);
     return { sent: false, reason: "Não há e-mail da transportadora/fornecedor cadastrado." };
   }
- 
+
+  // Dedup: evita múltiplos e-mails de criação para o mesmo motorista em < 5 min.
+  const creationDeupKey = normalizePhone(normalizedItem?.telefoneMotorista) || String(normalizedItem?.emailTransportadora || '').toLowerCase().trim();
+  if (creationDeupKey) {
+    const last = creationEmailSentAtByPhone.get(creationDeupKey);
+    if (last && (Date.now() - last) < CREATION_EMAIL_DEDUP_MS) {
+      console.log(`[EMAIL-CRIACAO] Dedup: e-mail de criação já enviado para "${creationDeupKey}" nos últimos ${CREATION_EMAIL_DEDUP_MS / 60000}min — pulando (agendamentoId=${normalizedItem?.id}).`);
+      return { sent: false, skipped: true, reason: 'E-mail de criação já enviado recentemente para este contato.' };
+    }
+    creationEmailSentAtByPhone.set(creationDeupKey, Date.now());
+  }
+
   const links = buildPublicLinks(req, normalizedItem);
   const textoDoca = normalizedItem.doca?.codigo || normalizedItem.doca || "A DEFINIR";
   const scheduleIntro = buildScheduleIntro(normalizedItem);
@@ -1027,7 +1045,7 @@ O voucher operacional e o QR Code do motorista serão enviados somente após a a
   return { ...sent, to: normalizedItem.emailTransportadora, consulta: links.consulta, tokenConsulta: normalizedItem.publicTokenFornecedor };
 }
  
-async function sendApprovalNotifications(item, req) {
+async function sendApprovalNotifications(item, req, { allowDuplicate = false } = {}) {
   const normalizedItem = normalizeScheduleItem(item);
   if (!canShareVoucher(normalizedItem)) {
     throw new Error("Voucher e QR Code só podem ser enviados após a aprovação do agendamento.");
@@ -1037,58 +1055,69 @@ async function sendApprovalNotifications(item, req) {
   const results = [];
   const targets = [];
   const scheduleIntro = buildScheduleIntro(normalizedItem);
- 
-  const commonText = [
-    scheduleIntro,
-    `Data: ${formatDateBR(normalizedItem?.dataAgendada)}`,
-    `Hora: ${formatHourLabel(normalizedItem?.horaAgendada)}`,
-    `Protocolo: ${normalizedItem.protocolo}`,
-    `Consulta do fornecedor/transportadora: ${links.consulta}`,
-    `Acompanhamento do motorista: ${links.motorista}`,
-    `Token do motorista: ${normalizedItem.publicTokenMotorista}`,
-    `Voucher PDF: ${links.voucher}`,
-    `Check-in: ${links.checkin}`,
-    `Check-out: ${links.checkout}`,
-    '',
-    MANDATORY_VOUCHER_NOTICE_TEXT
-  ].join("\n");
- 
-  const commonHtml = `
-    <p>${scheduleIntro}</p>
-    <p><strong>Protocolo:</strong> ${normalizedItem.protocolo}</p>
-    <p><strong>Data:</strong> ${formatDateBR(normalizedItem?.dataAgendada)}</p>
-    <p><strong>Hora:</strong> ${formatHourLabel(normalizedItem?.horaAgendada)}</p>
-    <p><a href="${links.consulta}">Consulta da transportadora/fornecedor</a></p>
-    <p><a href="${links.motorista}">Acompanhamento do motorista</a></p>
-    <p><strong>Token do motorista:</strong> ${normalizedItem.publicTokenMotorista}</p>
-    <p><a href="${links.voucher}">Voucher em PDF</a></p>
-    <p><a href="${links.checkin}">Check-in</a></p>
-    <p><a href="${links.checkout}">Check-out</a></p>
-    <p>${MANDATORY_VOUCHER_NOTICE_HTML}</p>
-  `;
- 
-  if (item.emailMotorista) {
-    const sent = await sendMail({
-      to: normalizedItem.emailMotorista,
-      subject: `Voucher do agendamento ${normalizedItem.protocolo}`,
-      text: commonText,
-      html: `<p>Olá, motorista.</p>${commonHtml}`,
-      attachments: [{ filename: `voucher-${item.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
-    });
-    results.push({ tipo: "motorista", to: normalizedItem.emailMotorista, ...sent });
-    if (sent.sent) targets.push("motorista");
-  }
- 
-  if (normalizedItem.emailTransportadora) {
-    const sent = await sendMail({
-      to: normalizedItem.emailTransportadora,
-      subject: `Confirmação do agendamento ${normalizedItem.protocolo}`,
-      text: commonText,
-      html: `<p>Olá, transportadora/fornecedor.</p>${commonHtml}`,
-      attachments: [{ filename: `voucher-${item.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
-    });
-    results.push({ tipo: "transportadora/fornecedor", to: normalizedItem.emailTransportadora, ...sent });
-    if (sent.sent) targets.push("transportadora/fornecedor");
+
+  // Dedup: bloqueia e-mails duplicados para o mesmo motorista em < 30 min.
+  // Usa telefone normalizado como chave; cai para e-mail da transportadora se não houver telefone.
+  const emailDeupKey = normalizePhone(normalizedItem?.telefoneMotorista) || String(normalizedItem?.emailTransportadora || '').toLowerCase().trim();
+  const skipEmails = !allowDuplicate && !!emailDeupKey && (() => {
+    const last = approvalEmailSentAtByPhone.get(emailDeupKey);
+    return !!last && (Date.now() - last) < APPROVAL_EMAIL_DEDUP_MS;
+  })();
+
+  if (skipEmails) {
+    console.log(`[EMAIL-APROVACAO] Dedup: e-mail de aprovação já enviado para "${emailDeupKey}" nos últimos ${APPROVAL_EMAIL_DEDUP_MS / 60000}min — pulando e-mail (agendamentoId=${normalizedItem?.id}).`);
+    results.push({ tipo: 'email-dedup', skipped: true, reason: 'E-mail de aprovação já enviado recentemente para este contato.' });
+  } else {
+    const commonText = [
+      scheduleIntro,
+      `Data: ${formatDateBR(normalizedItem?.dataAgendada)}`,
+      `Hora: ${formatHourLabel(normalizedItem?.horaAgendada)}`,
+      `Protocolo: ${normalizedItem.protocolo}`,
+      `Consulta do fornecedor/transportadora: ${links.consulta}`,
+      `Acompanhamento do motorista: ${links.motorista}`,
+      `Token do motorista: ${normalizedItem.publicTokenMotorista}`,
+      `Voucher PDF: ${links.voucher}`,
+      `Check-in: ${links.checkin}`,
+      `Check-out: ${links.checkout}`,
+      '',
+      MANDATORY_VOUCHER_NOTICE_TEXT
+    ].join("\n");
+
+    const commonHtml = `
+      <p>${scheduleIntro}</p>
+      <p><strong>Protocolo:</strong> ${normalizedItem.protocolo}</p>
+      <p><strong>Data:</strong> ${formatDateBR(normalizedItem?.dataAgendada)}</p>
+      <p><strong>Hora:</strong> ${formatHourLabel(normalizedItem?.horaAgendada)}</p>
+      <p><a href="${links.consulta}">Consulta da transportadora/fornecedor</a></p>
+      <p><a href="${links.motorista}">Acompanhamento do motorista</a></p>
+      <p><strong>Token do motorista:</strong> ${normalizedItem.publicTokenMotorista}</p>
+      <p><a href="${links.voucher}">Voucher em PDF</a></p>
+      <p><a href="${links.checkin}">Check-in</a></p>
+      <p><a href="${links.checkout}">Check-out</a></p>
+      <p>${MANDATORY_VOUCHER_NOTICE_HTML}</p>
+    `;
+
+    // Um único e-mail por aprovação: destinatário principal = transportadora/fornecedor.
+    // Se houver e-mail do motorista diferente do da transportadora, vai em CC.
+    const emailTo = normalizedItem.emailTransportadora || normalizedItem.emailMotorista;
+    const emailCcRaw = String(normalizedItem.emailMotorista || '').toLowerCase().trim();
+    const emailToNorm = String(emailTo || '').toLowerCase().trim();
+    const emailCc = emailCcRaw && emailCcRaw !== emailToNorm ? normalizedItem.emailMotorista : undefined;
+
+    if (emailTo) {
+      const sent = await sendMail({
+        to: emailTo,
+        cc: emailCc,
+        subject: `Confirmação do agendamento ${normalizedItem.protocolo}`,
+        text: commonText,
+        html: `<p>Olá, transportadora/fornecedor.</p>${commonHtml}`,
+        attachments: [{ filename: `voucher-${item.protocolo}.pdf`, content: pdf, contentType: "application/pdf" }]
+      });
+      results.push({ tipo: "transportadora/fornecedor", to: emailTo, cc: emailCc, ...sent });
+      if (sent.sent) targets.push("transportadora/fornecedor");
+    }
+
+    if (emailDeupKey) approvalEmailSentAtByPhone.set(emailDeupKey, Date.now());
   }
  
   const confirmacaoStatus = String(normalizedItem.whatsappConfirmacaoStatus || '').toUpperCase();
@@ -1929,7 +1958,7 @@ router.post("/:id(\\d+)/enviar-informacoes", requirePermission("agendamentos.not
   try {
     const item = await full(req.params.id);
     if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
-    const out = await sendApprovalNotifications(item, req);
+    const out = await sendApprovalNotifications(item, req, { allowDuplicate: true });
     if (!out.results.length) return res.status(400).json({ message: "Não há e-mails cadastrados no agendamento." });
     res.json({ ok: true, results: out.results, ...out.links, tokenMotorista: item.publicTokenMotorista, tokenConsulta: item.publicTokenFornecedor });
   } catch (err) { res.status(400).json({ message: err.message }); }
