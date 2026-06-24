@@ -195,11 +195,18 @@ function normalizeRow(modelName, row = {}) {
   const normalized = {};
   for (const [key, value] of Object.entries(row || {})) {
     if (key in normalized) {
-      normalized[key] = value;
+      // Prefer non-null: don't overwrite an existing value with null from a duplicate column.
+      // This handles the case where a camelCase column and its snake_case equivalent both
+      // exist in the DB (e.g., whatsappConfirmacaoStatus AND whatsapp_confirmacao_status).
+      if (value != null) normalized[key] = value;
       continue;
     }
     const camel = snakeToCamel(key);
-    normalized[camel] = value;
+    if (camel in normalized) {
+      if (value != null) normalized[camel] = value;
+    } else {
+      normalized[camel] = value;
+    }
     if (!(key in normalized)) normalized[key] = value;
   }
 
