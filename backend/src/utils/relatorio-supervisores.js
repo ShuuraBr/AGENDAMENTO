@@ -238,9 +238,9 @@ export async function dispararRelatorioDiario() {
 
   const state = carregarOptin();
   // Só envia para quem respondeu SIM. Quem ainda não respondeu ou recusou não recebe.
-  const elegíveis = numeros.filter((tel) => state[normalizePhone(tel)]?.status === 'ACEITOU');
+  const elegiveis = numeros.filter((tel) => state[normalizePhone(tel)]?.status === 'ACEITOU');
 
-  if (elegíveis.length === 0) {
+  if (elegiveis.length === 0) {
     console.warn('[RELATORIO-SUP] Nenhum supervisor aceitou o opt-in ainda. Relatório não enviado.');
     return;
   }
@@ -254,8 +254,8 @@ export async function dispararRelatorioDiario() {
     return;
   }
 
-  console.log(`[RELATORIO-SUP] Total: ${total}. Disparando para ${elegíveis.length} supervisor(es)...`);
-  await Promise.all(elegíveis.map((tel) => enviarRelatorioParaSupervisor({ telefone: tel, dataBR: br, total })));
+  console.log(`[RELATORIO-SUP] Total: ${total}. Disparando para ${elegiveis.length} supervisor(es)...`);
+  await Promise.all(elegiveis.map((tel) => enviarRelatorioParaSupervisor({ telefone: tel, dataBR: br, total })));
 }
 
 // ─── Scheduler ────────────────────────────────────────────────────────────────
