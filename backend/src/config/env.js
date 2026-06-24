@@ -47,5 +47,16 @@ export const env = {
   // Diferente da campanha (WHATSAPP_API_URL) que só funciona para conversas novas.
   whatsappVoucherTextApiUrl: process.env.WHATSAPP_VOUCHER_TEXT_API_URL || "",
   // Token simples para validar a origem do webhook de respostas do WhatsApp (opcional).
-  whatsappWebhookSecret: process.env.WHATSAPP_WEBHOOK_SECRET || ""
+  whatsappWebhookSecret: process.env.WHATSAPP_WEBHOOK_SECRET || "",
+  // Token alternativo para o webhook de confirmações de supervisores.
+  whatsappWebhookSecret2: process.env.WHATSAPP_WEBHOOK_SECRET2 || "",
+  // Template Duotalk para opt-in dos supervisores (pergunta se desejam receber relatórios).
+  // Sem variáveis obrigatórias — apenas {NOME_CONTATO} opcional no painel da Duotalk.
+  whatsappSupervisoresConfirmacaoApiUrl: process.env.WHATSAPP_SUPERVISORES_CONFIRMACAO_API_URL || "",
+  // Template Duotalk para relatório diário de agendamentos enviado aos supervisores.
+  // Variáveis do template: {{1}} = data (dd/mm/aaaa), {{2}} = total de agendamentos.
+  whatsappSupervisoresApiUrl: process.env.WHATSAPP_SUPERVISORES_API_URL || "",
+  // Números dos supervisores que recebem o relatório diário (separados por vírgula).
+  // Formato: DDD + número (ex: 44999998888,44988887777,44977776666)
+  supervisoresWhatsappNumeros: process.env.SUPERVISORES_WHATSAPP_NUMEROS || ""
 };

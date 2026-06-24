@@ -1,0 +1,286 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { env } from '../config/env.js';
+import { prisma } from './prisma.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
+const OPTIN_FILE = path.resolve(__dirname, '../../data/supervisores-optin.json');
+
+const BRT_TIMEZONE = 'America/Sao_Paulo';
+
+const brtFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: BRT_TIMEZONE,
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', hour12: false,
+});
+
+function agoraBRT(referencia = new Date()) {
+  const parts = Object.fromEntries(
+    brtFmt.formatToParts(referencia).map((p) => [p.type, p.value])
+  );
+  return {
+    hora:    parseInt(parts.hour,   10),
+    minuto:  parseInt(parts.minute, 10),
+    dataIso: `${parts.year}-${parts.month}-${parts.day}`,
+  };
+}
+
+function ontem() {
+  const ontemRef = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const dateFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: BRT_TIMEZONE,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  const parts = Object.fromEntries(
+    dateFmt.formatToParts(ontemRef).map((p) => [p.type, p.value])
+  );
+  return {
+    iso: `${parts.year}-${parts.month}-${parts.day}`,
+    br:  `${parts.day}/${parts.month}/${parts.year}`,
+  };
+}
+
+// ─── Opt-in state (arquivo JSON em data/) ────────────────────────────────────
+
+export function normalizePhone(value) {
+  let phone = String(value || '').replace(/\D/g, '');
+  if (!phone) return '';
+  if (phone.length <= 11) phone = `55${phone}`;
+  return phone;
+}
+
+function carregarOptin() {
+  try {
+    if (fs.existsSync(OPTIN_FILE)) {
+      return JSON.parse(fs.readFileSync(OPTIN_FILE, 'utf8'));
+    }
+  } catch (err) {
+    console.error('[RELATORIO-SUP] Erro ao ler opt-in:', err?.message);
+  }
+  return {};
+}
+
+function salvarOptin(state) {
+  try {
+    fs.writeFileSync(OPTIN_FILE, JSON.stringify(state, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[RELATORIO-SUP] Erro ao salvar opt-in:', err?.message);
+  }
+}
+
+// ─── Duotalk helpers ──────────────────────────────────────────────────────────
+
+async function postDuotalk(apiUrl, phone, queryParams = {}) {
+  const baseUrl = apiUrl.replace(/\\/g, '');
+  const sep = baseUrl.includes('?') ? '&' : '?';
+  const params = new URLSearchParams({ queryParams: 'true', ...queryParams });
+  const url = `${baseUrl}${sep}${params.toString()}`;
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Supervisor', phone }),
+    });
+    const text = await resp.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    if (resp.ok) return { ok: true, to: phone, data };
+    return { ok: false, to: phone, status: resp.status, reason: data?.message || data?.error || text };
+  } catch (err) {
+    return { ok: false, to: phone, reason: err?.message || String(err) };
+  }
+}
+
+// ─── Opt-in: envio de confirmação ────────────────────────────────────────────
+
+async function enviarConfirmacaoSupervisor(phone) {
+  const apiUrl = env.whatsappSupervisoresConfirmacaoApiUrl;
+  if (!apiUrl) {
+    console.warn('[RELATORIO-SUP] WHATSAPP_SUPERVISORES_CONFIRMACAO_API_URL não configurada.');
+    return { ok: false, reason: 'URL de confirmação não configurada' };
+  }
+  console.log(`[RELATORIO-SUP] Enviando opt-in para ${phone}...`);
+  return postDuotalk(apiUrl, phone);
+}
+
+/**
+ * Verifica a lista de supervisores configurada no .env e envia mensagem de
+ * confirmação (opt-in) para qualquer número que ainda não tenha status definido.
+ * Deve ser chamada na inicialização do servidor.
+ */
+export async function verificarEEnviarOptins() {
+  const numerosRaw = env.supervisoresWhatsappNumeros || '';
+  const numeros = numerosRaw.split(',').map((n) => n.trim()).filter(Boolean);
+  if (numeros.length === 0) return;
+
+  const state = carregarOptin();
+  let alterado = false;
+
+  for (const tel of numeros) {
+    const phone = normalizePhone(tel);
+    if (!phone) continue;
+    if (state[phone]) continue; // já tem status — não reenvia
+
+    const result = await enviarConfirmacaoSupervisor(phone);
+    if (!result.ok) {
+      console.error(`[RELATORIO-SUP] Falha ao enviar opt-in para ${phone}: ${result.reason}. Tentará novamente no próximo restart.`);
+      continue; // não salva no JSON — vai retentar na próxima vez que o servidor subir
+    }
+    state[phone] = {
+      status: 'PENDENTE',
+      enviadoEm: new Date().toISOString(),
+      respondidoEm: null,
+    };
+    alterado = true;
+    console.log(`[RELATORIO-SUP] Opt-in enviado para ${phone}.`);
+  }
+
+  if (alterado) salvarOptin(state);
+}
+
+// ─── Opt-in: processamento da resposta (chamado pelo webhook) ────────────────
+
+const AFFIRMATIVE_REGEX = /^(sim|s|yes|y|1|ok|claro|aceito|quero)$/i;
+const NEGATIVE_REGEX    = /^(nao|não|n|no|2|negativo|recuso)$/i;
+
+function normalizeText(text) {
+  return String(text || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+}
+
+/**
+ * Tenta interpretar a resposta recebida via webhook como confirmação de um
+ * supervisor. Retorna `{ handled: true }` se o telefone pertence à lista de
+ * supervisores e a resposta foi reconhecida; caso contrário `{ handled: false }`.
+ */
+export function processarRespostaSupervisor({ phone, text }) {
+  const normalized = normalizePhone(phone);
+  if (!normalized) return { handled: false };
+
+  const state = carregarOptin();
+  if (!state[normalized]) return { handled: false }; // não é supervisor conhecido
+
+  const txt = normalizeText(text);
+
+  if (AFFIRMATIVE_REGEX.test(txt)) {
+    state[normalized].status = 'ACEITOU';
+    state[normalized].respondidoEm = new Date().toISOString();
+    salvarOptin(state);
+    console.log(`[RELATORIO-SUP] Supervisor ${normalized} ACEITOU receber relatórios diários.`);
+    return { handled: true, status: 'ACEITOU', phone: normalized };
+  }
+
+  if (NEGATIVE_REGEX.test(txt)) {
+    state[normalized].status = 'RECUSOU';
+    state[normalized].respondidoEm = new Date().toISOString();
+    salvarOptin(state);
+    console.log(`[RELATORIO-SUP] Supervisor ${normalized} RECUSOU receber relatórios diários.`);
+    return { handled: true, status: 'RECUSOU', phone: normalized };
+  }
+
+  return { handled: false };
+}
+
+// ─── Relatório diário ─────────────────────────────────────────────────────────
+
+async function contarAgendamentosDodia(dataIso) {
+  // 00:00 BRT = 03:00 UTC; 23:59:59 BRT = 02:59:59 UTC do dia seguinte
+  const inicioUTC = new Date(`${dataIso}T03:00:00.000Z`);
+  const fimUTC    = new Date(inicioUTC.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+  try {
+    const total = await prisma.agendamento.count({
+      where: { createdAt: { gte: inicioUTC, lte: fimUTC } },
+    });
+    return total;
+  } catch (err) {
+    console.error('[RELATORIO-SUP] Erro ao contar agendamentos:', err?.message || err);
+    return null;
+  }
+}
+
+async function enviarRelatorioParaSupervisor({ telefone, dataBR, total }) {
+  const apiUrl = env.whatsappSupervisoresApiUrl;
+  if (!apiUrl) {
+    console.warn('[RELATORIO-SUP] WHATSAPP_SUPERVISORES_API_URL não configurada.');
+    return { ok: false, reason: 'URL do relatório não configurada' };
+  }
+  const phone = normalizePhone(telefone);
+  if (!phone) return { ok: false, reason: 'Telefone inválido' };
+
+  // Template: "Bom dia, {NOME_CONTATO}! Relatório de agendamentos criados em {2}: {3} agendamentos."
+  const result = await postDuotalk(apiUrl, phone, { 2: dataBR, 3: String(total) });
+  if (result.ok) {
+    console.log(`[RELATORIO-SUP] Relatório enviado para ${phone} — ${dataBR}: ${total} agendamentos.`);
+  } else {
+    console.error(`[RELATORIO-SUP] Falha ao enviar para ${phone}:`, result.reason);
+  }
+  return result;
+}
+
+/**
+ * Dispara o relatório diário apenas para supervisores que confirmaram o opt-in.
+ */
+export async function dispararRelatorioDiario() {
+  const numerosRaw = env.supervisoresWhatsappNumeros || '';
+  const numeros = numerosRaw.split(',').map((n) => n.trim()).filter(Boolean);
+
+  if (numeros.length === 0) {
+    console.warn('[RELATORIO-SUP] Nenhum número configurado em SUPERVISORES_WHATSAPP_NUMEROS.');
+    return;
+  }
+
+  const state = carregarOptin();
+  // Só envia para quem respondeu SIM. Quem ainda não respondeu ou recusou não recebe.
+  const elegíveis = numeros.filter((tel) => state[normalizePhone(tel)]?.status === 'ACEITOU');
+
+  if (elegíveis.length === 0) {
+    console.warn('[RELATORIO-SUP] Nenhum supervisor aceitou o opt-in ainda. Relatório não enviado.');
+    return;
+  }
+
+  const { iso, br } = ontem();
+  console.log(`[RELATORIO-SUP] Buscando agendamentos criados em ${br} (${iso})...`);
+
+  const total = await contarAgendamentosDodia(iso);
+  if (total === null) {
+    console.error('[RELATORIO-SUP] Não foi possível obter o total. Envio abortado.');
+    return;
+  }
+
+  console.log(`[RELATORIO-SUP] Total: ${total}. Disparando para ${elegíveis.length} supervisor(es)...`);
+  await Promise.all(elegíveis.map((tel) => enviarRelatorioParaSupervisor({ telefone: tel, dataBR: br, total })));
+}
+
+// ─── Scheduler ────────────────────────────────────────────────────────────────
+
+/**
+ * Inicia o scheduler que dispara o relatório todo dia às 07:30 BRT.
+ * Verifica a cada 60 s. Usa flag de data para não disparar mais de uma vez/dia.
+ */
+export function iniciarSchedulerRelatorio() {
+  let ultimoEnvioData = '';
+
+  const tick = async () => {
+    const { hora, minuto, dataIso } = agoraBRT();
+
+    if (hora === 7 && minuto >= 30 && minuto < 32 && ultimoEnvioData !== dataIso) {
+      ultimoEnvioData = dataIso;
+      console.log(`[RELATORIO-SUP] Disparando relatório diário (${hora}:${String(minuto).padStart(2, '0')} BRT)`);
+      dispararRelatorioDiario().catch((err) => {
+        console.error('[RELATORIO-SUP] Erro no disparo automático:', err?.message || err);
+      });
+    }
+  };
+
+  tick();
+  const handle = setInterval(tick, 60 * 1000);
+  handle.unref?.();
+  return handle;
+}
