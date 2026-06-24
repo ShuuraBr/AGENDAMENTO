@@ -20,6 +20,7 @@ if (!process.env.DATABASE_URL && process.env.DB_HOST) {
 const { default: app } = await import("./app.js");
 const { startRelatorioImportWatcher } = await import("./utils/relatorio-entradas.js");
 const { runVoucherConfirmationWatcherTick } = await import("./utils/whatsapp-voucher-confirmation.js");
+const { iniciarSchedulerRelatorio, verificarEEnviarOptins } = await import("./utils/relatorio-supervisores.js");
 
 const PORT = Number(process.env.PORT || 3000);
 const shouldStartWatcher = ['1', 'true', 'yes', 'on'].includes(String(process.env.RELATORIO_IMPORT_WATCHER || '0').toLowerCase());
@@ -56,6 +57,20 @@ const server = app.listen(PORT, "0.0.0.0", () => {
     console.log('[OK] Monitor de confirmação de voucher via WhatsApp ativado.');
   } catch (error) {
     console.error('[WARN] Falha ao ativar monitor de confirmação de voucher via WhatsApp:', error?.message || error);
+  }
+
+  try {
+    await verificarEEnviarOptins();
+    console.log('[OK] Verificação de opt-in de supervisores concluída.');
+  } catch (error) {
+    console.error('[WARN] Falha ao verificar opt-in de supervisores:', error?.message || error);
+  }
+
+  try {
+    iniciarSchedulerRelatorio();
+    console.log('[OK] Scheduler de relatório diário para supervisores ativado (07:30 BRT).');
+  } catch (error) {
+    console.error('[WARN] Falha ao ativar scheduler de relatório diário:', error?.message || error);
   }
 });
 
