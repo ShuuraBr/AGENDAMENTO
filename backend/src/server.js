@@ -39,7 +39,7 @@ function startWhatsAppConfirmationWatcher() {
   return handle;
 }
 
-const server = app.listen(PORT, "0.0.0.0", () => {
+const server = app.listen(PORT, "0.0.0.0", async () => {
   console.log(`[OK] Servidor rodando na porta ${PORT}`);
   if (shouldStartWatcher) {
     try {
