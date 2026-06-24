@@ -1143,10 +1143,11 @@ async function sendApprovalNotifications(item, req, { allowDuplicate = false } =
       const sentConfirmacao = await requestVoucherConfirmation(normalizedItem, { actor: req.user });
       results.push({ tipo: "whatsapp-confirmacao-motorista", to: normalizedItem.telefoneMotorista, ...sentConfirmacao });
     } else {
-      // Status nulo/vazio: confirmação já foi enviada na criação (ou migração V14 não executada).
-      // Não reenvia — aguarda a resposta que chegará pelo webhook.
-      console.log(`[WHATSAPP-APPROVAL] Status "${confirmacaoStatus || 'vazio'}" → confirmação enviada na criação, aguardando resposta. Se isso for inesperado, verifique se a migração V14 foi executada.`);
-      results.push({ tipo: "whatsapp-voucher-motorista", skipped: true, reason: "Confirmação já enviada na criação do agendamento." });
+      // Status nulo/vazio: migração V14 ainda não foi executada ou houve falha silenciosa na criação.
+      // Envia a confirmação agora como fallback para garantir que o motorista sempre receba.
+      console.log(`[WHATSAPP-APPROVAL] Status vazio (migração V14 não executada?) → enviando confirmação ao aprovar como fallback.`);
+      const sentConfirmacao = await requestVoucherConfirmation(normalizedItem, { actor: req.user });
+      results.push({ tipo: "whatsapp-confirmacao-motorista", to: normalizedItem.telefoneMotorista, ...sentConfirmacao });
     }
   } else {
     console.log('[WHATSAPP-APPROVAL] telefoneMotorista vazio — WhatsApp NÃO enviado.');
