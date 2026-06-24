@@ -65,45 +65,74 @@ async function qrDataUrl(text) {
 }
 
 // ── Constantes de layout dos campos ─────────────────────────────────────────
-const VALUE_FONT_SIZE = 9;   // fonte fixa e legível para valores
-const LABEL_FONT_SIZE = 8.5;
-const MIN_BOX_H = 22;        // altura mínima da caixa
-const BOX_PAD_V = 8;         // padding vertical interno (4px cima + 4px baixo)
-const BOX_PAD_H = 7;         // padding horizontal interno
-const LABEL_H = 14;          // espaço reservado acima da caixa para o label
-const FIELD_GAP = 6;         // espaço entre campos da mesma coluna
+const VALUE_FONT  = 9;     // fonte padrão — só reduz se uma palavra não couber na largura
+const LABEL_FONT  = 8.5;
+const MIN_FONT    = 7.5;   // mínimo absoluto (para tokens muito longos)
+const MIN_BOX_H   = 22;    // altura mínima da caixa
+const BOX_PAD_V   = 10;    // padding vertical total interno (5px cima + 5px baixo)
+const BOX_PAD_H   = 7;     // padding horizontal interno
+const LABEL_H     = 14;    // espaço acima da caixa para o label
+const FIELD_GAP   = 6;     // espaço entre campos da mesma coluna
 
-// Retorna a altura necessária para o valor caber com quebra de linha na largura dada
-function calcBoxH(doc, value, textW) {
-  doc.font('Helvetica-Bold').fontSize(VALUE_FONT_SIZE);
-  const textH = doc.heightOfString(String(value || '-'), { width: textW });
-  return Math.max(MIN_BOX_H, Math.ceil(textH) + BOX_PAD_V);
+// Retorna { fontSize, boxH } para um campo.
+// Reduz a fonte apenas o suficiente para que nenhuma palavra exceda textW
+// (evita quebra de caractere forçada, que pdfkit não faz).
+// boxH cresce automaticamente para acomodar as linhas com quebra automática.
+function calcField(doc, value, textW) {
+  const text  = String(value || '-');
+  const words = text.split(/\s+/).filter(Boolean);
+  let fontSize = VALUE_FONT;
+
+  doc.font('Helvetica-Bold');
+  while (fontSize > MIN_FONT) {
+    doc.fontSize(fontSize);
+    if (words.every(w => doc.widthOfString(w) <= textW)) break;
+    fontSize -= 0.5;
+  }
+  doc.fontSize(fontSize);
+
+  // Altura do texto com quebras de linha + buffer de segurança de 2px
+  const textH = doc.heightOfString(text, { width: textW });
+  const boxH  = Math.max(MIN_BOX_H, Math.ceil(textH) + BOX_PAD_V + 2);
+  return { fontSize, boxH };
 }
 
-// Calcula a altura total de uma coluna sem renderizar (para dimensionar o card pai)
+// Calcula a altura total de uma coluna sem renderizar (pré-calcula S1H)
 function measureColumnH(doc, fields, colW) {
   const textW = colW - BOX_PAD_H * 2;
   return fields.reduce((acc, { value }, i) => {
-    return acc + LABEL_H + calcBoxH(doc, value, textW) + (i < fields.length - 1 ? FIELD_GAP : 0);
+    const { boxH } = calcField(doc, value, textW);
+    return acc + LABEL_H + boxH + (i < fields.length - 1 ? FIELD_GAP : 0);
   }, 0);
 }
 
-// Renderiza uma coluna de campos e retorna a Y final
+// Renderiza uma coluna de campos.
+// O texto é sempre clipado à área interna da caixa — nunca sobrepõe a borda.
 function renderColumn(doc, fields, colX, colW, startY) {
   const textW = colW - BOX_PAD_H * 2;
   let y = startY;
-  fields.forEach(({ label, value }, i) => {
-    const text  = String(value || '-');
-    const boxH  = calcBoxH(doc, value, textW);
 
-    doc.font('Helvetica').fontSize(LABEL_FONT_SIZE).fillColor('#334155')
+  fields.forEach(({ label, value }, i) => {
+    const text              = String(value || '-');
+    const { fontSize, boxH } = calcField(doc, value, textW);
+    const boxY              = y + LABEL_H;
+
+    // Label
+    doc.font('Helvetica').fontSize(LABEL_FONT).fillColor('#334155')
       .text(label, colX, y, { lineBreak: false });
 
-    doc.roundedRect(colX, y + LABEL_H, colW, boxH, 4)
-      .fillAndStroke('#f1f5f9', '#c5cdd8');
+    // Fundo da caixa
+    doc.roundedRect(colX, boxY, colW, boxH, 4).fill('#f1f5f9');
 
-    doc.font('Helvetica-Bold').fontSize(VALUE_FONT_SIZE).fillColor('#0f172a')
-      .text(text, colX + BOX_PAD_H, y + LABEL_H + 4, { width: textW, lineBreak: true });
+    // Texto clipado à área interna — garante que não extravasa a borda
+    doc.save();
+    doc.rect(colX + 1, boxY + 1, colW - 2, boxH - 2).clip();
+    doc.font('Helvetica-Bold').fontSize(fontSize).fillColor('#0f172a')
+      .text(text, colX + BOX_PAD_H, boxY + 5, { width: textW, lineBreak: true });
+    doc.restore();
+
+    // Borda da caixa por cima (desenhada por último para ficar visível)
+    doc.roundedRect(colX, boxY, colW, boxH, 4).stroke('#c5cdd8');
 
     y += LABEL_H + boxH + (i < fields.length - 1 ? FIELD_GAP : 0);
   });
@@ -145,9 +174,12 @@ export async function generateVoucherPdf(agendamento, options = {}) {
 
   // ── SECTION 1: DADOS PRINCIPAIS ─────────────────────────────────────────────
   //
-  // Col 1 (esq): Status | Transportadora | CPF do motorista | Motorista | Placa
-  // Col 2 (cen): Fornecedor(es) | Token do motorista | Token Fornecedor | Qtd Volumes
-  // Col 3 (dir): Data agendada | Doca | Hora | Janela | Qtd notas | Peso total
+  // Fornecedor(es) — linha full-width no topo (evita desproporção nas colunas)
+  //
+  // Grid 3 colunas abaixo (5 / 4 / 5):
+  //   Col 1: Status | Transportadora | CPF do motorista | Motorista | Placa
+  //   Col 2: Data agendada | Hora | Janela | Doca
+  //   Col 3: Token do motorista | Token do Fornecedor | Qtd Volumes | Qtd notas | Peso total
   //
   const INNER_X = PAD + 16;
   const INNER_W = CW - 32;
@@ -157,6 +189,12 @@ export async function generateVoucherPdf(agendamento, options = {}) {
   const COL2X   = INNER_X + COL_W + COL_GAP;
   const COL3X   = INNER_X + (COL_W + COL_GAP) * 2;
 
+  // Fornecedor: campo único full-width — calcula altura antes de montar o card
+  const fornecedorValue = normalized.fornecedor || '-';
+  const { boxH: fornecedorBoxH } = calcField(doc, fornecedorValue, INNER_W - BOX_PAD_H * 2);
+  const fornecedorRowH = LABEL_H + fornecedorBoxH + FIELD_GAP;  // label + box + gap abaixo
+
+  // 3 colunas com distribuição equilibrada 5 / 4 / 5
   const col1Fields = [
     { label: 'Status',           value: normalized.status || '-' },
     { label: 'Transportadora',   value: normalized.transportadora || '-' },
@@ -166,28 +204,27 @@ export async function generateVoucherPdf(agendamento, options = {}) {
   ];
 
   const col2Fields = [
-    { label: 'Fornecedor(es)',        value: normalized.fornecedor || '-' },
-    { label: 'Token do motorista',    value: normalized.publicTokenMotorista || '-' },
-    { label: 'Token do Fornecedor',   value: normalized.publicTokenFornecedor || '-' },
-    { label: 'Quantidade de Volumes', value: formatNumberBR(normalized.quantidadeVolumes || 0) },
+    { label: 'Data agendada', value: formatDateBR(normalized.dataAgendada) },
+    { label: 'Hora',          value: normalized.horaAgendada || '-' },
+    { label: 'Janela',        value: normalized.janela?.codigo || normalized.janela || '-' },
+    { label: 'Doca',          value: normalized.doca?.codigo || normalized.doca || 'A DEFINIR' },
   ];
 
   const col3Fields = [
-    { label: 'Data agendada',       value: formatDateBR(normalized.dataAgendada) },
-    { label: 'Doca',                value: normalized.doca?.codigo || normalized.doca || 'A DEFINIR' },
-    { label: 'Hora',                value: normalized.horaAgendada || '-' },
-    { label: 'Janela',              value: normalized.janela?.codigo || normalized.janela || '-' },
-    { label: 'Quantidade de notas', value: String(normalized.quantidadeNotas ?? 0) },
-    { label: 'Peso total',          value: formatWeightKg(normalized.pesoTotalKg || 0) },
+    { label: 'Token do motorista',    value: normalized.publicTokenMotorista || '-' },
+    { label: 'Token do Fornecedor',   value: normalized.publicTokenFornecedor || '-' },
+    { label: 'Quantidade de Volumes', value: formatNumberBR(normalized.quantidadeVolumes || 0) },
+    { label: 'Quantidade de notas',   value: String(normalized.quantidadeNotas ?? 0) },
+    { label: 'Peso total',            value: formatWeightKg(normalized.pesoTotalKg || 0) },
   ];
 
-  // Altura da seção ditada pela coluna mais alta
+  // Altura total da seção = título + fornecedor + grid colunas + padding
   const colH1 = measureColumnH(doc, col1Fields, COL_W);
   const colH2 = measureColumnH(doc, col2Fields, COL_W);
   const colH3 = measureColumnH(doc, col3Fields, COL_W);
-  const S1ContentH = Math.max(colH1, colH2, colH3);
-  const S1Y = HDR_H + 14;
-  const S1H = 38 + S1ContentH + 18;
+  const gridH  = Math.max(colH1, colH2, colH3);
+  const S1Y    = HDR_H + 14;
+  const S1H    = 38 + fornecedorRowH + gridH + 16;
 
   doc.roundedRect(PAD, S1Y, CW, S1H, 10).fillAndStroke('#f8fafc', '#dbe2ea');
   doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(12)
@@ -195,7 +232,12 @@ export async function generateVoucherPdf(agendamento, options = {}) {
   doc.moveTo(PAD + 16, S1Y + 34).lineTo(PAD + CW - 16, S1Y + 34)
     .strokeColor('#dbe2ea').lineWidth(0.8).stroke();
 
-  const fY = S1Y + 38;
+  // Renderiza Fornecedor(es) full-width
+  const fornY = S1Y + 38;
+  renderColumn(doc, [{ label: 'Fornecedor(es)', value: fornecedorValue }], INNER_X, INNER_W, fornY);
+
+  // Renderiza grid 3 colunas abaixo do Fornecedor
+  const fY = fornY + fornecedorRowH;
   renderColumn(doc, col1Fields, COL1X, COL_W, fY);
   renderColumn(doc, col2Fields, COL2X, COL_W, fY);
   renderColumn(doc, col3Fields, COL3X, COL_W, fY);
