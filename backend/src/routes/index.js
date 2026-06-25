@@ -11,6 +11,7 @@ import { verifyMailTransport } from "../utils/email.js";
 import { getUploadDirectoriesHealth } from "../utils/upload-policy.js";
 import { getLogFilesHealth } from "../utils/telemetry.js";
 import { authRequired } from "../middlewares/auth.js";
+import { dispararRelatorioDiario, verificarEEnviarOptins } from "../utils/relatorio-supervisores.js";
 
 const router = Router();
 
@@ -74,6 +75,40 @@ router.get("/health/notifications", authRequired, async (_req, res) => {
     res.status(500).json({ ok: false, message: "Falha ao consultar integrações de notificação." });
   }
 });
+// Disparo manual do relatório de supervisores (requer login)
+router.post("/admin/relatorio-supervisores/disparar", authRequired, async (_req, res) => {
+  try {
+    await dispararRelatorioDiario();
+    res.json({ ok: true, message: "Relatório disparado." });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
+  }
+});
+
+// Status do opt-in dos supervisores + reenvio da confirmação para pendentes
+router.get("/admin/relatorio-supervisores/status", authRequired, async (_req, res) => {
+  try {
+    const fs = await import("fs");
+    const path = await import("path");
+    const { fileURLToPath } = await import("url");
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const file = path.resolve(__dirname, "../../data/supervisores-optin.json");
+    const state = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : {};
+    res.json({ ok: true, state });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
+  }
+});
+
+router.post("/admin/relatorio-supervisores/reenviar-optin", authRequired, async (_req, res) => {
+  try {
+    await verificarEEnviarOptins();
+    res.json({ ok: true, message: "Opt-in verificado/reenviado." });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
+  }
+});
+
 router.use("/auth", authRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/cadastros", cadastrosRoutes);
