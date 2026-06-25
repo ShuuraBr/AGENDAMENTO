@@ -51,7 +51,8 @@ function getMysqlConfig() {
       connectionLimit: Number(process.env.MYSQL_DIRECT_POOL_LIMIT || 5),
       queueLimit: 0,
       namedPlaceholders: false,
-      timezone: 'local'
+      timezone: 'local',
+      connectTimeout: Number(process.env.MYSQL_CONNECT_TIMEOUT_MS || 5000)
     };
   } catch {
     return null;

@@ -7,7 +7,10 @@ function buildTransporter() {
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 465),
     secure: String(process.env.SMTP_SECURE || "true") === "true",
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    connectionTimeout: Number(process.env.SMTP_CONNECT_TIMEOUT_MS || 10000),
+    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS || 8000),
+    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS || 15000)
   });
 }
 

@@ -667,7 +667,11 @@
     });
   }
 
+  let _applyingRoleAccess = false;
   function applyRoleAccess() {
+    if (_applyingRoleAccess) return;
+    _applyingRoleAccess = true;
+    try {
     document.querySelectorAll('#privateNav [data-view]').forEach((btn) => {
       btn.classList.toggle('hidden', !canAccessView(btn.dataset.view));
     });
@@ -732,6 +736,9 @@
         el.disabled = !checkinAllowed;
       }
     });
+    } finally {
+      _applyingRoleAccess = false;
+    }
   }
 
   function timeAgo(iso) {
@@ -890,8 +897,10 @@
     const data = ct.includes("application/json") ? await res.json() : await res.text();
     if (res.status === 401) logout();
     if (!res.ok) {
-      const html503 = !ct.includes('application/json') && res.status >= 500 && /503|service unavailable/i.test(String(data || ''));
-      const message = html503 ? 'O servidor retornou 503 ao processar a operação.' : (data?.message || data || 'Erro na requisição');
+      const isHtmlError = !ct.includes('application/json') && res.status >= 500;
+      const html503 = isHtmlError && /503|service unavailable/i.test(String(data || ''));
+      const html504 = isHtmlError && (res.status === 504 || /504|gateway.*time.?out/i.test(String(data || '')));
+      const message = html504 ? 'O servidor demorou demais para responder (504). Tente novamente.' : html503 ? 'O servidor retornou 503 ao processar a operação.' : (data?.message || data || 'Erro na requisição');
       const err = new Error(message);
       err.status = res.status;
       err.data = data;
