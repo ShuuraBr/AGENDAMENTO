@@ -27,11 +27,6 @@ const router = Router();
 router.use(authRequired);
 
 // Dedup de e-mails: evita duplicatas para o mesmo telefone/motorista em janela curta.
-// Ambos os mapas resetam ao reiniciar o servidor — adequado para janelas de minutos.
-const APPROVAL_EMAIL_DEDUP_MS = 30 * 60 * 1000;   // 30 min entre e-mails de aprovação por telefone
-const CREATION_EMAIL_DEDUP_MS = 5 * 60 * 1000;    // 5 min entre e-mails de criação por telefone
-const approvalEmailSentAtByPhone = new Map();
-const creationEmailSentAtByPhone = new Map();
 
 const upload = createDocumentUpload();
 const uploadMiddleware = wrapMulter(upload.single("arquivo"));
@@ -1003,17 +998,6 @@ async function sendScheduleCreatedNotice(item, req, actor = req.user) {
     return { sent: false, reason: "Não há e-mail da transportadora/fornecedor cadastrado." };
   }
 
-  // Dedup: evita múltiplos e-mails de criação para o mesmo motorista em < 5 min.
-  const creationDeupKey = normalizePhone(normalizedItem?.telefoneMotorista) || String(normalizedItem?.emailTransportadora || '').toLowerCase().trim();
-  if (creationDeupKey) {
-    const last = creationEmailSentAtByPhone.get(creationDeupKey);
-    if (last && (Date.now() - last) < CREATION_EMAIL_DEDUP_MS) {
-      console.log(`[EMAIL-CRIACAO] Dedup: e-mail de criação já enviado para "${creationDeupKey}" nos últimos ${CREATION_EMAIL_DEDUP_MS / 60000}min — pulando (agendamentoId=${normalizedItem?.id}).`);
-      return { sent: false, skipped: true, reason: 'E-mail de criação já enviado recentemente para este contato.' };
-    }
-    creationEmailSentAtByPhone.set(creationDeupKey, Date.now());
-  }
-
   const links = buildPublicLinks(req, normalizedItem);
   const textoDoca = normalizedItem.doca?.codigo || normalizedItem.doca || "A DEFINIR";
   const scheduleIntro = buildScheduleIntro(normalizedItem);
@@ -1045,7 +1029,7 @@ O voucher operacional e o QR Code do motorista serão enviados somente após a a
   return { ...sent, to: normalizedItem.emailTransportadora, consulta: links.consulta, tokenConsulta: normalizedItem.publicTokenFornecedor };
 }
  
-async function sendApprovalNotifications(item, req, { allowDuplicate = false } = {}) {
+async function sendApprovalNotifications(item, req) {
   const normalizedItem = normalizeScheduleItem(item);
   if (!canShareVoucher(normalizedItem)) {
     throw new Error("Voucher e QR Code só podem ser enviados após a aprovação do agendamento.");
@@ -1056,18 +1040,7 @@ async function sendApprovalNotifications(item, req, { allowDuplicate = false } =
   const targets = [];
   const scheduleIntro = buildScheduleIntro(normalizedItem);
 
-  // Dedup: bloqueia e-mails duplicados para o mesmo motorista em < 30 min.
-  // Usa telefone normalizado como chave; cai para e-mail da transportadora se não houver telefone.
-  const emailDeupKey = normalizePhone(normalizedItem?.telefoneMotorista) || String(normalizedItem?.emailTransportadora || '').toLowerCase().trim();
-  const skipEmails = !allowDuplicate && !!emailDeupKey && (() => {
-    const last = approvalEmailSentAtByPhone.get(emailDeupKey);
-    return !!last && (Date.now() - last) < APPROVAL_EMAIL_DEDUP_MS;
-  })();
-
-  if (skipEmails) {
-    console.log(`[EMAIL-APROVACAO] Dedup: e-mail de aprovação já enviado para "${emailDeupKey}" nos últimos ${APPROVAL_EMAIL_DEDUP_MS / 60000}min — pulando e-mail (agendamentoId=${normalizedItem?.id}).`);
-    results.push({ tipo: 'email-dedup', skipped: true, reason: 'E-mail de aprovação já enviado recentemente para este contato.' });
-  } else {
+  {
     const commonText = [
       scheduleIntro,
       `Data: ${formatDateBR(normalizedItem?.dataAgendada)}`,
@@ -1116,10 +1089,8 @@ async function sendApprovalNotifications(item, req, { allowDuplicate = false } =
       results.push({ tipo: "transportadora/fornecedor", to: emailTo, cc: emailCc, ...sent });
       if (sent.sent) targets.push("transportadora/fornecedor");
     }
-
-    if (emailDeupKey) approvalEmailSentAtByPhone.set(emailDeupKey, Date.now());
   }
- 
+
   const confirmacaoStatus = String(normalizedItem.whatsappConfirmacaoStatus || '').toUpperCase();
   console.log(`[WHATSAPP-APPROVAL] telefoneMotorista="${normalizedItem.telefoneMotorista || ''}", confirmacaoStatus="${confirmacaoStatus || 'null (migração V14 não executada?)'}", agendamentoId=${normalizedItem.id}`);
   if (normalizedItem.telefoneMotorista) {
@@ -1958,7 +1929,7 @@ router.post("/:id(\\d+)/enviar-informacoes", requirePermission("agendamentos.not
   try {
     const item = await full(req.params.id);
     if (!item) return res.status(404).json({ message: "Agendamento não encontrado." });
-    const out = await sendApprovalNotifications(item, req, { allowDuplicate: true });
+    const out = await sendApprovalNotifications(item, req);
     if (!out.results.length) return res.status(400).json({ message: "Não há e-mails cadastrados no agendamento." });
     res.json({ ok: true, results: out.results, ...out.links, tokenMotorista: item.publicTokenMotorista, tokenConsulta: item.publicTokenFornecedor });
   } catch (err) { res.status(400).json({ message: err.message }); }

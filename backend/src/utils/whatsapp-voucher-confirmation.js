@@ -22,18 +22,16 @@ import { env } from "../config/env.js";
 export const RESEND_AFTER_MS = 20 * 60 * 1000;
 export const TIMEOUT_AFTER_MS = 40 * 60 * 1000;
 
-// Intervalo mínimo entre vouchers para o mesmo telefone (evita duplicatas por race condition).
-const VOUCHER_DEDUP_MS = 5 * 60 * 1000;
-
-// Locks in-memory por telefone para serializar envios concorrentes.
-// Impede que múltiplos agendamentos criados simultaneamente disparem múltiplas confirmações.
+// Locks in-memory por telefone para serializar envios concorrentes dentro do mesmo processo.
 const confirmacaoLocks = new Map(); // phone → Promise
 const voucherLocks = new Map();     // phone → Promise
 
 async function withPhoneLock(lockMap, phone, fn) {
-  // Aguarda lock anterior do mesmo telefone terminar
-  const prev = lockMap.get(phone);
-  if (prev) await prev.catch(() => {});
+  // Loop: re-verifica após acordar para cobrir o caso em que mais de dois
+  // callers estavam aguardando o mesmo lock e um deles já tomou o próximo slot.
+  while (lockMap.has(phone)) {
+    await lockMap.get(phone).catch(() => {});
+  }
   let release;
   const lock = new Promise((res) => { release = res; });
   lockMap.set(phone, lock);
@@ -108,33 +106,11 @@ async function _requestVoucherConfirmacaoLocked(agendamento, normalizedPhone, { 
   const telefone = agendamento.telefoneMotorista;
   const now = new Date();
 
-  // Se já existe outra confirmação PENDENTE para este telefone, não envia nova mensagem.
-  // O watcher resolveria todos de uma vez quando o motorista responder.
-  const existingPendente = await prisma.agendamento.findFirst({
-    where: {
-      whatsappConfirmacaoStatus: CONFIRMACAO_STATUS.PENDENTE,
-      whatsappConfirmacaoTelefone: normalizedPhone,
-      id: { not: Number(agendamento.id) },
-    },
-    select: { id: true },
-  });
-
-  if (existingPendente) {
-    console.log(`[WHATSAPP-CONFIRMACAO] Já existe agendamento PENDENTE (id=${existingPendente.id}) para telefone=${normalizedPhone}. Registrando status sem reenviar mensagem.`);
-    await prisma.agendamento.update({
-      where: { id: Number(agendamento.id) },
-      data: {
-        whatsappConfirmacaoStatus: CONFIRMACAO_STATUS.PENDENTE,
-        whatsappConfirmacaoTelefone: normalizedPhone,
-        whatsappConfirmacaoEnviadoEm: now,
-        whatsappConfirmacaoUltimoEnvioEm: now,
-        whatsappConfirmacaoTentativas: 1,
-        whatsappConfirmacaoRespondidoEm: null,
-        voucherWhatsappEnviado: 0,
-        voucherWhatsappEnviadoEm: null,
-      },
-    });
-    return { sent: false, reason: `Confirmação já pendente para este telefone (agendamento id=${existingPendente.id}). Aguardando resposta do motorista.` };
+  // Idempotência: se este agendamento já enviou sua mensagem de confirmação,
+  // não envia novamente (protege contra chamadas duplicadas no mesmo agendamento).
+  if (agendamento.whatsappConfirmacaoEnviadoEm) {
+    console.log(`[WHATSAPP-CONFIRMACAO] Agendamento id=${agendamento.id} já enviou confirmação em ${new Date(agendamento.whatsappConfirmacaoEnviadoEm).toISOString()}. Ignorando.`);
+    return { sent: false, reason: `Confirmação já enviada para este agendamento (id=${agendamento.id}).` };
   }
 
   const nome = agendamento.motorista || agendamento.nomeMotorista || "Motorista";
@@ -187,25 +163,10 @@ export async function sendVoucherWhatsApp(agendamento) {
 async function _sendVoucherWhatsAppLocked(agendamento, normalizedPhone) {
   const telefone = agendamento.telefoneMotorista;
 
-  // Deduplicação: não envia se outro agendamento para o mesmo telefone recebeu voucher recentemente.
-  const cutoff = new Date(Date.now() - VOUCHER_DEDUP_MS);
-  const recentVoucher = await prisma.agendamento.findFirst({
-    where: {
-      whatsappConfirmacaoTelefone: normalizedPhone,
-      voucherWhatsappEnviado: 1,
-      voucherWhatsappEnviadoEm: { gte: cutoff },
-      id: { not: Number(agendamento.id) },
-    },
-    select: { id: true },
-  });
-
-  if (recentVoucher) {
-    console.log(`[WHATSAPP-VOUCHER] Voucher já enviado recentemente (agendamento id=${recentVoucher.id}) para telefone=${normalizedPhone}. Marcando agendamento id=${agendamento.id} sem reenviar.`);
-    await prisma.agendamento.update({
-      where: { id: Number(agendamento.id) },
-      data: { voucherWhatsappEnviado: 1, voucherWhatsappEnviadoEm: new Date() },
-    });
-    return { ok: false, sent: false, reason: `Voucher já enviado recentemente para este telefone (agendamento id=${recentVoucher.id}).` };
+  // Idempotência por agendamento: se este agendamento já recebeu o voucher, não envia de novo.
+  if (Number(agendamento.voucherWhatsappEnviado) === 1) {
+    console.log(`[WHATSAPP-VOUCHER] Voucher já enviado para agendamento id=${agendamento.id}. Ignorando.`);
+    return { ok: false, sent: false, reason: `Voucher já enviado para este agendamento (id=${agendamento.id}).` };
   }
 
   const voucherUrl = buildVoucherUrl(agendamento);
@@ -292,29 +253,21 @@ export async function processIncomingWhatsAppReply({ phone, text }) {
       });
     }
 
-    // Envia voucher apenas para o agendamento APROVADO mais recente.
-    // Os demais receberão o voucher individualmente na aprovação via sendApprovalNotifications.
-    // Isso evita que N agendamentos aprovados gerem N vouchers simultâneos para o mesmo telefone.
-    const aprovados = pendentes.filter((a) => VOUCHER_ALLOWED_STATUSES.has(String(a.status || '').toUpperCase()));
-    aprovados.sort((a, b) => Number(b.id) - Number(a.id)); // mais recente primeiro
     let totalVouchersEnviados = 0;
 
-    if (aprovados.length > 0) {
-      const principal = aprovados[0];
-      console.log(`[WHATSAPP-REPLY] ${aprovados.length} agendamento(s) aprovado(s). Enviando voucher apenas para o mais recente: id=${principal.id}.`);
-      const sentVoucher = await sendVoucherWhatsApp(principal);
-      if (sentVoucher?.ok) totalVouchersEnviados = 1;
-      if (aprovados.length > 1) {
-        console.log(`[WHATSAPP-REPLY] Demais aprovados (ids=[${aprovados.slice(1).map((a) => a.id).join(', ')}]) marcados sem reenvio de voucher — já contam com confirmação.`);
-      }
-    }
-
     for (const agendamento of pendentes) {
+      // Voucher: cada agendamento aprovado recebe o seu próprio, independente dos demais.
+      const estaAprovado = VOUCHER_ALLOWED_STATUSES.has(String(agendamento.status || '').toUpperCase());
+      if (estaAprovado) {
+        const sentVoucher = await sendVoucherWhatsApp(agendamento);
+        if (sentVoucher?.ok) totalVouchersEnviados += 1;
+      }
+
       await auditLog({
         acao: "CONFIRMACAO_WHATSAPP_ACEITA",
         entidade: "AGENDAMENTO",
         entidadeId: agendamento.id,
-        detalhes: { telefone: normalizedPhone, texto: text, voucherEnviado: agendamento.id === aprovados[0]?.id },
+        detalhes: { telefone: normalizedPhone, texto: text, voucherEnviado: estaAprovado },
       });
     }
 
@@ -351,6 +304,10 @@ export async function processIncomingWhatsAppReply({ phone, text }) {
  * Verifica agendamentos com confirmação pendente: reenvia a mensagem uma vez
  * aos RESEND_AFTER_MS e marca como SEM_CONTATO ao completar TIMEOUT_AFTER_MS
  * (contados a partir do primeiro envio). Deve ser chamada periodicamente.
+ *
+ * Cada agendamento é tratado de forma independente — sem agrupamento por telefone.
+ * O reenvio usa updateMany com condição atômica (tentativas < 2) para proteger
+ * contra múltiplos processos do servidor executando o watcher simultaneamente.
  */
 export async function runVoucherConfirmationWatcherTick() {
   const pendentes = await prisma.agendamento.findMany({
@@ -361,88 +318,53 @@ export async function runVoucherConfirmationWatcherTick() {
   let reenviados = 0;
   let semContato = 0;
 
-  // Agrupa por telefone para não enviar múltiplas confirmações para o mesmo número.
-  // Para timeout, processa todos; para reenvio, usa apenas o mais recente por telefone.
-  const byPhone = new Map();
-  for (const ag of pendentes) {
-    const phone = ag.whatsappConfirmacaoTelefone || normalizePhone(ag.telefoneMotorista || "");
-    if (!phone) continue;
-    if (!byPhone.has(phone)) byPhone.set(phone, []);
-    byPhone.get(phone).push(ag);
-  }
+  for (const agendamento of pendentes) {
+    const enviadoEm = agendamento.whatsappConfirmacaoEnviadoEm
+      ? new Date(agendamento.whatsappConfirmacaoEnviadoEm).getTime()
+      : null;
+    if (!enviadoEm || Number.isNaN(enviadoEm)) continue;
 
-  for (const [phone, grupo] of byPhone) {
-    // Ordena do mais recente ao mais antigo (por id).
-    grupo.sort((a, b) => Number(b.id) - Number(a.id));
-
-    for (const agendamento of grupo) {
-      const enviadoEm = agendamento.whatsappConfirmacaoEnviadoEm
-        ? new Date(agendamento.whatsappConfirmacaoEnviadoEm).getTime()
-        : null;
-      if (!enviadoEm || Number.isNaN(enviadoEm)) continue;
-      const elapsed = now - enviadoEm;
-
-      if (elapsed >= TIMEOUT_AFTER_MS) {
-        await prisma.agendamento.update({
-          where: { id: Number(agendamento.id) },
-          data: { whatsappConfirmacaoStatus: CONFIRMACAO_STATUS.SEM_CONTATO },
-        });
-        await auditLog({
-          acao: "CONFIRMACAO_WHATSAPP_SEM_CONTATO",
-          entidade: "AGENDAMENTO",
-          entidadeId: agendamento.id,
-          detalhes: { telefone: phone },
-        });
-        semContato += 1;
-      }
-    }
-
-    // Reenvio: usa apenas o agendamento mais recente do grupo que ainda não esgotou.
-    // Isso evita enviar múltiplas confirmações para o mesmo motorista.
-    const maisRecente = grupo.find((ag) => {
-      const enviadoEm = ag.whatsappConfirmacaoEnviadoEm
-        ? new Date(ag.whatsappConfirmacaoEnviadoEm).getTime()
-        : null;
-      if (!enviadoEm || Number.isNaN(enviadoEm)) return false;
-      const elapsed = now - enviadoEm;
-      return elapsed < TIMEOUT_AFTER_MS;
-    });
-
-    if (!maisRecente) continue;
-
-    const enviadoEm = new Date(maisRecente.whatsappConfirmacaoEnviadoEm).getTime();
     const elapsed = now - enviadoEm;
-    const jaReenviou = Number(maisRecente.whatsappConfirmacaoTentativas || 0) >= 2;
+    const phone = agendamento.whatsappConfirmacaoTelefone || normalizePhone(agendamento.telefoneMotorista || "");
 
-    if (!jaReenviou && elapsed >= RESEND_AFTER_MS) {
-      const sentWhats = await sendWhatsAppConfirmacao({
-        to: maisRecente.telefoneMotorista,
-        name: maisRecente.motorista || maisRecente.nomeMotorista || "Motorista",
-        dataAgendada: formatDateBR(maisRecente?.dataAgendada),
-        horaAgendada: formatHourLabel(maisRecente?.horaAgendada),
+    if (elapsed >= TIMEOUT_AFTER_MS) {
+      await prisma.agendamento.update({
+        where: { id: Number(agendamento.id) },
+        data: { whatsappConfirmacaoStatus: CONFIRMACAO_STATUS.SEM_CONTATO },
       });
-      const reenvioNow = new Date();
-      // Incrementa tentativas apenas no agendamento que enviou; os demais recebem apenas o timestamp.
-      for (const ag of grupo) {
-        const isRemetente = ag.id === maisRecente.id;
-        await prisma.agendamento.update({
-          where: { id: Number(ag.id) },
-          data: {
-            whatsappConfirmacaoUltimoEnvioEm: reenvioNow,
-            ...(isRemetente && {
-              whatsappConfirmacaoTentativas: Number(maisRecente.whatsappConfirmacaoTentativas || 0) + 1,
-            }),
-          },
-        });
-      }
       await auditLog({
-        acao: "REENVIAR_CONFIRMACAO_WHATSAPP",
+        acao: "CONFIRMACAO_WHATSAPP_SEM_CONTATO",
         entidade: "AGENDAMENTO",
-        entidadeId: maisRecente.id,
-        detalhes: { telefone: phone, totalAgendamentosNoGrupo: grupo.length, ...sentWhats },
+        entidadeId: agendamento.id,
+        detalhes: { telefone: phone },
       });
-      reenviados += 1;
+      semContato += 1;
+      continue;
     }
+
+    const tentativas = Number(agendamento.whatsappConfirmacaoTentativas || 0);
+    if (tentativas >= 2 || elapsed < RESEND_AFTER_MS) continue;
+
+    // Update atômico: só prossegue se nenhum outro processo já incrementou tentativas.
+    const updated = await prisma.agendamento.updateMany({
+      where: { id: Number(agendamento.id), whatsappConfirmacaoTentativas: { lt: 2 } },
+      data: { whatsappConfirmacaoTentativas: tentativas + 1, whatsappConfirmacaoUltimoEnvioEm: new Date() },
+    });
+    if (updated.count === 0) continue;
+
+    const sentWhats = await sendWhatsAppConfirmacao({
+      to: agendamento.telefoneMotorista,
+      name: agendamento.motorista || agendamento.nomeMotorista || "Motorista",
+      dataAgendada: formatDateBR(agendamento?.dataAgendada),
+      horaAgendada: formatHourLabel(agendamento?.horaAgendada),
+    });
+    await auditLog({
+      acao: "REENVIAR_CONFIRMACAO_WHATSAPP",
+      entidade: "AGENDAMENTO",
+      entidadeId: agendamento.id,
+      detalhes: { telefone: phone, ...sentWhats },
+    });
+    reenviados += 1;
   }
 
   return { checados: pendentes.length, reenviados, semContato };
