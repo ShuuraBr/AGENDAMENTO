@@ -75,12 +75,13 @@ function salvarOptin(state) {
 // ─── Duotalk helpers ──────────────────────────────────────────────────────────
 
 async function postDuotalk(apiUrl, phone, queryParams = {}) {
-  // Remove qualquer query string já existente na URL (ex: ?queryParams=true&2=date)
-  const baseUrl = apiUrl.replace(/\\/g, '').split('?')[0];
+  const baseUrl = apiUrl.replace(/\\/g, '');
+  const sep = baseUrl.includes('?') ? '&' : '?';
   // Constrói manualmente para não codificar barras da data (dd/mm/yyyy)
   const extra = Object.entries(queryParams).map(([k, v]) => `${k}=${v}`).join('&');
-  const url = `${baseUrl}?queryParams=true${extra ? '&' + extra : ''}`;
+  const url = `${baseUrl}${sep}queryParams=true${extra ? '&' + extra : ''}`;
 
+  console.log(`[RELATORIO-SUP] POST Duotalk → ${url}`);
   try {
     const resp = await fetch(url, {
       method: 'POST',
