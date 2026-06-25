@@ -256,7 +256,9 @@ export async function dispararRelatorioDiario() {
   }
 
   console.log(`[RELATORIO-SUP] Total: ${total}. Disparando para ${elegiveis.length} supervisor(es)...`);
-  await Promise.all(elegiveis.map((tel) => enviarRelatorioParaSupervisor({ telefone: tel, dataBR: br, total })));
+  const resultados = await Promise.all(elegiveis.map((tel) => enviarRelatorioParaSupervisor({ telefone: tel, dataBR: br, total })));
+  // Retorna true se ao menos um envio foi bem-sucedido (usado pelo scheduler)
+  return resultados.some((r) => r?.ok);
 }
 
 // ─── Scheduler ────────────────────────────────────────────────────────────────
@@ -287,9 +289,11 @@ function salvarUltimoEnvio(dataIso) {
  */
 export function iniciarSchedulerRelatorio() {
   const disparar = (dataIso, hora, minuto) => {
-    salvarUltimoEnvio(dataIso);
     console.log(`[RELATORIO-SUP] Disparando relatório diário (${hora}:${String(minuto).padStart(2, '0')} BRT)`);
-    dispararRelatorioDiario().catch((err) => {
+    dispararRelatorioDiario().then((enviou) => {
+      // Só marca como enviado se ao menos um supervisor recebeu com sucesso
+      if (enviou) salvarUltimoEnvio(dataIso);
+    }).catch((err) => {
       console.error('[RELATORIO-SUP] Erro no disparo automático:', err?.message || err);
     });
   };
