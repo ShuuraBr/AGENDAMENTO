@@ -58,5 +58,7 @@ export const env = {
   whatsappSupervisoresApiUrl: process.env.WHATSAPP_SUPERVISORES_API_URL || "",
   // Números dos supervisores que recebem o relatório diário (separados por vírgula).
   // Formato: DDD + número (ex: 44999998888,44988887777,44977776666)
-  supervisoresWhatsappNumeros: process.env.SUPERVISORES_WHATSAPP_NUMEROS || ""
+  supervisoresWhatsappNumeros: process.env.SUPERVISORES_WHATSAPP_NUMEROS || "",
+  // Quando true, ignora o fluxo de opt-in e envia o relatório direto para todos os números.
+  supervisoresOptinConfirmado: String(process.env.SUPERVISORES_OPTIN_CONFIRMADO || 'false') === 'true'
 };

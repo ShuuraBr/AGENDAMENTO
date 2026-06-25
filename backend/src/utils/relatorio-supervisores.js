@@ -112,6 +112,10 @@ async function enviarConfirmacaoSupervisor(phone) {
  * Deve ser chamada na inicialização do servidor.
  */
 export async function verificarEEnviarOptins() {
+  if (env.supervisoresOptinConfirmado) {
+    console.log('[RELATORIO-SUP] Opt-in já confirmado via env. Pulando envio de confirmação.');
+    return;
+  }
   const numerosRaw = env.supervisoresWhatsappNumeros || '';
   const numeros = numerosRaw.split(',').map((n) => n.trim()).filter(Boolean);
   if (numeros.length === 0) return;
@@ -237,13 +241,17 @@ export async function dispararRelatorioDiario() {
     return;
   }
 
-  const state = carregarOptin();
-  // Só envia para quem respondeu SIM. Quem ainda não respondeu ou recusou não recebe.
-  const elegiveis = numeros.filter((tel) => state[normalizePhone(tel)]?.status === 'ACEITOU');
-
-  if (elegiveis.length === 0) {
-    console.warn('[RELATORIO-SUP] Nenhum supervisor aceitou o opt-in ainda. Relatório não enviado.');
-    return;
+  // Se opt-in confirmado via env, envia para todos os números sem checar o arquivo.
+  let elegiveis;
+  if (env.supervisoresOptinConfirmado) {
+    elegiveis = numeros;
+  } else {
+    const state = carregarOptin();
+    elegiveis = numeros.filter((tel) => state[normalizePhone(tel)]?.status === 'ACEITOU');
+    if (elegiveis.length === 0) {
+      console.warn('[RELATORIO-SUP] Nenhum supervisor aceitou o opt-in ainda. Relatório não enviado.');
+      return;
+    }
   }
 
   const { iso, br } = ontem();
