@@ -54,7 +54,9 @@ export function normalizePhone(value) {
 function carregarOptin() {
   try {
     if (fs.existsSync(OPTIN_FILE)) {
-      return JSON.parse(fs.readFileSync(OPTIN_FILE, 'utf8'));
+      // Remove BOM (﻿) que PowerShell adiciona em arquivos UTF-8
+      const raw = fs.readFileSync(OPTIN_FILE, 'utf8').replace(/^﻿/, '');
+      return JSON.parse(raw);
     }
   } catch (err) {
     console.error('[RELATORIO-SUP] Erro ao ler opt-in:', err?.message);
@@ -112,7 +114,7 @@ async function enviarConfirmacaoSupervisor(phone) {
  * Deve ser chamada na inicialização do servidor.
  */
 export async function verificarEEnviarOptins() {
-  if (env.supervisoresOptinConfirmado) {
+  if (process.env.SUPERVISORES_OPTIN_CONFIRMADO === 'true') {
     console.log('[RELATORIO-SUP] Opt-in já confirmado via env. Pulando envio de confirmação.');
     return;
   }
@@ -243,7 +245,7 @@ export async function dispararRelatorioDiario() {
 
   // Se opt-in confirmado via env, envia para todos os números sem checar o arquivo.
   let elegiveis;
-  if (env.supervisoresOptinConfirmado) {
+  if (process.env.SUPERVISORES_OPTIN_CONFIRMADO === 'true') {
     elegiveis = numeros;
   } else {
     const state = carregarOptin();
