@@ -77,8 +77,9 @@ function salvarOptin(state) {
 async function postDuotalk(apiUrl, phone, queryParams = {}) {
   const baseUrl = apiUrl.replace(/\\/g, '');
   const sep = baseUrl.includes('?') ? '&' : '?';
-  const params = new URLSearchParams({ queryParams: 'true', ...queryParams });
-  const url = `${baseUrl}${sep}${params.toString()}`;
+  // Constrói manualmente para não codificar barras da data (dd/mm/yyyy)
+  const extra = Object.entries(queryParams).map(([k, v]) => `${k}=${v}`).join('&');
+  const url = `${baseUrl}${sep}queryParams=true${extra ? '&' + extra : ''}`;
 
   try {
     const resp = await fetch(url, {
@@ -221,7 +222,7 @@ async function enviarRelatorioParaSupervisor({ telefone, dataBR, total }) {
   const phone = normalizePhone(telefone);
   if (!phone) return { ok: false, reason: 'Telefone inválido' };
 
-  // Template: "Bom dia, {NOME_CONTATO}! Relatório de agendamentos criados em {2}: {3} agendamentos."
+  // Template: "Bom dia {NOME_CONTATO}! Relatório de agendamentos criados em {2}: {3} agendamentos."
   const result = await postDuotalk(apiUrl, phone, { 2: dataBR, 3: String(total) });
   if (result.ok) {
     console.log(`[RELATORIO-SUP] Relatório enviado para ${phone} — ${dataBR}: ${total} agendamentos.`);
