@@ -260,22 +260,52 @@ export async function dispararRelatorioDiario() {
 
 // ─── Scheduler ────────────────────────────────────────────────────────────────
 
+function carregarUltimoEnvio() {
+  try {
+    const state = carregarOptin();
+    return state.__ultimoEnvioRelatorio || '';
+  } catch { return ''; }
+}
+
+function salvarUltimoEnvio(dataIso) {
+  try {
+    const state = carregarOptin();
+    state.__ultimoEnvioRelatorio = dataIso;
+    salvarOptin(state);
+  } catch (err) {
+    console.error('[RELATORIO-SUP] Erro ao salvar data de envio:', err?.message);
+  }
+}
+
 /**
  * Inicia o scheduler que dispara o relatório todo dia às 07:30 BRT.
- * Verifica a cada 60 s. Usa flag de data para não disparar mais de uma vez/dia.
+ * - Verifica a cada 60 s.
+ * - Persiste a data do último envio no JSON para sobreviver a restarts.
+ * - Se o servidor subir depois das 07:30 e o relatório ainda não foi enviado
+ *   hoje, dispara imediatamente.
  */
 export function iniciarSchedulerRelatorio() {
-  let ultimoEnvioData = '';
+  const disparar = (dataIso, hora, minuto) => {
+    salvarUltimoEnvio(dataIso);
+    console.log(`[RELATORIO-SUP] Disparando relatório diário (${hora}:${String(minuto).padStart(2, '0')} BRT)`);
+    dispararRelatorioDiario().catch((err) => {
+      console.error('[RELATORIO-SUP] Erro no disparo automático:', err?.message || err);
+    });
+  };
 
-  const tick = async () => {
+  const tick = () => {
     const { hora, minuto, dataIso } = agoraBRT();
+    const ultimoEnvio = carregarUltimoEnvio();
 
-    if (hora === 7 && minuto >= 30 && minuto < 32 && ultimoEnvioData !== dataIso) {
-      ultimoEnvioData = dataIso;
-      console.log(`[RELATORIO-SUP] Disparando relatório diário (${hora}:${String(minuto).padStart(2, '0')} BRT)`);
-      dispararRelatorioDiario().catch((err) => {
-        console.error('[RELATORIO-SUP] Erro no disparo automático:', err?.message || err);
-      });
+    // Janela normal: 07:30–07:59 BRT (qualquer minuto após 07:30, no mesmo dia)
+    if (hora === 7 && minuto >= 30 && ultimoEnvio !== dataIso) {
+      disparar(dataIso, hora, minuto);
+      return;
+    }
+
+    // Catch-up: servidor subiu depois das 07:30 (ex: 08:15) sem ter enviado hoje
+    if (hora > 7 && hora < 23 && ultimoEnvio !== dataIso) {
+      disparar(dataIso, hora, minuto);
     }
   };
 
