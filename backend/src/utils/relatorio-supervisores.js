@@ -125,17 +125,18 @@ export async function verificarEEnviarOptins() {
     if (state[phone]) continue; // já tem status — não reenvia
 
     const result = await enviarConfirmacaoSupervisor(phone);
-    if (!result.ok) {
-      console.error(`[RELATORIO-SUP] Falha ao enviar opt-in para ${phone}: ${result.reason}. Tentará novamente no próximo restart.`);
-      continue; // não salva no JSON — vai retentar na próxima vez que o servidor subir
-    }
+    // Salva independente do resultado para não reenviar em cada restart.
     state[phone] = {
       status: 'PENDENTE',
       enviadoEm: new Date().toISOString(),
       respondidoEm: null,
     };
     alterado = true;
-    console.log(`[RELATORIO-SUP] Opt-in enviado para ${phone}.`);
+    if (!result.ok) {
+      console.error(`[RELATORIO-SUP] Falha ao enviar opt-in para ${phone}: ${result.reason}. Marcado como PENDENTE para não reenviar.`);
+    } else {
+      console.log(`[RELATORIO-SUP] Opt-in enviado para ${phone}.`);
+    }
   }
 
   if (alterado) salvarOptin(state);
