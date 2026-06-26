@@ -300,13 +300,18 @@ function salvarUltimoEnvio(dataIso) {
  *   hoje, dispara imediatamente.
  */
 export function iniciarSchedulerRelatorio() {
+  let disparandoAgora = false;
+
   const disparar = (dataIso, hora, minuto) => {
+    if (disparandoAgora) return;
+    disparandoAgora = true;
+    // Salva ANTES de enviar para evitar spam em caso de erros no Duotalk
+    salvarUltimoEnvio(dataIso);
     console.log(`[RELATORIO-SUP] Disparando relatório diário (${hora}:${String(minuto).padStart(2, '0')} BRT)`);
-    dispararRelatorioDiario().then((enviou) => {
-      // Só marca como enviado se ao menos um supervisor recebeu com sucesso
-      if (enviou) salvarUltimoEnvio(dataIso);
-    }).catch((err) => {
+    dispararRelatorioDiario().catch((err) => {
       console.error('[RELATORIO-SUP] Erro no disparo automático:', err?.message || err);
+    }).finally(() => {
+      disparandoAgora = false;
     });
   };
 
@@ -314,13 +319,13 @@ export function iniciarSchedulerRelatorio() {
     const { hora, minuto, dataIso } = agoraBRT();
     const ultimoEnvio = carregarUltimoEnvio();
 
-    // Janela normal: 07:30–07:59 BRT (qualquer minuto após 07:30, no mesmo dia)
+    // Janela normal: 07:30–07:59 BRT
     if (hora === 7 && minuto >= 30 && ultimoEnvio !== dataIso) {
       disparar(dataIso, hora, minuto);
       return;
     }
 
-    // Catch-up: servidor subiu depois das 07:30 (ex: 08:15) sem ter enviado hoje
+    // Catch-up: servidor subiu depois das 07:30 sem ter enviado hoje
     if (hora > 7 && hora < 23 && ultimoEnvio !== dataIso) {
       disparar(dataIso, hora, minuto);
     }
