@@ -312,11 +312,16 @@ export async function processIncomingWhatsAppReply({ phone, text }) {
 export async function runVoucherConfirmationWatcherTick() {
   const pendentes = await prisma.agendamento.findMany({
     where: { whatsappConfirmacaoStatus: CONFIRMACAO_STATUS.PENDENTE },
+    orderBy: { id: "desc" },
   });
 
   const now = Date.now();
   let reenviados = 0;
   let semContato = 0;
+
+  // Telefones que já receberam reenvio neste tick — evita spam quando o mesmo
+  // motorista tem múltiplos agendamentos PENDENTE (ex: duplicatas).
+  const phonesSentThisTick = new Set();
 
   for (const agendamento of pendentes) {
     const enviadoEm = agendamento.whatsappConfirmacaoEnviadoEm
@@ -343,14 +348,24 @@ export async function runVoucherConfirmationWatcherTick() {
     }
 
     const tentativas = Number(agendamento.whatsappConfirmacaoTentativas || 0);
+    // Só reenvia 1 vez (tentativas passa de 1 para 2); a confirmação inicial
+    // já foi feita com tentativas=1 por requestVoucherConfirmation.
     if (tentativas >= 2 || elapsed < RESEND_AFTER_MS) continue;
+
+    // Não reenvia se já enviamos para este telefone neste tick.
+    if (phone && phonesSentThisTick.has(phone)) {
+      console.log(`[WHATSAPP-WATCHER] Reenvio ignorado para phone=${phone} agendamentoId=${agendamento.id} — telefone já processado neste tick.`);
+      continue;
+    }
 
     // Update atômico: só prossegue se nenhum outro processo já incrementou tentativas.
     const updated = await prisma.agendamento.updateMany({
       where: { id: Number(agendamento.id), whatsappConfirmacaoTentativas: { lt: 2 } },
-      data: { whatsappConfirmacaoTentativas: tentativas + 1, whatsappConfirmacaoUltimoEnvioEm: new Date() },
+      data: { whatsappConfirmacaoTentativas: 2, whatsappConfirmacaoUltimoEnvioEm: new Date() },
     });
     if (updated.count === 0) continue;
+
+    if (phone) phonesSentThisTick.add(phone);
 
     const sentWhats = await sendWhatsAppConfirmacao({
       to: agendamento.telefoneMotorista,

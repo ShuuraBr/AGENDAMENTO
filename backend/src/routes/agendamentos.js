@@ -1725,6 +1725,7 @@ router.post("/:id(\\d+)/aprovar", requirePermission("agendamentos.approve"), asy
 router.post("/:id(\\d+)/reprovar", requirePermission("agendamentos.reprove"), async (req, res) => {
   try {
     const item = await transition(req.params.id, "REPROVADO", { motivoReprovacao: req.body?.motivo || "Reprovado" }, req);
+    await prisma.agendamento.update({ where: { id: Number(item.id) }, data: { whatsappConfirmacaoStatus: null } }).catch(() => {});
     await unlinkRelatorioRowsFromAgendamento(item?.id);
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
@@ -1771,7 +1772,12 @@ router.post("/:id(\\d+)/reagendar", requirePermission("agendamentos.reschedule")
     try {
       item = await prisma.agendamento.update({
         where: { id: Number(req.params.id) },
-        data: { dataAgendada: merged.dataAgendada, horaAgendada: merged.horaAgendada, docaId: Number(merged.docaId), janelaId: Number(merged.janelaId), status: "PENDENTE_APROVACAO" }
+        data: {
+          dataAgendada: merged.dataAgendada, horaAgendada: merged.horaAgendada, docaId: Number(merged.docaId), janelaId: Number(merged.janelaId), status: "PENDENTE_APROVACAO",
+          whatsappConfirmacaoStatus: null, whatsappConfirmacaoEnviadoEm: null, whatsappConfirmacaoUltimoEnvioEm: null,
+          whatsappConfirmacaoTentativas: 0, whatsappConfirmacaoRespondidoEm: null,
+          voucherWhatsappEnviado: 0, voucherWhatsappEnviadoEm: null,
+        }
       });
     } catch {
       item = updateAgendamentoFile(req.params.id, { dataAgendada: merged.dataAgendada, horaAgendada: merged.horaAgendada, docaId: Number(merged.docaId), janelaId: Number(merged.janelaId), status: "PENDENTE_APROVACAO" });
@@ -1790,7 +1796,7 @@ router.post("/:id(\\d+)/cancelar", requirePermission("agendamentos.cancel"), asy
     if (["FINALIZADO", "CANCELADO"].includes(found.status)) throw new Error("Não é possível cancelar esse status.");
     let item;
     try {
-      item = await prisma.agendamento.update({ where: { id: Number(req.params.id) }, data: { status: "CANCELADO", motivoCancelamento: req.body?.motivo || "Cancelado" } });
+      item = await prisma.agendamento.update({ where: { id: Number(req.params.id) }, data: { status: "CANCELADO", motivoCancelamento: req.body?.motivo || "Cancelado", whatsappConfirmacaoStatus: null } });
     } catch {
       item = updateAgendamentoFile(req.params.id, { status: "CANCELADO", motivoCancelamento: req.body?.motivo || "Cancelado" });
     }
