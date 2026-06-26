@@ -6,14 +6,21 @@ export default function PublicMotoristaPage() {
   const { protocolo } = useParams();
   const [item, setItem] = useState(null);
   const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     api.get(`/public/voucher/${protocolo}`).then((res) => setItem(res.data)).catch(() => setMessage('Protocolo não encontrado'));
   }, [protocolo]);
 
   async function confirmarChegada() {
-    await api.post(`/public/motorista/${protocolo}/confirmar-chegada`);
-    setMessage('Chegada confirmada com sucesso.');
+    if (loading) return;
+    setLoading(true);
+    try {
+      await api.post(`/public/motorista/${protocolo}/confirmar-chegada`);
+      setMessage('Chegada confirmada com sucesso.');
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (!item) return <div style={{ padding: 24 }}>{message || 'Carregando...'}</div>;
@@ -25,7 +32,7 @@ export default function PublicMotoristaPage() {
       <p>Status: {item.status}</p>
       <p>Data: {new Date(item.dataAgendada).toLocaleDateString('pt-BR')}</p>
       <p>Hora: {item.horaAgendada}</p>
-      <button onClick={confirmarChegada}>Confirmar chegada</button>
+      <button onClick={confirmarChegada} disabled={loading}>{loading ? 'Confirmando...' : 'Confirmar chegada'}</button>
       {message && <p>{message}</p>}
     </div>
   );

@@ -247,6 +247,7 @@ export default function AgendamentosPage() {
   const [agendamentos, setAgendamentos] = useState([]);
   const [selectedPainelDoca, setSelectedPainelDoca] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [kpiFilter, setKpiFilter] = useState(null);
@@ -429,16 +430,21 @@ export default function AgendamentosPage() {
 
   async function handleSave(e) {
     e.preventDefault(); setMessage(''); setError('');
+    if (saving) return;
+    setSaving(true);
     try {
       if (!selectedSuppliers.length) throw new Error('Selecione ao menos um fornecedor.');
       await api.post('/agendamentos', buildPayload());
       setMessage('Agendamento salvo com sucesso.');
       await loadBase(); clearSuppliers();
     } catch (err) { setError(err.response?.data?.message || err.message || 'Falha ao salvar.'); }
+    finally { setSaving(false); }
   }
 
   async function handleOccurrence() {
     setMessage(''); setError('');
+    if (saving) return;
+    setSaving(true);
     try {
       if (!selectedSuppliers.length) throw new Error('Selecione ao menos um fornecedor.');
       if (!selectedNotesList.length) throw new Error('Selecione ao menos uma NF para a ocorrência.');
@@ -446,6 +452,7 @@ export default function AgendamentosPage() {
       setMessage(`Ocorrência registrada. Notas removidas: ${data?.removed?.removed ?? data?.removed ?? 0}.`);
       await loadBase(); clearSuppliers();
     } catch (err) { setError(err.response?.data?.message || err.message || 'Falha ao registrar a ocorrência.'); }
+    finally { setSaving(false); }
   }
 
   const selectedPainel = painelDocas.find((item) => String(item.docaId) === String(selectedPainelDoca)) || null;
@@ -649,8 +656,8 @@ export default function AgendamentosPage() {
           </div>
 
           <div style={styles.actionsColumn}>
-            <button type="submit" style={styles.primaryButton} disabled={loading}>Salvar agendamento</button>
-            <button type="button" style={styles.secondaryButton} onClick={handleOccurrence} disabled={loading}>Ocorrência</button>
+            <button type="submit" style={styles.primaryButton} disabled={loading || saving}>{saving ? 'Salvando...' : 'Salvar agendamento'}</button>
+            <button type="button" style={styles.secondaryButton} onClick={handleOccurrence} disabled={loading || saving}>Ocorrência</button>
           </div>
         </form>
 

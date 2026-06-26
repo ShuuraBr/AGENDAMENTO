@@ -103,7 +103,7 @@ export default function DashboardPage() {
           <Link to="/agendamentos" style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #111827', background: '#111827', color: '#fff', fontWeight: 600, textDecoration: 'none', fontSize: 13 }}>
             + Novo agendamento
           </Link>
-          <button type="button" onClick={load} style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', fontSize: 13 }}>
+          <button type="button" onClick={load} disabled={loading} style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', cursor: loading ? 'not-allowed' : 'pointer', fontSize: 13 }}>
             ↺ Atualizar
           </button>
         </div>

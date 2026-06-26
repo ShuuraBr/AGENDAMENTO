@@ -11,11 +11,18 @@ export default function PublicAgendamentoPage() {
     observacoes: '',
   });
   const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
 
   async function onSubmit(e) {
     e.preventDefault();
-    const { data } = await api.post('/public/agendamentos', form);
-    setMessage(`Solicitação enviada. Protocolo: ${data.protocolo}`);
+    if (sending) return;
+    setSending(true);
+    try {
+      const { data } = await api.post('/public/agendamentos', form);
+      setMessage(`Solicitação enviada. Protocolo: ${data.protocolo}`);
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
@@ -32,7 +39,7 @@ export default function PublicAgendamentoPage() {
         <br /><br />
         <textarea placeholder="Observações" value={form.observacoes} onChange={(e) => setForm({ ...form, observacoes: e.target.value })} />
         <br /><br />
-        <button type="submit">Enviar solicitação</button>
+        <button type="submit" disabled={sending}>{sending ? 'Enviando...' : 'Enviar solicitação'}</button>
       </form>
       {message && <p>{message}</p>}
     </div>

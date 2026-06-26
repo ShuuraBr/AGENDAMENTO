@@ -7,14 +7,18 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: 'admin@agendamento.local', password: '123456' });
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   async function onSubmit(e) {
     e.preventDefault();
+    if (loading) return;
+    setLoading(true);
     try {
       await login(form.email, form.password);
       navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Falha no login');
+      setLoading(false);
     }
   }
 
@@ -26,7 +30,7 @@ export default function LoginPage() {
         <br /><br />
         <input type="password" placeholder="Senha" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
         <br /><br />
-        <button type="submit">Entrar</button>
+        <button type="submit" disabled={loading}>{loading ? 'Entrando...' : 'Entrar'}</button>
       </form>
       {error && <p>{error}</p>}
     </div>

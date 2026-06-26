@@ -645,6 +645,25 @@ function createModelApi(modelName, ctx) {
       return this.findUnique({ where: options.where, include: options.include, select: options.select });
     },
 
+    async updateMany(options = {}) {
+      const tableName = await resolveTableName(modelName, ctx);
+      if (!tableName) throw new Error(`Tabela não encontrada para o modelo ${modelName}.`);
+      const where = await buildWhereClause(modelName, options.where, ctx);
+      if (!where.sql) throw new Error(`Condição de atualização inválida para ${modelName}.`);
+      const processed = await preprocessData(modelName, options.data || {}, ctx, 'update');
+      const sets = [];
+      const params = [];
+      for (const [field, value] of Object.entries(processed)) {
+        const column = await resolveColumnName(modelName, field, ctx);
+        if (!column) continue;
+        sets.push(`${qid(column)} = ?`);
+        params.push(normalizeSqlValue(field, column, value));
+      }
+      if (!sets.length) return { count: 0 };
+      const result = await ctx.execute(`UPDATE ${qid(tableName)} SET ${sets.join(', ')} WHERE ${where.sql}`, [...params, ...where.params]);
+      return { count: Number(result?.affectedRows || 0) };
+    },
+
     async upsert(options = {}) {
       const existing = await this.findUnique({ where: options.where });
       if (existing) {

@@ -5,10 +5,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState("admin@local.test");
   const [senha, setSenha] = useState("123456");
   const [erro, setErro] = useState("");
+  const [loading, setLoading] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
+    if (loading) return;
     setErro("");
+    setLoading(true);
     try {
       const { data } = await api.post("/auth/login", { email, senha });
       localStorage.setItem("token", data.token);
@@ -16,6 +19,7 @@ export default function LoginPage() {
       location.href = "/";
     } catch (err) {
       setErro(err.response?.data?.message || "Falha no login.");
+      setLoading(false);
     }
   }
 
@@ -33,7 +37,7 @@ export default function LoginPage() {
             <span>Senha</span>
             <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} placeholder="Senha" style={{ padding: 12, borderRadius: 10, border: "1px solid #cbd5e1" }} />
           </label>
-          <button type="submit" style={{ padding: 12, borderRadius: 10, cursor: "pointer" }}>Entrar</button>
+          <button type="submit" disabled={loading} style={{ padding: 12, borderRadius: 10, cursor: loading ? "not-allowed" : "pointer" }}>{loading ? "Entrando..." : "Entrar"}</button>
         </form>
         {erro && <p style={{ color: "#b91c1c", marginBottom: 0 }}>{erro}</p>}
       </div>

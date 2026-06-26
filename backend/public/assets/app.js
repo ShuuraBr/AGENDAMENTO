@@ -828,17 +828,19 @@
     document.body.appendChild(modal);
     byId('btnCancelarReagendNotif').onclick = () => modal.remove();
     modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
-    byId('btnConfirmarReagendNotif').onclick = async () => {
+    byId('btnConfirmarReagendNotif').onclick = async (e) => {
       const novaData = byId('novaDataReagendamento').value;
       const novaHora = byId('novaHoraReagendamento').value.trim();
       const msg = byId('modalReagendNotifMsg');
       if (!novaData) { msg.textContent = 'Informe a nova data.'; return; }
-      try {
-        await api(`/api/agendamentos/${agendamentoId}/reagendar`, { method: 'POST', body: JSON.stringify({ dataAgendada: novaData, horaAgendada: novaHora || undefined }) });
-        modal.remove();
-        await loadNotificacoes();
-        if (document.querySelector('#confirmacoes.view.active')) loadAgendamentos().catch(() => {});
-      } catch (err) { msg.textContent = err.message || 'Erro ao reagendar.'; }
+      await withLock(e.currentTarget, async () => {
+        try {
+          await api(`/api/agendamentos/${agendamentoId}/reagendar`, { method: 'POST', body: JSON.stringify({ dataAgendada: novaData, horaAgendada: novaHora || undefined }) });
+          modal.remove();
+          await loadNotificacoes();
+          if (document.querySelector('#confirmacoes.view.active')) loadAgendamentos().catch(() => {});
+        } catch (err) { msg.textContent = err.message || 'Erro ao reagendar.'; }
+      });
     };
   }
 
@@ -877,6 +879,17 @@
       }
     }
     if (!logged && state.token) logout();
+  }
+
+  async function withLock(btn, fn) {
+    if (btn && btn.disabled) return;
+    const originalText = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; }
+    try {
+      return await fn();
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    }
   }
 
   async function api(url, options = {}) {
@@ -3493,7 +3506,12 @@
     return api(`/api/agendamentos/${currentId()}/${path}`, { method: "POST", body: JSON.stringify(body) });
   }
 
+  let _handleOpBusy = false;
   async function handleOp(fn, success) {
+    if (_handleOpBusy) return;
+    _handleOpBusy = true;
+    const opBtns = document.querySelectorAll('#btnAprovar,#btnReprovar,#btnReagendar,#btnCancelar,#btnIniciar,#btnFinalizar,#btnNoShow,#btnEnviarInfos,#btnRegistrarOcorrencia,#btnEditarAgendamento');
+    opBtns.forEach((b) => { b.disabled = true; });
     try {
       const result = await fn();
       if (result === undefined || result === false) return;
@@ -3501,6 +3519,9 @@
       await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
     } catch (err) {
       byId("operacaoMsg").textContent = err.message;
+    } finally {
+      _handleOpBusy = false;
+      opBtns.forEach((b) => { b.disabled = false; });
     }
   }
 
@@ -3800,7 +3821,8 @@
 
     byId("loginForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      try {
+      const submitBtn = e.target.querySelector('[type="submit"]');
+      await withLock(submitBtn, async () => { try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
         const data = await api("/api/auth/login", { method: "POST", body: JSON.stringify(payload) });
 
@@ -3839,7 +3861,7 @@
         byId("loginMsg").textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
       } catch (err) {
         byId("loginMsg").textContent = err.message || "Falha no login.";
-      }
+      } }); // withLock
     });
 
     byId("loadDashboard")?.addEventListener("click", async () => { try { await loadDashboard(); } catch (err) { alert(err.message); } });
@@ -3878,12 +3900,13 @@
         byId('agendamentoMsg').textContent = err.message;
       }
     });
-    byId("saveCadastro")?.addEventListener("click", async () => { try { await saveCadastro(); } catch (err) { byId("cadastroMsg").textContent = err.message; } });
+    byId("saveCadastro")?.addEventListener("click", async (e) => { await withLock(e.currentTarget, async () => { try { await saveCadastro(); } catch (err) { byId("cadastroMsg").textContent = err.message; } }); });
     byId("loadCadastro")?.addEventListener("click", async () => { try { await loadCadastro(); } catch (err) { byId("cadastroMsg").textContent = err.message; } });
 
     byId("agendamentoForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      try {
+      const submitBtn = e.target.querySelector('[type="submit"]');
+      await withLock(submitBtn, async () => { try {
         syncInternalHoraFromJanela();
         const payload = Object.fromEntries(new FormData(e.target).entries());
         payload.dataAgendada = normalizeDateToIso(payload.dataAgendada);
@@ -3919,7 +3942,7 @@
         await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFornecedoresPendentesInterno(), loadFilterOptions()]);
       } catch (err) {
         byId("agendamentoMsg").textContent = err.message;
-      }
+      } }); // withLock
     });
 
     byId("loadAgendamentos")?.addEventListener("click", async () => { try { await loadAgendamentos(); } catch (err) { byId("operacaoMsg").textContent = err.message; } });
@@ -4014,7 +4037,8 @@
 
     byId("fornecedorForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      try {
+      const submitBtn = e.target.querySelector('[type="submit"]');
+      await withLock(submitBtn, async () => { try {
         const payload = Object.fromEntries(new FormData(e.target).entries());
         payload.cpfMotorista = String(payload.cpfMotorista || '').replace(/\D/g, '');
         payload.telefoneMotorista = String(payload.telefoneMotorista || '').replace(/\D/g, '');
@@ -4036,7 +4060,7 @@
         await loadPublicDisponibilidade();
       } catch (err) {
         byId("fornecedorMsg").textContent = err.message;
-      }
+      } }); // withLock
     });
 
     byId("consultaForm")?.addEventListener("submit", async (e) => {
@@ -4076,20 +4100,26 @@
 
     byId("checkinForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      await validateCheckin(String(new FormData(e.target).get("token") || ''));
+      const submitBtn = e.target.querySelector('[type="submit"]');
+      await withLock(submitBtn, async () => {
+        await validateCheckin(String(new FormData(e.target).get("token") || ''));
+      });
     });
 
     byId("avaliacaoForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
-      try {
-        if (!state.avaliacaoToken) throw new Error("Token de avaliação não informado.");
-        const payload = Object.fromEntries(new FormData(e.target).entries());
-        const data = await api(`/api/public/avaliacao/${encodeURIComponent(state.avaliacaoToken)}`, { method: 'POST', body: JSON.stringify(payload) });
-        byId('avaliacaoMsg').textContent = data.message || 'Avaliação registrada com sucesso.';
-        await loadAvaliacaoForm(state.avaliacaoToken);
-      } catch (err) {
-        byId('avaliacaoMsg').textContent = err.message;
-      }
+      const submitBtn = e.target.querySelector('[type="submit"]');
+      await withLock(submitBtn, async () => {
+        try {
+          if (!state.avaliacaoToken) throw new Error("Token de avaliação não informado.");
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          const data = await api(`/api/public/avaliacao/${encodeURIComponent(state.avaliacaoToken)}`, { method: 'POST', body: JSON.stringify(payload) });
+          byId('avaliacaoMsg').textContent = data.message || 'Avaliação registrada com sucesso.';
+          await loadAvaliacaoForm(state.avaliacaoToken);
+        } catch (err) {
+          byId('avaliacaoMsg').textContent = err.message;
+        }
+      });
     });
     byId("startCamera")?.addEventListener("click", startCameraScan);
     byId("stopCamera")?.addEventListener("click", stopCameraScan);
