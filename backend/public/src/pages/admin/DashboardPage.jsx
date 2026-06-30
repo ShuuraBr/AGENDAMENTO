@@ -62,7 +62,8 @@ export default function DashboardPage() {
   async function load(dataParam = dataFiltro) {
     setLoading(true); setError('');
     try {
-      const res = await api.get('/dashboard/operacional', { params: { dataAgendada: dataParam || todayStr } });
+      const params = dataParam ? { dataAgendada: dataParam } : {};
+      const res = await api.get('/dashboard/operacional', { params });
       setData(res.data);
     } catch (e) {
       setError(e.response?.data?.message || 'Erro ao carregar dashboard.');
@@ -102,7 +103,16 @@ export default function DashboardPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <input type="date" value={dataFiltro} onChange={(e) => { setDataFiltro(e.target.value); if (e.target.value) load(e.target.value); }} style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13 }} />
+          <input type="date" value={dataFiltro} onChange={(e) => { const v = e.target.value; setDataFiltro(v); load(v); }} style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13 }} />
+          {dataFiltro ? (
+            <button type="button" onClick={() => { setDataFiltro(''); load(''); }} style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1e40af', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+              × Ver todos
+            </button>
+          ) : (
+            <button type="button" onClick={() => { setDataFiltro(todayStr); load(todayStr); }} style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#166534', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+              Filtrar por hoje
+            </button>
+          )}
           <Link to="/agendamentos" style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #111827', background: '#111827', color: '#fff', fontWeight: 600, textDecoration: 'none', fontSize: 13 }}>
             + Novo agendamento
           </Link>

@@ -58,10 +58,11 @@ export default function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState(null);
   const [tableFilter, setTableFilter] = useState({ protocolo: '', data: todayStr, fornecedor: '', transportadora: '', nf: '' });
 
-  async function load(dataFiltro = tableFilter.data || todayStr) {
+  async function load(dataFiltro = tableFilter.data) {
     setLoading(true); setError('');
     try {
-      const res = await api.get('/dashboard/operacional', { params: { dataAgendada: dataFiltro } });
+      const params = dataFiltro ? { dataAgendada: dataFiltro } : {};
+      const res = await api.get('/dashboard/operacional', { params });
       setData(res.data);
     } catch (e) {
       setError(e.response?.data?.message || 'Erro ao carregar dashboard.');
@@ -159,7 +160,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Data</label>
-              <input type="date" style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box' }} value={tableFilter.data} onChange={(e) => { const v = e.target.value; setTableFilter((f) => ({ ...f, data: v })); if (v) load(v); }} />
+              <input type="date" style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box' }} value={tableFilter.data} onChange={(e) => { const v = e.target.value; setTableFilter((f) => ({ ...f, data: v })); load(v); }} />
             </div>
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Fornecedor</label>
@@ -174,11 +175,26 @@ export default function DashboardPage() {
               <input style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box' }} placeholder="Número da NF..." value={tableFilter.nf} onChange={(e) => setTableFilter((f) => ({ ...f, nf: e.target.value }))} />
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-              <button type="button" onClick={() => setTableFilter({ protocolo: '', data: '', fornecedor: '', transportadora: '', nf: '' })} style={{ width: '100%', padding: '8px 12px', borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+              <button type="button" onClick={() => { setTableFilter({ protocolo: '', data: '', fornecedor: '', transportadora: '', nf: '' }); load(''); }} style={{ width: '100%', padding: '8px 12px', borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
                 Limpar filtros
               </button>
             </div>
           </div>
+          {tableFilter.data ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 13, color: '#1e40af' }}>
+              <span>Tabela filtrada por: <strong>{tableFilter.data}</strong></span>
+              <button type="button" onClick={() => { setTableFilter((f) => ({ ...f, data: '' })); load(''); }} style={{ marginLeft: 4, fontSize: 12, background: 'none', border: 'none', color: '#1e40af', cursor: 'pointer', fontWeight: 600, textDecoration: 'underline' }}>
+                Ver todos os agendamentos
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: 13, color: '#166534' }}>
+              <span>Exibindo todos os agendamentos</span>
+              <button type="button" onClick={() => { setTableFilter((f) => ({ ...f, data: todayStr })); load(todayStr); }} style={{ marginLeft: 4, fontSize: 12, background: 'none', border: 'none', color: '#166534', cursor: 'pointer', fontWeight: 600, textDecoration: 'underline' }}>
+                Filtrar por hoje
+              </button>
+            </div>
+          )}
         </div>
 
         {loading ? (

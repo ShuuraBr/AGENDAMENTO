@@ -81,12 +81,12 @@ function normalizeLog(item = {}) {
 
 router.get("/operacional", requirePermission("dashboard.view"), async (req, res) => {
   const q = req.query || {};
-  // Se não vier filtro de data, usa hoje para evitar carregar todo o histórico
-  const dataAgendada = q.dataAgendada || new Date().toISOString().slice(0, 10);
+  // String vazia ou ausente = sem filtro de data (exibe todos)
+  const dataAgendada = (q.dataAgendada && String(q.dataAgendada).trim()) ? String(q.dataAgendada).trim() : null;
 
   // Cache: só aplica quando não há filtros extras (status, fornecedor, etc.)
   const hasExtraFilters = q.status || q.fornecedor || q.transportadora || q.motorista || q.placa;
-  const cacheKey = `operacional:${dataAgendada}`;
+  const cacheKey = `operacional:${dataAgendada || 'all'}`;
   if (!hasExtraFilters) {
     const cached = getDashCache(cacheKey);
     if (cached) return res.json(cached);
@@ -98,7 +98,7 @@ router.get("/operacional", requirePermission("dashboard.view"), async (req, res)
     ...(q.transportadora ? { transportadora: { contains: String(q.transportadora) } } : {}),
     ...(q.motorista ? { motorista: { contains: String(q.motorista) } } : {}),
     ...(q.placa ? { placa: { contains: String(q.placa) } } : {}),
-    dataAgendada: String(dataAgendada)
+    ...(dataAgendada ? { dataAgendada } : {})
   };
 
   try {
