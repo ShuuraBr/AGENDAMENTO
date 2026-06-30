@@ -245,6 +245,9 @@ export default function AgendamentosPage() {
   const [transportadoras, setTransportadoras] = useState([]);
   const [painelDocas, setPainelDocas] = useState([]);
   const [agendamentos, setAgendamentos] = useState([]);
+  const [agendamentosTotal, setAgendamentosTotal] = useState(0);
+  const [agendamentosPage, setAgendamentosPage] = useState(1);
+  const [agendamentosLimit] = useState(20);
   const [selectedPainelDoca, setSelectedPainelDoca] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -300,19 +303,25 @@ export default function AgendamentosPage() {
   }, [agendamentos]);
 
   const filteredAgendamentos = useMemo(() => {
-    let list = kpiFilter ? agendamentos.filter((ag) => ag.status === kpiFilter) : agendamentos;
+    // status já é filtrado no servidor; os demais filtros são aplicados no cliente
+    let list = agendamentos;
     const norm = (s) => String(s || '').toLowerCase();
     if (tableFilter.protocolo) list = list.filter((ag) => norm(ag.protocolo).includes(norm(tableFilter.protocolo)));
-    if (tableFilter.data) list = list.filter((ag) => String(ag.dataAgendada || '').includes(tableFilter.data));
     if (tableFilter.fornecedor) list = list.filter((ag) => norm(ag.fornecedor).includes(norm(tableFilter.fornecedor)));
     if (tableFilter.transportadora) list = list.filter((ag) => norm(ag.transportadora).includes(norm(tableFilter.transportadora)));
     if (tableFilter.nf) list = list.filter((ag) => (ag.notasFiscais || []).some((nf) => norm(nf.numeroNf).includes(norm(tableFilter.nf))));
     return list;
-  }, [agendamentos, kpiFilter, tableFilter]);
+  }, [agendamentos, tableFilter]);
 
-  async function loadAgendamentos() {
-    const { data } = await api.get('/agendamentos');
-    setAgendamentos(Array.isArray(data) ? data : []);
+  async function loadAgendamentos(page = 1, statusFilter = kpiFilter, dataFilter = tableFilter.data) {
+    const params = { page, limit: agendamentosLimit };
+    if (statusFilter) params.status = statusFilter;
+    if (dataFilter) params.dataAgendada = dataFilter;
+    const { data } = await api.get('/agendamentos', { params });
+    const items = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
+    setAgendamentos(items);
+    setAgendamentosTotal(data?.total ?? items.length);
+    setAgendamentosPage(page);
   }
   async function loadPainel(date = form.dataAgendada) {
     try {
@@ -465,13 +474,17 @@ export default function AgendamentosPage() {
         <h2 style={{ margin: '0 0 10px', fontSize: 20 }}>KPIs</h2>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10 }}>
           {kpiDefs.map(({ key, label, color }) => (
-            <KpiCard key={key} label={label} value={kpis[key] || 0} color={color} active={kpiFilter === key} onClick={() => setKpiFilter((f) => f === key ? null : key)} />
+            <KpiCard key={key} label={label} value={kpis[key] || 0} color={color} active={kpiFilter === key} onClick={() => {
+              const next = kpiFilter === key ? null : key;
+              setKpiFilter(next);
+              loadAgendamentos(1, next, tableFilter.data);
+            }} />
           ))}
         </div>
         {kpiFilter && (
           <div style={{ marginTop: 6, fontSize: 13, color: '#475569' }}>
             Filtrando: <strong>{kpiDefs.find((d) => d.key === kpiFilter)?.label}</strong>
-            <button type="button" onClick={() => setKpiFilter(null)} style={{ marginLeft: 8, fontSize: 12, background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>× limpar</button>
+            <button type="button" onClick={() => { setKpiFilter(null); loadAgendamentos(1, null, tableFilter.data); }} style={{ marginLeft: 8, fontSize: 12, background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>× limpar</button>
           </div>
         )}
       </div>
@@ -732,7 +745,7 @@ export default function AgendamentosPage() {
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Data</label>
-            <input type="date" style={{ ...styles.input, fontSize: 13 }} value={tableFilter.data} onChange={(e) => setTableFilter((f) => ({ ...f, data: e.target.value }))} />
+            <input type="date" style={{ ...styles.input, fontSize: 13 }} value={tableFilter.data} onChange={(e) => { const v = e.target.value; setTableFilter((f) => ({ ...f, data: v })); loadAgendamentos(1, kpiFilter, v); }} />
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Fornecedor</label>
@@ -786,6 +799,15 @@ export default function AgendamentosPage() {
             </tbody>
           </table>
         </div>
+        {agendamentosTotal > agendamentosLimit && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+            <span style={{ fontSize: 13, color: '#64748b' }}>
+              {((agendamentosPage - 1) * agendamentosLimit) + 1}–{Math.min(agendamentosPage * agendamentosLimit, agendamentosTotal)} de {agendamentosTotal}
+            </span>
+            <button type="button" disabled={agendamentosPage <= 1} onClick={() => loadAgendamentos(agendamentosPage - 1)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', cursor: agendamentosPage <= 1 ? 'not-allowed' : 'pointer', opacity: agendamentosPage <= 1 ? 0.4 : 1 }}>‹ Anterior</button>
+            <button type="button" disabled={agendamentosPage * agendamentosLimit >= agendamentosTotal} onClick={() => loadAgendamentos(agendamentosPage + 1)} style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', cursor: agendamentosPage * agendamentosLimit >= agendamentosTotal ? 'not-allowed' : 'pointer', opacity: agendamentosPage * agendamentosLimit >= agendamentosTotal ? 0.4 : 1 }}>Próxima ›</button>
+          </div>
+        )}
       </div>
 
       {/* Modals */}

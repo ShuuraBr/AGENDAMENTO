@@ -51,16 +51,18 @@ const KPI_DEFS = [
 ];
 
 export default function DashboardPage() {
+  const todayStr = new Date().toISOString().slice(0, 10);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState(null);
   const [search, setSearch] = useState('');
+  const [dataFiltro, setDataFiltro] = useState(todayStr);
 
-  async function load() {
+  async function load(dataParam = dataFiltro) {
     setLoading(true); setError('');
     try {
-      const res = await api.get('/dashboard/operacional');
+      const res = await api.get('/dashboard/operacional', { params: { dataAgendada: dataParam || todayStr } });
       setData(res.data);
     } catch (e) {
       setError(e.response?.data?.message || 'Erro ao carregar dashboard.');
@@ -69,7 +71,7 @@ export default function DashboardPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(todayStr); }, []);
 
   const agendamentos = useMemo(() => {
     if (!data?.agendamentos) return [];
@@ -100,10 +102,11 @@ export default function DashboardPage() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <input type="date" value={dataFiltro} onChange={(e) => { setDataFiltro(e.target.value); if (e.target.value) load(e.target.value); }} style={{ padding: '8px 10px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13 }} />
           <Link to="/agendamentos" style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #111827', background: '#111827', color: '#fff', fontWeight: 600, textDecoration: 'none', fontSize: 13 }}>
             + Novo agendamento
           </Link>
-          <button type="button" onClick={load} disabled={loading} style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', cursor: loading ? 'not-allowed' : 'pointer', fontSize: 13 }}>
+          <button type="button" onClick={() => load(dataFiltro)} disabled={loading} style={{ padding: '8px 14px', borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', cursor: loading ? 'not-allowed' : 'pointer', fontSize: 13 }}>
             ↺ Atualizar
           </button>
         </div>

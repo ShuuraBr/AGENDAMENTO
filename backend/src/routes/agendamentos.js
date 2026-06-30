@@ -907,8 +907,13 @@ async function batchNotificationSummary(ids = []) {
   if (!ids.length) return new Map();
   try {
     const logs = await prisma.logAuditoria.findMany({
-      where: { entidade: "AGENDAMENTO", entidadeId: { in: ids.map(Number) } },
-      orderBy: { createdAt: "desc" }
+      where: {
+        entidade: "AGENDAMENTO",
+        entidadeId: { in: ids.map(Number) },
+        acao: { in: ["ENVIAR_INFORMACOES", "ENVIAR_CONFIRMACAO"] }
+      },
+      orderBy: { createdAt: "desc" },
+      take: ids.length * 10
     });
     const byId = new Map(ids.map((id) => [Number(id), []]));
     for (const log of logs) {
@@ -1176,7 +1181,8 @@ async function listPendingManualAuthorizationRequests() {
     latestAuthById.set(key, String(log?.createdAt || ''));
   }
  
-  const pending = [];
+  // Primeira passagem: identificar quais agendamentos têm solicitação pendente sem autorização posterior
+  const pendingLogs = [];
   const seen = new Set();
   for (const log of requestLogs || []) {
     const agendamentoId = Number(log?.entidadeId || 0);
@@ -1185,7 +1191,28 @@ async function listPendingManualAuthorizationRequests() {
     const latestAuth = latestAuthById.get(agendamentoId);
     const requestAt = String(log?.createdAt || '');
     if (latestAuth && latestAuth >= requestAt) continue;
-    const agendamento = await full(agendamentoId);
+    pendingLogs.push({ agendamentoId, requestAt, log });
+  }
+
+  // Busca todos os agendamentos candidatos em uma única query (evita N+1)
+  const candidateIds = pendingLogs.map((p) => p.agendamentoId);
+  let agendamentoMap = new Map();
+  try {
+    const agendamentos = await prisma.agendamento.findMany({
+      where: { id: { in: candidateIds }, status: 'APROVADO' },
+      include: { notasFiscais: true, documentos: true, doca: true, janela: true }
+    });
+    for (const ag of agendamentos) agendamentoMap.set(ag.id, ag);
+  } catch {
+    for (const { agendamentoId } of pendingLogs) {
+      const ag = findAgendamentoFile(agendamentoId);
+      if (ag) agendamentoMap.set(agendamentoId, ag);
+    }
+  }
+
+  const pending = [];
+  for (const { agendamentoId, requestAt, log } of pendingLogs) {
+    const agendamento = agendamentoMap.get(agendamentoId);
     if (!agendamento) continue;
     const normalized = normalizeScheduleItem(agendamento);
     if (String(normalized?.status || '').toUpperCase() !== 'APROVADO') continue;
@@ -1237,6 +1264,9 @@ router.post('/:id(\\d+)/autorizar-checkin-manual', requirePermission('agendament
  
 router.get("/", requirePermission("agendamentos.view"), async (req, res) => {
   const q = req.query || {};
+  const page = Math.max(1, Number(q.page || 1));
+  const limit = Math.max(1, Math.min(500, Number(q.limit || 100)));
+  const skip = (page - 1) * limit;
   const where = {
     ...(q.status ? { status: String(q.status) } : {}),
     ...(q.fornecedor ? { fornecedor: { contains: String(q.fornecedor) } } : {}),
@@ -1246,21 +1276,33 @@ router.get("/", requirePermission("agendamentos.view"), async (req, res) => {
     ...(q.dataAgendada ? { dataAgendada: String(q.dataAgendada) } : {})
   };
   try {
-    const items = await prisma.agendamento.findMany({
-      where,
-      include: { notasFiscais: true, documentos: true, doca: true, janela: true },
-      orderBy: { id: "desc" }
-    });
+    const [items, total] = await Promise.all([
+      prisma.agendamento.findMany({
+        where,
+        include: { notasFiscais: true, documentos: true, doca: true, janela: true },
+        orderBy: { id: "desc" },
+        take: limit,
+        skip
+      }),
+      prisma.agendamento.count({ where })
+    ]);
     const notifMap = await batchNotificationSummary(items.map((i) => i.id));
-    const payload = await Promise.all(items.map(async (i) => enrichResponseItem({ ...calculateTotals(i.notasFiscais || [], i), ...i, semaforo: trafficColor(i.status), notificacoes: notifMap.get(Number(i.id)) || { ...EMPTY_NOTIFICATIONS } })));
-    return res.json(payload);
+    const payload = items.map((i) => ({
+      ...calculateTotals(i.notasFiscais || [], i),
+      ...i,
+      semaforo: trafficColor(i.status),
+      notificacoes: notifMap.get(Number(i.id)) || { ...EMPTY_NOTIFICATIONS }
+    }));
+    return res.json({ data: payload, total, page, limit, totalPages: Math.ceil(total / limit) });
   } catch {
     try {
       const items = await fetchAgendamentosRaw(q);
-      return res.json(await Promise.all(items.map((i) => enrichResponseItem({ ...i, semaforo: trafficColor(i.status), notificacoes: { ...EMPTY_NOTIFICATIONS } }))));
+      const sliced = items.slice(skip, skip + limit);
+      return res.json({ data: sliced.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { ...EMPTY_NOTIFICATIONS } })), total: items.length, page, limit, totalPages: Math.ceil(items.length / limit) });
     } catch {}
     const items = readAgendamentos().filter((i) => (!q.status || i.status===String(q.status)) && (!q.fornecedor || String(i.fornecedor||'').toLowerCase().includes(String(q.fornecedor).toLowerCase())) && (!q.transportadora || String(i.transportadora||'').toLowerCase().includes(String(q.transportadora).toLowerCase())) && (!q.motorista || String(i.motorista||'').toLowerCase().includes(String(q.motorista).toLowerCase())) && (!q.placa || String(i.placa||'').toLowerCase().includes(String(q.placa).toLowerCase())) && (!q.dataAgendada || String(i.dataAgendada)===String(q.dataAgendada)));
-    return res.json(await Promise.all(items.map((i) => enrichResponseItem({ ...i, semaforo: trafficColor(i.status), notificacoes: { ...EMPTY_NOTIFICATIONS } }))));
+    const sliced = items.slice(skip, skip + limit);
+    return res.json({ data: sliced.map((i) => ({ ...i, semaforo: trafficColor(i.status), notificacoes: { ...EMPTY_NOTIFICATIONS } })), total: items.length, page, limit, totalPages: Math.ceil(items.length / limit) });
   }
 });
  

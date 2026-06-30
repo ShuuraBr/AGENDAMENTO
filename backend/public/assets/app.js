@@ -2409,7 +2409,8 @@
   async function loadFilterOptions() {
     if (!state.token || isTokenExpired(state.token) || !hasPermission('dashboard.view')) return;
     try {
-      const items = await api('/api/agendamentos');
+      const _r2 = await api('/api/agendamentos');
+      const items = Array.isArray(_r2) ? _r2 : (Array.isArray(_r2?.data) ? _r2.data : []);
       populateSelectOptions(byId('fStatus'), items.map((item) => item.status), 'Status');
       populateSelectOptions(byId('fFornecedor'), items.map((item) => item.fornecedor), 'Fornecedor');
       populateSelectOptions(byId('fTransportadora'), items.map((item) => item.transportadora), 'Transportadora');
@@ -3358,8 +3359,9 @@
     if (!hasPermission('agendamentos.view')) return;
     const params = new URLSearchParams();
     Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
-    const items = await api(`/api/agendamentos?${params.toString()}`);
-    state.lastAgendamentos = items || [];
+    const _r = await api(`/api/agendamentos?${params.toString()}`);
+    const items = Array.isArray(_r) ? _r : (Array.isArray(_r?.data) ? _r.data : []);
+    state.lastAgendamentos = items;
     state.confirmacoesSelecionados = new Set();
     renderFilteredAgendamentos();
     updateConfirmacoesToolbar();

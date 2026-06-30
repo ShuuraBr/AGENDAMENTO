@@ -51,16 +51,17 @@ const KPI_DEFS = [
 ];
 
 export default function DashboardPage() {
+  const todayStr = new Date().toISOString().slice(0, 10);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState(null);
-  const [tableFilter, setTableFilter] = useState({ protocolo: '', data: '', fornecedor: '', transportadora: '', nf: '' });
+  const [tableFilter, setTableFilter] = useState({ protocolo: '', data: todayStr, fornecedor: '', transportadora: '', nf: '' });
 
-  async function load() {
+  async function load(dataFiltro = tableFilter.data || todayStr) {
     setLoading(true); setError('');
     try {
-      const res = await api.get('/dashboard/operacional');
+      const res = await api.get('/dashboard/operacional', { params: { dataAgendada: dataFiltro } });
       setData(res.data);
     } catch (e) {
       setError(e.response?.data?.message || 'Erro ao carregar dashboard.');
@@ -69,7 +70,7 @@ export default function DashboardPage() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(todayStr); }, []);
 
   const agendamentos = useMemo(() => {
     if (!data?.agendamentos) return [];
@@ -77,7 +78,6 @@ export default function DashboardPage() {
     if (statusFilter) list = list.filter((a) => a.status === statusFilter);
     const norm = (s) => String(s || '').toLowerCase();
     if (tableFilter.protocolo) list = list.filter((a) => norm(a.protocolo).includes(norm(tableFilter.protocolo)));
-    if (tableFilter.data) list = list.filter((a) => String(a.dataAgendada || '').includes(tableFilter.data));
     if (tableFilter.fornecedor) list = list.filter((a) => norm(a.fornecedor).includes(norm(tableFilter.fornecedor)));
     if (tableFilter.transportadora) list = list.filter((a) => norm(a.transportadora).includes(norm(tableFilter.transportadora)));
     if (tableFilter.nf) list = list.filter((a) => (a.notasFiscais || []).some((nf) => norm(nf.numeroNf).includes(norm(tableFilter.nf))));
@@ -159,7 +159,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Data</label>
-              <input type="date" style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box' }} value={tableFilter.data} onChange={(e) => setTableFilter((f) => ({ ...f, data: e.target.value }))} />
+              <input type="date" style={{ width: '100%', padding: '8px 10px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, boxSizing: 'border-box' }} value={tableFilter.data} onChange={(e) => { const v = e.target.value; setTableFilter((f) => ({ ...f, data: v })); if (v) load(v); }} />
             </div>
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 4 }}>Fornecedor</label>

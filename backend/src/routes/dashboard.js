@@ -68,24 +68,40 @@ function normalizeLog(item = {}) {
 
 router.get("/operacional", requirePermission("dashboard.view"), async (req, res) => {
   const q = req.query || {};
+  // Se não vier filtro de data, usa hoje para evitar carregar todo o histórico
+  const dataAgendada = q.dataAgendada || new Date().toISOString().slice(0, 10);
   const where = {
     ...(q.status ? { status: String(q.status) } : {}),
     ...(q.fornecedor ? { fornecedor: { contains: String(q.fornecedor) } } : {}),
     ...(q.transportadora ? { transportadora: { contains: String(q.transportadora) } } : {}),
     ...(q.motorista ? { motorista: { contains: String(q.motorista) } } : {}),
     ...(q.placa ? { placa: { contains: String(q.placa) } } : {}),
-    ...(q.dataAgendada ? { dataAgendada: String(q.dataAgendada) } : {})
+    dataAgendada: String(dataAgendada)
   };
 
   try {
-    const [agendamentos, docs, all, painelDocas] = await Promise.all([
-      prisma.agendamento.findMany({ where, include: { notasFiscais: true, documentos: true, doca: true, janela: true }, orderBy: { id: "desc" } }),
+    const [agendamentos, docs, statusCounts, painelDocas] = await Promise.all([
+      prisma.agendamento.findMany({ where, include: { notasFiscais: true, documentos: true, doca: true, janela: true }, orderBy: { id: "desc" }, take: 500 }),
       prisma.documento.count(),
-      prisma.agendamento.findMany({ include: { notasFiscais: true } }),
+      prisma.agendamento.groupBy({ by: ['status'], _count: { id: true }, _sum: { quantidadeVolumes: true, pesoTotalKg: true } }),
       docaPainel(q.dataAgendada || null)
     ]);
+    const kpis = {
+      total: statusCounts.reduce((a, b) => a + (b._count?.id || 0), 0),
+      pendentes: statusCounts.find((s) => s.status === 'PENDENTE_APROVACAO')?._count?.id || 0,
+      aprovados: statusCounts.find((s) => s.status === 'APROVADO')?._count?.id || 0,
+      chegou: statusCounts.find((s) => s.status === 'CHEGOU')?._count?.id || 0,
+      emDescarga: statusCounts.find((s) => s.status === 'EM_DESCARGA')?._count?.id || 0,
+      finalizados: statusCounts.find((s) => s.status === 'FINALIZADO')?._count?.id || 0,
+      cancelados: statusCounts.find((s) => s.status === 'CANCELADO')?._count?.id || 0,
+      noShow: statusCounts.find((s) => s.status === 'NO_SHOW')?._count?.id || 0,
+      documentos: docs,
+      volumes: statusCounts.reduce((a, b) => a + Number(b._sum?.quantidadeVolumes || 0), 0),
+      pesoKg: Number(statusCounts.reduce((a, b) => a + Number(b._sum?.pesoTotalKg || 0), 0).toFixed(3)),
+      origem: "database"
+    };
     sendMonthlyNearDueDigestIfNeeded({ triggeredBy: req.user?.nome || req.user?.sub || 'dashboard' }).catch(() => {});
-    return res.json({ kpis: buildKpis(all, docs, "database"), agendamentos: await Promise.all(agendamentos.map((item) => enrichAgendamentoWithMonitoring(withComputedTotals(item)))), painelDocas });
+    return res.json({ kpis, agendamentos: agendamentos.map(withComputedTotals), painelDocas });
   } catch (error) {
     console.error("Erro em /dashboard/operacional. Tentando fallback SQL/arquivo:", error?.message || error);
     try {
@@ -123,7 +139,13 @@ router.get("/docas", requirePermission("docas.view"), async (req, res) => {
 router.get("/metricas", requirePermission("dashboard.view"), async (req, res) => {
   try {
     const all = await (async () => {
-      try { return await prisma.agendamento.findMany({ include: { notasFiscais: true, doca: true } }); }
+      try {
+        return await prisma.agendamento.findMany({
+          include: { notasFiscais: true, doca: true },
+          orderBy: { id: "desc" },
+          take: 2000
+        });
+      }
       catch { return readAgendamentos(); }
     })();
 
