@@ -10,6 +10,19 @@ import { enrichAgendamentoWithMonitoring, sendMonthlyNearDueDigestIfNeeded } fro
 const router = Router();
 router.use(authRequired);
 
+// Cache em memória para o dashboard operacional (TTL: 30s por data)
+const _dashCache = new Map();
+const DASH_CACHE_TTL = 30_000;
+function getDashCache(key) {
+  const entry = _dashCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > DASH_CACHE_TTL) { _dashCache.delete(key); return null; }
+  return entry.data;
+}
+function setDashCache(key, data) {
+  _dashCache.set(key, { ts: Date.now(), data });
+}
+
 function filterItems(all, q = {}) {
   return all.filter((item) => {
     if (q.status && String(item.status || "") !== String(q.status)) return false;
@@ -70,6 +83,15 @@ router.get("/operacional", requirePermission("dashboard.view"), async (req, res)
   const q = req.query || {};
   // Se não vier filtro de data, usa hoje para evitar carregar todo o histórico
   const dataAgendada = q.dataAgendada || new Date().toISOString().slice(0, 10);
+
+  // Cache: só aplica quando não há filtros extras (status, fornecedor, etc.)
+  const hasExtraFilters = q.status || q.fornecedor || q.transportadora || q.motorista || q.placa;
+  const cacheKey = `operacional:${dataAgendada}`;
+  if (!hasExtraFilters) {
+    const cached = getDashCache(cacheKey);
+    if (cached) return res.json(cached);
+  }
+
   const where = {
     ...(q.status ? { status: String(q.status) } : {}),
     ...(q.fornecedor ? { fornecedor: { contains: String(q.fornecedor) } } : {}),
@@ -80,9 +102,8 @@ router.get("/operacional", requirePermission("dashboard.view"), async (req, res)
   };
 
   try {
-    const [agendamentos, docs, statusCounts] = await Promise.all([
+    const [agendamentos, statusCounts] = await Promise.all([
       prisma.agendamento.findMany({ where, include: { notasFiscais: true, doca: true }, orderBy: { id: "desc" }, take: 500 }),
-      prisma.documento.count(),
       prisma.agendamento.groupBy({ by: ['status'], where: { dataAgendada: String(dataAgendada) }, _count: { id: true }, _sum: { quantidadeVolumes: true, pesoTotalKg: true } }),
     ]);
     const painelDocas = await docaPainel(q.dataAgendada || null, agendamentos);
@@ -95,13 +116,14 @@ router.get("/operacional", requirePermission("dashboard.view"), async (req, res)
       finalizados: statusCounts.find((s) => s.status === 'FINALIZADO')?._count?.id || 0,
       cancelados: statusCounts.find((s) => s.status === 'CANCELADO')?._count?.id || 0,
       noShow: statusCounts.find((s) => s.status === 'NO_SHOW')?._count?.id || 0,
-      documentos: docs,
       volumes: statusCounts.reduce((a, b) => a + Number(b._sum?.quantidadeVolumes || 0), 0),
       pesoKg: Number(statusCounts.reduce((a, b) => a + Number(b._sum?.pesoTotalKg || 0), 0).toFixed(3)),
       origem: "database"
     };
     sendMonthlyNearDueDigestIfNeeded({ triggeredBy: req.user?.nome || req.user?.sub || 'dashboard' }).catch(() => {});
-    return res.json({ kpis, agendamentos: agendamentos.map(withComputedTotals), painelDocas });
+    const payload = { kpis, agendamentos: agendamentos.map(withComputedTotals), painelDocas };
+    if (!hasExtraFilters) setDashCache(cacheKey, payload);
+    return res.json(payload);
   } catch (error) {
     console.error("Erro em /dashboard/operacional. Tentando fallback SQL/arquivo:", error?.message || error);
     try {
