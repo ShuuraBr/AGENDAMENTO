@@ -102,26 +102,24 @@ router.get("/operacional", requirePermission("dashboard.view"), async (req, res)
   };
 
   try {
-    const [agendamentos, statusCounts] = await Promise.all([
-      prisma.agendamento.findMany({ where, include: { notasFiscais: true, doca: true }, orderBy: { id: "desc" }, take: 500 }),
-      prisma.agendamento.groupBy({ by: ['status'], where: { dataAgendada: String(dataAgendada) }, _count: { id: true }, _sum: { quantidadeVolumes: true, pesoTotalKg: true } }),
-    ]);
+    const agendamentos = await prisma.agendamento.findMany({ where, include: { notasFiscais: true, doca: true }, orderBy: { id: "desc" }, take: 500 });
     const painelDocas = await docaPainel(q.dataAgendada || null, agendamentos);
+    const enriched = agendamentos.map(withComputedTotals);
     const kpis = {
-      total: statusCounts.reduce((a, b) => a + (b._count?.id || 0), 0),
-      pendentes: statusCounts.find((s) => s.status === 'PENDENTE_APROVACAO')?._count?.id || 0,
-      aprovados: statusCounts.find((s) => s.status === 'APROVADO')?._count?.id || 0,
-      chegou: statusCounts.find((s) => s.status === 'CHEGOU')?._count?.id || 0,
-      emDescarga: statusCounts.find((s) => s.status === 'EM_DESCARGA')?._count?.id || 0,
-      finalizados: statusCounts.find((s) => s.status === 'FINALIZADO')?._count?.id || 0,
-      cancelados: statusCounts.find((s) => s.status === 'CANCELADO')?._count?.id || 0,
-      noShow: statusCounts.find((s) => s.status === 'NO_SHOW')?._count?.id || 0,
-      volumes: statusCounts.reduce((a, b) => a + Number(b._sum?.quantidadeVolumes || 0), 0),
-      pesoKg: Number(statusCounts.reduce((a, b) => a + Number(b._sum?.pesoTotalKg || 0), 0).toFixed(3)),
+      total: enriched.length,
+      pendentes: enriched.filter((a) => a.status === 'PENDENTE_APROVACAO').length,
+      aprovados: enriched.filter((a) => a.status === 'APROVADO').length,
+      chegou: enriched.filter((a) => a.status === 'CHEGOU').length,
+      emDescarga: enriched.filter((a) => a.status === 'EM_DESCARGA').length,
+      finalizados: enriched.filter((a) => a.status === 'FINALIZADO').length,
+      cancelados: enriched.filter((a) => a.status === 'CANCELADO').length,
+      noShow: enriched.filter((a) => a.status === 'NO_SHOW').length,
+      volumes: enriched.reduce((a, b) => a + Number(b.quantidadeVolumes || 0), 0),
+      pesoKg: Number(enriched.reduce((a, b) => a + Number(b.pesoTotalKg || 0), 0).toFixed(3)),
       origem: "database"
     };
     sendMonthlyNearDueDigestIfNeeded({ triggeredBy: req.user?.nome || req.user?.sub || 'dashboard' }).catch(() => {});
-    const payload = { kpis, agendamentos: agendamentos.map(withComputedTotals), painelDocas };
+    const payload = { kpis, agendamentos: enriched, painelDocas };
     if (!hasExtraFilters) setDashCache(cacheKey, payload);
     return res.json(payload);
   } catch (error) {
