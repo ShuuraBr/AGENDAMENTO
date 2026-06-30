@@ -102,20 +102,26 @@ router.get("/operacional", requirePermission("dashboard.view"), async (req, res)
   };
 
   try {
-    const agendamentos = await prisma.agendamento.findMany({ where, include: { notasFiscais: true, doca: true }, orderBy: { id: "desc" }, take: 500 });
+    const [agendamentos, kpiRows] = await Promise.all([
+      prisma.agendamento.findMany({ where, include: { notasFiscais: true, doca: true }, orderBy: { id: "desc" }, take: 500 }),
+      prisma.$queryRawUnsafe(
+        'SELECT status, COUNT(*) AS cnt, SUM(quantidadeVolumes) AS volumes, SUM(pesoTotalKg) AS pesoKg FROM Agendamento GROUP BY status'
+      ).catch(() => [])
+    ]);
     const painelDocas = await docaPainel(q.dataAgendada || null, agendamentos);
     const enriched = agendamentos.map(withComputedTotals);
+    const byStatus = (s) => Number(kpiRows.find((r) => r.status === s)?.cnt || 0);
     const kpis = {
-      total: enriched.length,
-      pendentes: enriched.filter((a) => a.status === 'PENDENTE_APROVACAO').length,
-      aprovados: enriched.filter((a) => a.status === 'APROVADO').length,
-      chegou: enriched.filter((a) => a.status === 'CHEGOU').length,
-      emDescarga: enriched.filter((a) => a.status === 'EM_DESCARGA').length,
-      finalizados: enriched.filter((a) => a.status === 'FINALIZADO').length,
-      cancelados: enriched.filter((a) => a.status === 'CANCELADO').length,
-      noShow: enriched.filter((a) => a.status === 'NO_SHOW').length,
-      volumes: enriched.reduce((a, b) => a + Number(b.quantidadeVolumes || 0), 0),
-      pesoKg: Number(enriched.reduce((a, b) => a + Number(b.pesoTotalKg || 0), 0).toFixed(3)),
+      total: kpiRows.reduce((a, b) => a + Number(b.cnt || 0), 0),
+      pendentes: byStatus('PENDENTE_APROVACAO'),
+      aprovados: byStatus('APROVADO'),
+      chegou: byStatus('CHEGOU'),
+      emDescarga: byStatus('EM_DESCARGA'),
+      finalizados: byStatus('FINALIZADO'),
+      cancelados: byStatus('CANCELADO'),
+      noShow: byStatus('NO_SHOW'),
+      volumes: kpiRows.reduce((a, b) => a + Number(b.volumes || 0), 0),
+      pesoKg: Number(kpiRows.reduce((a, b) => a + Number(b.pesoKg || 0), 0).toFixed(3)),
       origem: "database"
     };
     sendMonthlyNearDueDigestIfNeeded({ triggeredBy: req.user?.nome || req.user?.sub || 'dashboard' }).catch(() => {});
