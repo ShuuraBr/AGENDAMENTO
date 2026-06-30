@@ -91,11 +91,13 @@ function buildDocaFilaItem(item = {}) {
   };
 }
 
-export async function docaPainel(dataAgendada = null) {
+export async function docaPainel(dataAgendada = null, prefetchedAgendamentos = null) {
   const where = dataAgendada ? { dataAgendada: String(dataAgendada) } : {};
   const [docas, agendamentos] = await Promise.all([
     prisma.doca.findMany({ orderBy: { codigo: "asc" } }),
-    prisma.agendamento.findMany({ where, include: { notasFiscais: true }, orderBy: { horaAgendada: "asc" } })
+    prefetchedAgendamentos
+      ? Promise.resolve(prefetchedAgendamentos)
+      : prisma.agendamento.findMany({ where, include: { notasFiscais: true }, orderBy: { horaAgendada: "asc" } })
   ]);
 
   return docas.map(doca => {

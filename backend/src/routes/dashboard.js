@@ -80,12 +80,12 @@ router.get("/operacional", requirePermission("dashboard.view"), async (req, res)
   };
 
   try {
-    const [agendamentos, docs, statusCounts, painelDocas] = await Promise.all([
-      prisma.agendamento.findMany({ where, include: { notasFiscais: true, documentos: true, doca: true, janela: true }, orderBy: { id: "desc" }, take: 500 }),
+    const [agendamentos, docs, statusCounts] = await Promise.all([
+      prisma.agendamento.findMany({ where, include: { notasFiscais: true, doca: true }, orderBy: { id: "desc" }, take: 500 }),
       prisma.documento.count(),
-      prisma.agendamento.groupBy({ by: ['status'], _count: { id: true }, _sum: { quantidadeVolumes: true, pesoTotalKg: true } }),
-      docaPainel(q.dataAgendada || null)
+      prisma.agendamento.groupBy({ by: ['status'], where: { dataAgendada: String(dataAgendada) }, _count: { id: true }, _sum: { quantidadeVolumes: true, pesoTotalKg: true } }),
     ]);
+    const painelDocas = await docaPainel(q.dataAgendada || null, agendamentos);
     const kpis = {
       total: statusCounts.reduce((a, b) => a + (b._count?.id || 0), 0),
       pendentes: statusCounts.find((s) => s.status === 'PENDENTE_APROVACAO')?._count?.id || 0,
