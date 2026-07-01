@@ -19,7 +19,7 @@ import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
 import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento, persistManualPendingNota, removePendingNotasFromRelatorio, refreshNotasVolumesFromEntradas } from "../utils/relatorio-entradas.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
 import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, sendMonthlyNearDueDigestIfNeeded, searchByNumeroNf } from "../utils/nf-monitoring.js";
-import { encodeNotaObservacao } from "../utils/nota-metadata.js";
+import { encodeNotaObservacao, normalizeAgendamentoNotas } from "../utils/nota-metadata.js";
 import { createDocumentUpload, createAvariaImageUpload, wrapMulter, AVARIA_IMAGE_MAX_COUNT } from "../utils/upload-policy.js";
 import { logTechnicalEvent } from "../utils/telemetry.js";
  
@@ -863,17 +863,7 @@ async function enrichResponseItem(item) {
   if (!item) return item;
   const normalized = await ensureAgendamentoScheduleContext(item);
   if (Array.isArray(normalized?.notasFiscais) && normalized.notasFiscais.length) {
-    // Decodificar observação para obter entrada, se existir
-    normalized.notasFiscais = normalized.notasFiscais.map((nota) => {
-      let entrada = '';
-      try {
-        const decoded = JSON.parse(nota.observacao || '{}');
-        entrada = decoded.entrada || '';
-      } catch {
-        // Se não for JSON, tenta extrair de outro formato?
-      }
-      return { ...nota, entrada };
-    });
+    normalized.notasFiscais = normalizeAgendamentoNotas(normalized.notasFiscais);
     // Agora enriquece volumes com a tabela Entrada_Volumes
     normalized.notasFiscais = await refreshNotasVolumesFromEntradas(normalized.notasFiscais);
     normalized.quantidadeVolumes = calculateTotals(normalized.notasFiscais, {}).quantidadeVolumes;
@@ -1287,12 +1277,16 @@ router.get("/", requirePermission("agendamentos.view"), async (req, res) => {
       prisma.agendamento.count({ where })
     ]);
     const notifMap = await batchNotificationSummary(items.map((i) => i.id));
-    const payload = items.map((i) => ({
-      ...calculateTotals(i.notasFiscais || [], i),
-      ...i,
-      semaforo: trafficColor(i.status),
-      notificacoes: notifMap.get(Number(i.id)) || { ...EMPTY_NOTIFICATIONS }
-    }));
+    const payload = items.map((i) => {
+      const notasFiscais = normalizeAgendamentoNotas(i.notasFiscais || []);
+      return {
+        ...calculateTotals(notasFiscais, i),
+        ...i,
+        notasFiscais,
+        semaforo: trafficColor(i.status),
+        notificacoes: notifMap.get(Number(i.id)) || { ...EMPTY_NOTIFICATIONS }
+      };
+    });
     return res.json({ data: payload, total, page, limit, totalPages: Math.ceil(total / limit) });
   } catch {
     try {
