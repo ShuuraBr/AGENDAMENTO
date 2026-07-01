@@ -414,6 +414,33 @@ function fornecedorMatch(itemFornecedor = '', agendFornecedor = '') {
   return agendNorm.split('|').map((s) => s.trim()).some((part) => part && (itemNorm === part || itemNorm.includes(part) || part.includes(itemNorm)));
 }
 
+// Notas antigas/lançadas manualmente podem não ter empresa/destino gravado na
+// própria nota fiscal. Este índice permite recuperar esse dado a partir do
+// relatório terceirizado importado (mesma fonte usada na análise de vencimento).
+export async function buildRelatorioNumeroNfIndex() {
+  const rows = await getRelatorioRowsSnapshot();
+  const index = new Map();
+  for (const row of rows) {
+    const digits = normalizeDigits(row.numeroNf);
+    if (!digits) continue;
+    if (!index.has(digits)) index.set(digits, []);
+    index.get(digits).push(row);
+  }
+  return index;
+}
+
+export function enrichNotasComRelatorioIndex(notas = [], index, fornecedor = '') {
+  if (!index || !index.size || !Array.isArray(notas) || !notas.length) return notas;
+  return notas.map((nota) => {
+    if (normalizeText(nota?.destino) || normalizeText(nota?.empresa)) return nota;
+    const digits = normalizeDigits(nota?.numeroNf);
+    const candidates = digits ? index.get(digits) : null;
+    if (!candidates || !candidates.length) return nota;
+    const row = candidates.find((item) => fornecedorMatch(item.fornecedor, fornecedor)) || candidates[0];
+    return enrichNoteWithRelatorio(nota, row);
+  });
+}
+
 export async function analyzeNotesForSchedule({ notas = [], dataAgendada = '', fornecedor = '' } = {}) {
   const selected = normalizeAgendamentoNotas(Array.isArray(notas) ? notas : []);
   const rows = await getRelatorioRowsSnapshot();

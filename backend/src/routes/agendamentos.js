@@ -18,7 +18,7 @@ import { fetchAgendamentosRaw } from "../utils/db-fallback.js";
 // CORREÇÃO: importação unificada – removida a duplicidade do identifier canonicalizeNotasSelecionadasComRelatorio
 import { canonicalizeNotasSelecionadasComRelatorio, linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento, persistManualPendingNota, removePendingNotasFromRelatorio, refreshNotasVolumesFromEntradas } from "../utils/relatorio-entradas.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
-import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, sendMonthlyNearDueDigestIfNeeded, searchByNumeroNf } from "../utils/nf-monitoring.js";
+import { analyzeNotesForSchedule, enrichAgendamentoWithMonitoring, sendFinanceAwarenessEmail, sendMonthlyNearDueDigestIfNeeded, searchByNumeroNf, buildRelatorioNumeroNfIndex, enrichNotasComRelatorioIndex } from "../utils/nf-monitoring.js";
 import { encodeNotaObservacao, normalizeAgendamentoNotas } from "../utils/nota-metadata.js";
 import { createDocumentUpload, createAvariaImageUpload, wrapMulter, AVARIA_IMAGE_MAX_COUNT } from "../utils/upload-policy.js";
 import { logTechnicalEvent } from "../utils/telemetry.js";
@@ -1277,8 +1277,11 @@ router.get("/", requirePermission("agendamentos.view"), async (req, res) => {
       prisma.agendamento.count({ where })
     ]);
     const notifMap = await batchNotificationSummary(items.map((i) => i.id));
-    const payload = items.map((i) => {
-      const notasFiscais = normalizeAgendamentoNotas(i.notasFiscais || []);
+    const decoratedItems = items.map((i) => ({ ...i, notasFiscais: normalizeAgendamentoNotas(i.notasFiscais || []) }));
+    const hasNotaSemDestino = decoratedItems.some((i) => i.notasFiscais.some((nota) => !nota.destino && !nota.empresa));
+    const relatorioIndex = hasNotaSemDestino ? await buildRelatorioNumeroNfIndex() : null;
+    const payload = decoratedItems.map((i) => {
+      const notasFiscais = relatorioIndex ? enrichNotasComRelatorioIndex(i.notasFiscais, relatorioIndex, i.fornecedor) : i.notasFiscais;
       return {
         ...calculateTotals(notasFiscais, i),
         ...i,
