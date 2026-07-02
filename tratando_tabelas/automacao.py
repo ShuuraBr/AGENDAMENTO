@@ -224,6 +224,55 @@ else:
     print("Tratamento finalizado com sucesso!")
     print(resultado.stdout)
 
+    # =========================
+    # COMMIT E PUSH AUTOMÁTICO
+    # =========================
+    print("\nSincronizando com o Git...")
+
+    REPO_PATH = r"H:\00 - HTML\AGENDAMENTO"
+    ARQUIVOS_GIT = [
+        r"tratando_tabelas\objetiva\entradas_objetiva.ods",
+        r"tratando_tabelas\objetiva\entradas_objetiva.xlsx",
+        r"tratando_tabelas\ac_coelho\entradas_ac_coelho.ods",
+        r"tratando_tabelas\ac_coelho\entradas_ac_coelho.xlsx",
+        r"tratando_tabelas\finitura\entradas_finitura.ods",
+        r"tratando_tabelas\finitura\entradas_finitura.xlsx",
+        r"tratando_tabelas\sr_acabamentos\entradas_sr_acabamentos.ods",
+        r"tratando_tabelas\sr_acabamentos\entradas_sr_acabamentos.xlsx",
+        r"backend\uploads\importacao-relatorio\entradas_lojas.xlsx",
+    ]
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-C", REPO_PATH, *args],
+            capture_output=True,
+            text=True
+        )
+
+    resultado_add = git("add", "--", *ARQUIVOS_GIT)
+    if resultado_add.returncode != 0:
+        print("Erro no git add:")
+        print(resultado_add.stderr)
+    elif git("diff", "--cached", "--quiet").returncode == 0:
+        print("Nenhuma alteração para commitar.")
+    else:
+        mensagem = f"atualização banco {datetime.now().strftime('%d/%m/%Y')}"
+        resultado_commit = git("commit", "-m", mensagem)
+        print(resultado_commit.stdout)
+
+        if resultado_commit.returncode != 0:
+            print("Erro no git commit:")
+            print(resultado_commit.stderr)
+        else:
+            resultado_push = git("push")
+            print(resultado_push.stdout)
+
+            if resultado_push.returncode != 0:
+                print("Erro no git push:")
+                print(resultado_push.stderr)
+            else:
+                print("Push realizado com sucesso!")
+
 tempo_total = round(time.time() - inicio_geral, 2)
 print(f"\n===== PROCESSO COMPLETO FINALIZADO | Tempo total: {tempo_total}s =====")
 
@@ -236,11 +285,3 @@ with open(log_path, "w", encoding="utf-8") as f:
 mostrar_aviso("Automação finalizada...\npode utilizar o computador", 3000)
 
 # Iniciando proxima automação
-
-
-
-
-
-
-
-
