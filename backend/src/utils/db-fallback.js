@@ -1,4 +1,5 @@
 import { getPrismaClient, isPrismaDisabled, getPrismaDisableReason } from "./prisma.js";
+import { normalizeAgendamentoNotas } from "./nota-metadata.js";
 
 function normalizeContains(value) {
   const text = String(value || "").trim();
@@ -21,7 +22,7 @@ function trafficColor(status) {
 }
 
 function extractItemTotals(item = {}) {
-  const notas = Array.isArray(item?.notasFiscais) ? item.notasFiscais : [];
+  const notas = normalizeAgendamentoNotas(Array.isArray(item?.notasFiscais) ? item.notasFiscais : []);
   const destinos = [...new Set(notas.map((nota) => String(nota?.destino || nota?.empresa || '').trim()).filter(Boolean))];
   const totalItens = notas.reduce((acc, nota) => acc + Number(nota?.quantidadeItens || nota?.qtdItens || nota?.itens || 0), 0);
   return {
@@ -47,7 +48,7 @@ function mapAgendamento(item = {}) {
     doca: item?.doca ? { id: item.doca.id, codigo: item.doca.codigo, descricao: item.doca.descricao || '' } : null,
     janela: item?.janela ? { id: item.janela.id, codigo: item.janela.codigo, descricao: item.janela.descricao || '' } : null,
     documentos: Array.isArray(item?.documentos) ? item.documentos : [],
-    notasFiscais: Array.isArray(item?.notasFiscais) ? item.notasFiscais : []
+    notasFiscais: normalizeAgendamentoNotas(Array.isArray(item?.notasFiscais) ? item.notasFiscais : [])
   };
 }
 
