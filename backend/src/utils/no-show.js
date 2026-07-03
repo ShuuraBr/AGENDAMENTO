@@ -1,5 +1,15 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { prisma } from './prisma.js';
 import { readAgendamentos, updateAgendamentoFile } from './file-store.js';
+import { unlinkRelatorioRowsFromAgendamento } from './relatorio-entradas.js';
+import { auditLog } from './audit.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const STATE_FILE = path.resolve(__dirname, '../../data/no-show-sweep-state.json');
+const BRT_TIMEZONE = 'America/Sao_Paulo';
 
 const ELIGIBLE_STATUSES = new Set(['PENDENTE_APROVACAO', 'APROVADO']);
 
@@ -26,44 +36,47 @@ function normalizeDateValue(value) {
   return '';
 }
 
-function normalizeTimeValue(value) {
-  if (!value) return '00:00';
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return `${String(value.getUTCHours()).padStart(2, '0')}:${String(value.getUTCMinutes()).padStart(2, '0')}`;
-  }
-  const raw = String(value).trim();
-  const match = raw.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
-  if (match) return `${match[1]}:${match[2]}`;
-  const native = new Date(raw);
-  if (!Number.isNaN(native.getTime())) {
-    return `${String(native.getUTCHours()).padStart(2, '0')}:${String(native.getUTCMinutes()).padStart(2, '0')}`;
-  }
-  return '00:00';
+function todayDateOnlyIso(now = new Date()) {
+  const y = String(now.getUTCFullYear());
+  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(now.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
-function scheduledAtFromItem(item = {}) {
-  const data = normalizeDateValue(item?.dataAgendada || item?.data_agendada);
-  if (!data) return null;
-  const hora = normalizeTimeValue(item?.horaAgendada || item?.hora_agendada || item?.janela?.horaInicio || item?.horaInicio || '00:00');
-  const scheduledAt = new Date(`${data}T${hora}:00`);
-  return Number.isNaN(scheduledAt.getTime()) ? null : scheduledAt;
-}
-
+// Elegível assim que o dia agendado termina, sem exigir a hora exata — dá
+// margem para atrasos do motorista dentro do próprio dia.
 function shouldMarkNoShow(item = {}, now = new Date()) {
   const status = String(item?.status || '').trim().toUpperCase();
   if (!ELIGIBLE_STATUSES.has(status)) return false;
   if (item?.checkinEm || item?.inicioDescargaEm || item?.fimDescargaEm || item?.chegadaRealEm) return false;
-  const scheduledAt = scheduledAtFromItem(item);
-  if (!scheduledAt) return false;
-  return scheduledAt.getTime() < now.getTime();
+  const scheduledDate = normalizeDateValue(item?.dataAgendada || item?.data_agendada);
+  if (!scheduledDate) return false;
+  return scheduledDate < todayDateOnlyIso(now);
+}
+
+async function markAgendamentoAsNoShow(item) {
+  try {
+    await prisma.agendamento.update({ where: { id: Number(item.id) }, data: { status: 'NO_SHOW' } });
+  } catch {
+    updateAgendamentoFile(item.id, { status: 'NO_SHOW' });
+  }
+  await unlinkRelatorioRowsFromAgendamento(item.id, { noShow: true });
+  await auditLog({
+    usuarioId: null,
+    usuarioNome: 'Sistema (varredura automática)',
+    perfil: 'SISTEMA',
+    acao: 'NO_SHOW_AUTOMATICO',
+    entidade: 'AGENDAMENTO',
+    entidadeId: item.id,
+    detalhes: { motivo: 'Dia agendado encerrado sem check-in.' }
+  });
 }
 
 async function applyNoShowToDatabase(now = new Date()) {
-  const items = await prisma.agendamento.findMany({ include: { janela: true } });
+  const items = await prisma.agendamento.findMany();
   const due = items.filter((item) => shouldMarkNoShow(item, now));
   for (const item of due) {
-    await prisma.agendamento.update({ where: { id: Number(item.id) }, data: { status: 'NO_SHOW' } });
-    updateAgendamentoFile(item.id, { status: 'NO_SHOW' });
+    await markAgendamentoAsNoShow(item);
   }
   return due.length;
 }
@@ -85,16 +98,75 @@ export async function runNoShowSweep(now = new Date()) {
   }
 }
 
-export function startNoShowWatcher({ intervalMs = 5 * 60 * 1000 } = {}) {
-  const execute = async () => {
-    try {
-      const count = await runNoShowSweep(new Date());
-      if (count > 0) console.log(`[NO_SHOW] ${count} agendamento(s) atualizado(s) automaticamente.`);
-    } catch (error) {
-      console.error('[NO_SHOW] Falha na atualização automática:', error?.message || error);
-    }
+function readState() {
+  try {
+    if (!fs.existsSync(STATE_FILE)) return {};
+    return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8').replace(/^﻿/, '')) || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeState(state = {}) {
+  try {
+    fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[NO_SHOW] Erro ao salvar estado da varredura:', err?.message || err);
+  }
+}
+
+function agoraBRT(referencia = new Date()) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: BRT_TIMEZONE,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(referencia).map((p) => [p.type, p.value])
+  );
+  return {
+    hora: parseInt(parts.hour, 10),
+    minuto: parseInt(parts.minute, 10),
+    dataIso: `${parts.year}-${parts.month}-${parts.day}`
+  };
+}
+
+/**
+ * Varredura diária: assim que vira o dia (a partir de 00:00 BRT), marca como
+ * NO_SHOW os agendamentos cujo dia agendado já terminou sem nenhuma ação
+ * posterior (sem aprovação seguida de check-in, sem cancelamento, etc.).
+ * - Verifica a cada 60s, mas só executa a varredura uma vez por dia.
+ * - Persiste a data da última execução para sobreviver a reinícios do servidor.
+ * - Se o servidor subir mais tarde no dia sem ter rodado ainda hoje, executa
+ *   imediatamente (catch-up).
+ */
+export function startNoShowWatcher() {
+  let executando = false;
+
+  const executar = (dataIso) => {
+    if (executando) return;
+    executando = true;
+    writeState({ ultimaVarredura: dataIso });
+    runNoShowSweep(new Date())
+      .then((count) => {
+        if (count > 0) console.log(`[NO_SHOW] ${count} agendamento(s) marcado(s) automaticamente na varredura diária.`);
+      })
+      .catch((error) => {
+        console.error('[NO_SHOW] Falha na varredura automática:', error?.message || error);
+      })
+      .finally(() => {
+        executando = false;
+      });
   };
 
-  execute();
-  return setInterval(execute, Math.max(60_000, Number(intervalMs) || 300_000));
+  const tick = () => {
+    const { dataIso } = agoraBRT();
+    const ultimaVarredura = readState().ultimaVarredura || '';
+    if (ultimaVarredura !== dataIso) executar(dataIso);
+  };
+
+  tick();
+  const handle = setInterval(tick, 60 * 1000);
+  handle.unref?.();
+  return handle;
 }

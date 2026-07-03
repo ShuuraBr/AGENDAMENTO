@@ -21,6 +21,7 @@ const { default: app } = await import("./app.js");
 const { startRelatorioImportWatcher } = await import("./utils/relatorio-entradas.js");
 const { runVoucherConfirmationWatcherTick } = await import("./utils/whatsapp-voucher-confirmation.js");
 const { iniciarSchedulerRelatorio, verificarEEnviarOptins } = await import("./utils/relatorio-supervisores.js");
+const { startNoShowWatcher } = await import("./utils/no-show.js");
 
 const PORT = Number(process.env.PORT || 3000);
 const shouldStartWatcher = ['1', 'true', 'yes', 'on'].includes(String(process.env.RELATORIO_IMPORT_WATCHER || '0').toLowerCase());
@@ -71,6 +72,13 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
     console.log('[OK] Scheduler de relatório diário para supervisores ativado (07:30 BRT).');
   } catch (error) {
     console.error('[WARN] Falha ao ativar scheduler de relatório diário:', error?.message || error);
+  }
+
+  try {
+    startNoShowWatcher();
+    console.log('[OK] Varredura automática de NO_SHOW ativada (diária, a partir de 00:00 BRT).');
+  } catch (error) {
+    console.error('[WARN] Falha ao ativar varredura automática de NO_SHOW:', error?.message || error);
   }
 });
 

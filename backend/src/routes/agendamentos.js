@@ -1900,7 +1900,7 @@ router.post("/:id(\\d+)/no-show", requirePermission("agendamentos.no_show"), asy
       item = updateAgendamentoFile(req.params.id, { status: "NO_SHOW" });
     }
     await auditLog({ usuarioId: req.user.sub, perfil: req.user.perfil, acao: "NO_SHOW", entidade: "AGENDAMENTO", entidadeId: item.id, detalhes: null, ip: req.ip });
-    await unlinkRelatorioRowsFromAgendamento(item?.id);
+    await unlinkRelatorioRowsFromAgendamento(item?.id, { noShow: true });
     res.json(item);
   } catch (err) { res.status(400).json({ message: err.message }); }
 });

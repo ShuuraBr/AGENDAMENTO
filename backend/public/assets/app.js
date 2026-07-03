@@ -448,7 +448,12 @@
       origemManual: !!item.origemManual,
       inseridaManual: !!item.inseridaManual,
       preLancamentoPendente: !!item.preLancamentoPendente,
-      disponivelNoRelatorio: item.disponivelNoRelatorio === false ? false : true
+      disponivelNoRelatorio: item.disponivelNoRelatorio === false ? false : true,
+      noShow: !!item.noShow,
+      noShowAgendamentoId: item.noShowAgendamentoId == null ? null : Number(item.noShowAgendamentoId),
+      noShowProtocolo: String(item.noShowProtocolo || '').trim(),
+      noShowEmBr: String(item.noShowEmBr || '').trim(),
+      tooltipNoShow: String(item.tooltipNoShow || '').trim()
     };
   }
 
@@ -2042,17 +2047,19 @@
             const key = buildInternalNotaKey(nota);
             const dueClass = nota.alertaVencimentoProximo ? ' pending-nota-item-warning' : '';
             const manualClass = nota.origemManual || nota.inseridaManual || nota.preLancamentoPendente ? ' pending-nota-item-manual' : '';
-            const tooltip = nota.tooltipVencimento || '';
+            const noShowClass = nota.noShow ? ' pending-nota-item-noshow' : '';
+            const tooltip = nota.noShow ? (nota.tooltipNoShow || 'Nota liberada novamente após NO-SHOW.') : (nota.tooltipVencimento || '');
             const label = `NF ${nota.numeroNf || '-'} • Série ${nota.serie || '-'}`;
             const dueBadge = nota.alertaVencimentoProximo ? `<span class="pending-note-due-badge" title="${escapeHtml(tooltip)}">Venc. próximo${nota.dataPrimeiroVencimentoBr ? ` • ${escapeHtml(nota.dataPrimeiroVencimentoBr)}` : ''}</span>` : '';
             const manualBadge = nota.origemManual || nota.inseridaManual || nota.preLancamentoPendente ? `<span class="pending-note-manual-badge" title="NF inserida manualmente e sem pré-lançamento no relatório terceirizado.">Inserida manualmente</span>` : '';
+            const noShowBadge = nota.noShow ? `<span class="pending-note-noshow-badge" title="${escapeHtml(nota.tooltipNoShow || 'Nota liberada novamente após NO-SHOW.')}">NO-SHOW${nota.noShowEmBr ? ` • ${escapeHtml(nota.noShowEmBr)}` : ''}</span>` : '';
             const empresa = nota.empresa ? `<span class="pending-note-company">${escapeHtml(nota.empresa)}</span>` : '';
             const destinoLogo = renderStoreLogo(nota.destino || nota.empresa, { showEmpty: false });
             const dataEntrada = nota.dataEntradaBr || nota.dataEntrada || '-';
             const checked = state.internalSelectedNotaKeys.has(key) ? 'checked' : '';
             const volumeValor = Number(nota.volumes ?? 0);
             const volumeDisplay = Number.isFinite(volumeValor) ? formatDecimalBR(volumeValor, 3) : '0,000';
-            return `<div class="pending-nota-item${dueClass}${manualClass}" title="${escapeHtml(tooltip)}"><label class="pending-nota-card"><div class="pending-nota-check"><input type="checkbox" data-internal-key="${escapeHtml(key)}" ${checked} /><span>${escapeHtml(label)}</span><div class="pending-note-tags">${empresa}${destinoLogo}${manualBadge}${dueBadge}</div></div><div class="pending-nota-meta"><span><strong>Entrada:</strong> ${escapeHtml(dataEntrada)}</span><span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(Number(nota.peso || 0), 3))} kg</span><span><strong>Volumes:</strong> <span class="nota-volume-val" data-nota-key="${escapeHtml(key)}">${escapeHtml(volumeDisplay)}</span> <button type="button" class="btn-edit-volume" data-nota-key="${escapeHtml(key)}" title="Editar volumes">✏️</button></span></div></label></div>`;
+            return `<div class="pending-nota-item${dueClass}${manualClass}${noShowClass}" title="${escapeHtml(tooltip)}"><label class="pending-nota-card"><div class="pending-nota-check"><input type="checkbox" data-internal-key="${escapeHtml(key)}" ${checked} /><span>${escapeHtml(label)}</span><div class="pending-note-tags">${empresa}${destinoLogo}${manualBadge}${dueBadge}${noShowBadge}</div></div><div class="pending-nota-meta"><span><strong>Entrada:</strong> ${escapeHtml(dataEntrada)}</span><span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(Number(nota.peso || 0), 3))} kg</span><span><strong>Volumes:</strong> <span class="nota-volume-val" data-nota-key="${escapeHtml(key)}">${escapeHtml(volumeDisplay)}</span> <button type="button" class="btn-edit-volume" data-nota-key="${escapeHtml(key)}" title="Editar volumes">✏️</button></span></div></label></div>`;
           }).join('')}</div></div>`).join('')}
         </div>
       `;

@@ -158,6 +158,8 @@ body.modal-open{overflow:hidden}
 .agendamento-consulta-card{min-width:0}
 .pending-nota-item-warning{border-color:#f59e0b;background:#fffbeb}
 .pending-note-due-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;margin-left:auto}
+.pending-nota-item-noshow{border-color:#8b5cf6;border-width:2px;background:#f5f3ff}
+.pending-note-noshow-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:#8b5cf6;color:#fff;font-size:11px;font-weight:700;margin-left:auto}
 .nf-series-item-warning{display:inline-block;background:#fef3c7;border:1px solid #f59e0b;border-radius:999px;padding:3px 8px;color:#92400e}
 .nf-series-item-danger{display:inline-block;background:#fee2e2;border:1px solid #ef4444;border-radius:999px;padding:3px 8px;color:#991b1b}
 .nf-alert-badge{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700;width:max-content}

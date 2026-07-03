@@ -127,7 +127,9 @@ const RELATORIO_BASE_COLUMNS = [
   ['importedAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP'],
   ['updatedAt', 'DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'],
   ['dadosOriginaisJson', 'LONGTEXT NULL'],
-  ['inseridoManualmente', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Flag: 1 = inserida manualmente pelo operador'"]
+  ['inseridoManualmente', "TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Flag: 1 = inserida manualmente pelo operador'"],
+  ['noShowAgendamentoId', "INT NULL COMMENT 'Agendamento que gerou NO_SHOW e liberou esta nota novamente'"],
+  ['noShowEm', 'DATETIME NULL']
 ];
  
 function buildCreateTableSql() {
@@ -525,6 +527,11 @@ function normalizeImportedItems(rows = []) {
     const dueFields = buildDueFields(normalizedRow['Data 1º vencimento']);
     const isManualNote = normalizeCellValue(normalizedRow['Entrada']).toUpperCase() === 'MANUAL'
       || normalizeCellValue(normalizedRow['Status']).toUpperCase().includes('MANUAL');
+    const noShowAgendamentoId = row?.noShowAgendamentoId ? Number(row.noShowAgendamentoId) : null;
+    const noShowEmRaw = row?.noShowEm || null;
+    const noShowEmDate = noShowEmRaw instanceof Date ? noShowEmRaw : (noShowEmRaw ? new Date(noShowEmRaw) : null);
+    const noShowEmBr = noShowEmDate && !Number.isNaN(noShowEmDate.getTime()) ? noShowEmDate.toLocaleDateString('pt-BR') : '';
+    const noShowProtocolo = normalizeCellValue(row?.noShowProtocolo || '');
     const note = {
       rowHash: normalizeCellValue(row?.rowHash || '') || buildRowHash(normalizedRow),
       numeroNf,
@@ -544,7 +551,14 @@ function normalizeImportedItems(rows = []) {
       ...dueFields,
       tooltipVencimento: isManualNote
         ? 'NF inserida manualmente; sem pré-lançamento no relatório terceirizado.'
-        : dueFields.tooltipVencimento
+        : dueFields.tooltipVencimento,
+      noShow: Boolean(noShowAgendamentoId),
+      noShowAgendamentoId,
+      noShowProtocolo,
+      noShowEmBr,
+      tooltipNoShow: noShowAgendamentoId
+        ? `Nota liberada novamente: o agendamento ${noShowProtocolo || `#${noShowAgendamentoId}`} não compareceu${noShowEmBr ? ` (${noShowEmBr})` : ''}.`
+        : ''
     };
  
     const noteKey = note.rowHash || `${note.numeroNf}::${note.serie}::${note.valorNf}::${note.peso}::${note.volumes}`;
@@ -1537,18 +1551,26 @@ export async function listFornecedoresPendentesImportados() {
     if (await ensureRelatorioTable()) {
       await cleanupOrphanRelatorioAgendamentoLinks();
       const rows = await prisma.$queryRawUnsafe(
-      `SELECT rowHash, agendamentoId, dadosOriginaisJson, importedAt, updatedAt
-         FROM ${quoteIdentifier(TABLE_NAME)}
-        WHERE agendamentoId IS NULL
-        ORDER BY importedAt ASC, updatedAt ASC, rowHash ASC`
+      `SELECT rel.rowHash, rel.agendamentoId, rel.dadosOriginaisJson, rel.importedAt, rel.updatedAt,
+              rel.noShowAgendamentoId, rel.noShowEm, ag.protocolo AS noShowProtocolo
+         FROM ${quoteIdentifier(TABLE_NAME)} rel
+         LEFT JOIN ${quoteIdentifier('Agendamento')} ag ON ag.id = rel.noShowAgendamentoId
+        WHERE rel.agendamentoId IS NULL
+        ORDER BY rel.importedAt ASC, rel.updatedAt ASC, rel.rowHash ASC`
     );
- 
+
       if (Array.isArray(rows) && rows.length) {
         const parsedRows = rows
         .map((row) => {
           try {
             const parsed = row?.dadosOriginaisJson ? JSON.parse(String(row.dadosOriginaisJson)) : {};
-            return { ...normalizeSpreadsheetRow(parsed || {}), rowHash: normalizeCellValue(row?.rowHash || '') };
+            return {
+              ...normalizeSpreadsheetRow(parsed || {}),
+              rowHash: normalizeCellValue(row?.rowHash || ''),
+              noShowAgendamentoId: row?.noShowAgendamentoId ?? null,
+              noShowEm: row?.noShowEm ?? null,
+              noShowProtocolo: normalizeCellValue(row?.noShowProtocolo || '')
+            };
           } catch {
             return null;
           }
@@ -1578,41 +1600,47 @@ export async function listFornecedoresPendentesImportados() {
 export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, notas = []) {
   if (!agendamentoId || !fornecedor || !Array.isArray(notas) || !notas.length) return;
   if (!(await ensureRelatorioTable())) return;
- 
+
+  // Ao vincular a nota a um novo agendamento, o aviso de NO_SHOW anterior deixa de valer.
+  const setClause = `agendamentoId = ${sqlLiteral(Number(agendamentoId))}, noShowAgendamentoId = NULL, noShowEm = NULL`;
+
   for (const nota of notas) {
     const rowHash = normalizeCellValue(nota?.rowHash || '');
     const numeroNf = normalizeCellValue(nota?.numeroNf || nota?.numero_nf || '');
     const serie = normalizeCellValue(nota?.serie || '');
     if (rowHash) {
       await prisma.$executeRawUnsafe(
-        `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = ${sqlLiteral(Number(agendamentoId))} WHERE rowHash = ${sqlLiteral(rowHash)}`
+        `UPDATE ${quoteIdentifier(TABLE_NAME)} SET ${setClause} WHERE rowHash = ${sqlLiteral(rowHash)}`
       );
       continue;
     }
- 
+
     if (!numeroNf) continue;
- 
+
     const conditions = [
       `LOWER(TRIM(${quoteIdentifier('Fornecedor')})) = LOWER(${sqlLiteral(fornecedor)})`,
       `TRIM(${quoteIdentifier('Nr. nota')}) = ${sqlLiteral(numeroNf)}`
     ];
- 
+
     if (serie) {
       conditions.push(`TRIM(${quoteIdentifier('Série')}) = ${sqlLiteral(serie)}`);
     }
- 
+
     await prisma.$executeRawUnsafe(
-      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = ${sqlLiteral(Number(agendamentoId))} WHERE ${conditions.join(' AND ')}`
+      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET ${setClause} WHERE ${conditions.join(' AND ')}`
     );
   }
 }
- 
-export async function unlinkRelatorioRowsFromAgendamento(agendamentoId) {
+
+export async function unlinkRelatorioRowsFromAgendamento(agendamentoId, { noShow = false } = {}) {
   if (!agendamentoId) return;
   try {
     if (!(await ensureRelatorioTable())) return;
+    const noShowSet = noShow
+      ? `, noShowAgendamentoId = ${sqlLiteral(Number(agendamentoId))}, noShowEm = NOW()`
+      : '';
     await prisma.$executeRawUnsafe(
-      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = NULL WHERE agendamentoId = ${sqlLiteral(Number(agendamentoId))}`
+      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = NULL${noShowSet} WHERE agendamentoId = ${sqlLiteral(Number(agendamentoId))}`
     );
   } catch {}
 }
