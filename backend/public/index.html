@@ -180,7 +180,7 @@
         <div id="calendarGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px"></div>
       </div>
 
-      <!-- Gráficos 2x2 compactos -->
+      <!-- Gráficos -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px" id="chartsRow">
         <div class="card" style="padding:10px 12px">
           <h4>PESO RECEBIDO POR DIA (KG)</h4>
@@ -190,25 +190,13 @@
           <h4>OCORRÊNCIAS POR TRANSPORTADORA</h4>
           <canvas id="chartOcorrencias" height="100"></canvas>
         </div>
-        <div class="card" style="padding:10px 12px">
-          <h4>TEMPO MÉDIO DE DESCARGA (MIN)</h4>
-          <canvas id="chartDescarga" height="100"></canvas>
-        </div>
-        <div class="card" style="padding:10px 12px">
-          <h4>TEMPO MÉDIO AGENDAMENTO → CHEGADA (H)</h4>
-          <canvas id="chartAgendaChegada" height="100"></canvas>
-        </div>
       </div>
 
       <!-- Rankings -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px">
+      <div style="margin-top:16px">
         <div class="card">
           <h4 style="margin:0 0 12px">🏆 Melhores transportadoras</h4>
           <div id="rankingMelhores"></div>
-        </div>
-        <div class="card">
-          <h4 style="margin:0 0 12px">⚠️ Mais cancelamentos / no-show / atrasos</h4>
-          <div id="rankingOcorrencias"></div>
         </div>
       </div>
 

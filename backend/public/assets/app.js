@@ -2851,53 +2851,6 @@
       });
     }
 
-    // Chart 3: Tempo médio descarga (horizontal bars)
-    destroyChart('chartDescarga');
-    const cDesc = byId('chartDescarga');
-    const descData = rankingOcorrencias.filter((t) => t.mediaDescargaMin != null).slice(0, 6);
-    if (cDesc && descData.length) {
-      _chartInstances['chartDescarga'] = new Chart(cDesc, {
-        type: 'bar',
-        data: {
-          labels: descData.map((t) => t.nome.length > 14 ? t.nome.slice(0,14)+'…' : t.nome),
-          datasets: [{ data: descData.map((t) => t.mediaDescargaMin), backgroundColor: '#10b981cc', borderRadius: 5 }]
-        },
-        options: {
-          ...CHART_OPTS,
-          indexAxis: 'y',
-          scales: {
-            x: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 }, color: '#64748b' } },
-            y: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#374151' } }
-          }
-        }
-      });
-    } else if (cDesc) {
-      cDesc.parentNode.querySelector('.chart-empty')?.remove();
-      const p = document.createElement('p'); p.className='chart-empty'; p.textContent='Sem dados de descarga.'; cDesc.after(p);
-    }
-
-    // Chart 4: Tempo agendamento → chegada
-    destroyChart('chartAgendaChegada');
-    const cAC = byId('chartAgendaChegada');
-    const acData = rankingOcorrencias.filter((t) => t.mediaAgendaChegadaMin != null).slice(0, 6);
-    if (cAC && acData.length) {
-      _chartInstances['chartAgendaChegada'] = new Chart(cAC, {
-        type: 'bar',
-        data: {
-          labels: acData.map((t) => t.nome.length > 14 ? t.nome.slice(0,14)+'…' : t.nome),
-          datasets: [{ data: acData.map((t) => Math.round(t.mediaAgendaChegadaMin / 60 * 10) / 10), backgroundColor: '#6366f1cc', borderRadius: 5 }]
-        },
-        options: {
-          ...CHART_OPTS,
-          indexAxis: 'y',
-          scales: {
-            x: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { font: { size: 11 }, color: '#64748b' } },
-            y: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#374151' } }
-          }
-        }
-      });
-    }
-
     // Rankings HTML
     const mkRanking = (id, items, fields) => {
       const el = byId(id); if (!el) return;
@@ -2911,8 +2864,7 @@
         </div>`;
       }).join('')}</div>`;
     };
-    mkRanking('rankingMelhores', rankingMelhores, [{ key: 'finalizados', label: 'ok' }, { key: 'ocorrencias', label: 'ocorr.' }]);
-    mkRanking('rankingOcorrencias', rankingOcorrencias, [{ key: 'cancelamentos', label: 'cancel.' }, { key: 'noShow', label: 'no-show' }, { key: 'atrasos', label: 'atrasos' }]);
+    mkRanking('rankingMelhores', rankingMelhores, [{ key: 'finalizados', label: 'ok' }, { key: 'pontos', label: 'pontos' }]);
   }
 
   async function loadDashboard() {
