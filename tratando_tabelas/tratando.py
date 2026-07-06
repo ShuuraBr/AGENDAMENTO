@@ -211,11 +211,19 @@ else:
         print("Erro no git commit:")
         print(resultado_commit.stderr)
     else:
-        resultado_push = git("push")
-        print(resultado_push.stdout)
+        git("fetch", "origin")
+        resultado_rebase = git("rebase", "origin/main")
 
-        if resultado_push.returncode != 0:
-            print("Erro no git push:")
-            print(resultado_push.stderr)
+        if resultado_rebase.returncode != 0:
+            print("Erro no git rebase (main local ficou divergente, abortando rebase):")
+            print(resultado_rebase.stderr)
+            git("rebase", "--abort")
         else:
-            print("Push realizado com sucesso!")
+            resultado_push = git("push", "origin", "HEAD:main")
+            print(resultado_push.stdout)
+
+            if resultado_push.returncode != 0:
+                print("Erro no git push:")
+                print(resultado_push.stderr)
+            else:
+                print("Push realizado com sucesso!")
