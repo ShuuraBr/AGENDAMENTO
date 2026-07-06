@@ -191,23 +191,12 @@ router.get("/metricas", requirePermission("dashboard.view"), async (req, res) =>
     for (const ag of all) {
       const transp = String(ag.transportadora || 'Desconhecida').trim();
       if (!transp) continue;
-      if (!transpStats[transp]) transpStats[transp] = { nome: transp, cancelamentos: 0, noShow: 0, atrasos: 0, finalizados: 0, tempoDescargaMin: [], tempoAgendaChegadaMin: [] };
+      if (!transpStats[transp]) transpStats[transp] = { nome: transp, cancelamentos: 0, noShow: 0, atrasos: 0, finalizados: 0 };
       const s = String(ag.status || '').toUpperCase();
       if (s === 'CANCELADO') transpStats[transp].cancelamentos++;
       if (s === 'NO_SHOW') transpStats[transp].noShow++;
       if (s === 'FINALIZADO') {
         transpStats[transp].finalizados++;
-        if (ag.checkinEm && ag.inicioDescargaEm) {
-          const chegada = new Date(ag.checkinEm);
-          const inicio = new Date(ag.inicioDescargaEm);
-          const fim = ag.fimDescargaEm ? new Date(ag.fimDescargaEm) : null;
-          if (fim && !isNaN(fim) && !isNaN(inicio)) transpStats[transp].tempoDescargaMin.push((fim - inicio) / 60000);
-        }
-        if (ag.criadoEm && ag.checkinEm) {
-          const criado = new Date(ag.criadoEm || ag.createdAt);
-          const chegada = new Date(ag.checkinEm);
-          if (!isNaN(criado) && !isNaN(chegada)) transpStats[transp].tempoAgendaChegadaMin.push((chegada - criado) / 60000);
-        }
         // atraso: checkin depois da horaAgendada
         if (ag.horaAgendada && ag.dataAgendada && ag.checkinEm) {
           const scheduled = new Date(`${ag.dataAgendada}T${ag.horaAgendada}`);
@@ -218,13 +207,14 @@ router.get("/metricas", requirePermission("dashboard.view"), async (req, res) =>
     }
     const avg = (arr) => arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
     const rankingOcorrencias = Object.values(transpStats)
-      .map((t) => ({ ...t, ocorrencias: t.cancelamentos + t.noShow + t.atrasos, mediaDescargaMin: avg(t.tempoDescargaMin), mediaAgendaChegadaMin: avg(t.tempoAgendaChegadaMin) }))
+      .map((t) => ({ ...t, ocorrencias: t.cancelamentos + t.noShow + t.atrasos }))
       .filter((t) => t.cancelamentos + t.noShow + t.finalizados + t.atrasos > 0)
       .sort((a, b) => b.ocorrencias - a.ocorrencias);
 
     const rankingMelhores = [...rankingOcorrencias]
       .filter((t) => t.finalizados > 0)
-      .sort((a, b) => (a.ocorrencias / Math.max(a.finalizados, 1)) - (b.ocorrencias / Math.max(b.finalizados, 1)));
+      .map((t) => ({ ...t, pontos: t.finalizados - t.ocorrencias }))
+      .sort((a, b) => b.pontos - a.pontos || b.finalizados - a.finalizados);
 
     // Média de tempo de recebimento geral (chegou → finalizado)
     const temposRecebimento = all.filter((ag) => ag.checkinEm && ag.fimDescargaEm).map((ag) => {
