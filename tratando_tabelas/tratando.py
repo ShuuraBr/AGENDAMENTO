@@ -196,8 +196,20 @@ def git(*args):
     )
 
 
-resultado_add = git("add", "--", *ARQUIVOS_GIT)
-if resultado_add.returncode != 0:
+arquivos_existentes = [
+    arquivo for arquivo in ARQUIVOS_GIT
+    if os.path.exists(os.path.join(REPO_PATH, arquivo))
+]
+arquivos_faltando = [a for a in ARQUIVOS_GIT if a not in arquivos_existentes]
+if arquivos_faltando:
+    print("Aviso: os seguintes arquivos não existem e serão ignorados no commit:")
+    for arquivo in arquivos_faltando:
+        print(f"  - {arquivo}")
+
+resultado_add = git("add", "--", *arquivos_existentes) if arquivos_existentes else None
+if resultado_add is None:
+    print("Nenhum arquivo existente para adicionar ao commit.")
+elif resultado_add.returncode != 0:
     print("Erro no git add:")
     print(resultado_add.stderr)
 elif git("diff", "--cached", "--quiet").returncode == 0:
