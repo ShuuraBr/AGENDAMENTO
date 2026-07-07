@@ -1986,15 +1986,20 @@
     syncInternalSelectionFromDom();
     const wrap = byId('internalPendingNotas');
     if (!wrap) return;
+    const searchTerm = String(state.internalPendingSearchTerm || '').trim().toLowerCase();
     const fornecedoresSelecionados = getSelectedInternalFornecedores();
-    if (!fornecedoresSelecionados.length) {
-      wrap.innerHTML = '<div class="warning-box">Selecione ao menos um fornecedor pendente para carregar as NF disponíveis.</div>';
+    // Buscando por NF: procura em TODOS os fornecedores pendentes (não só nos já
+    // selecionados) para o sistema descobrir sozinho a quem a nota pertence.
+    const buscandoEmTodosFornecedores = !!searchTerm;
+
+    if (!fornecedoresSelecionados.length && !buscandoEmTodosFornecedores) {
+      wrap.innerHTML = '<div class="warning-box">Selecione ao menos um fornecedor pendente ou busque por um número de NF para carregar as notas disponíveis.</div>';
       updateInternalTotals();
       return;
     }
 
-    const searchTerm = String(state.internalPendingSearchTerm || '').trim().toLowerCase();
-    const fornecedoresRender = fornecedoresSelecionados.map((fornecedor) => {
+    const fornecedoresFonte = buscandoEmTodosFornecedores ? (state.pendingFornecedores || []) : fornecedoresSelecionados;
+    const fornecedoresRender = fornecedoresFonte.map((fornecedor) => {
       const nomeFornecedor = String(fornecedor?.fornecedor || fornecedor?.nome || '-').trim() || '-';
       const sourceNotas = (Array.isArray(fornecedor?.notas) ? fornecedor.notas : Array.isArray(fornecedor?.notasFiscais) ? fornecedor.notasFiscais : [])
         .map((nota) => normalizePendingNota({ ...nota, fornecedor: String(nota?.fornecedor || nomeFornecedor).trim(), fornecedorGrupo: nomeFornecedor }));
@@ -2031,7 +2036,8 @@
       return;
     }
 
-    const htmlForFornecedor = fornecedoresRender.map(({ nomeFornecedor, notas }) => {
+    const htmlForFornecedor = fornecedoresRender.map(({ fornecedor, nomeFornecedor, notas }) => {
+      const fornecedorId = String(fornecedor?.id || '').trim();
       const groups = [
         { title: 'Notas com 1º vencimento próximo', items: notas.filter((nota) => nota.alertaVencimentoProximo), highlight: true },
         { title: 'Demais notas pendentes', items: notas.filter((nota) => !nota.alertaVencimentoProximo), highlight: false }
@@ -2059,7 +2065,7 @@
             const checked = state.internalSelectedNotaKeys.has(key) ? 'checked' : '';
             const volumeValor = Number(nota.volumes ?? 0);
             const volumeDisplay = Number.isFinite(volumeValor) ? formatDecimalBR(volumeValor, 3) : '0,000';
-            return `<div class="pending-nota-item${dueClass}${manualClass}${noShowClass}" title="${escapeHtml(tooltip)}"><label class="pending-nota-card"><div class="pending-nota-check"><input type="checkbox" data-internal-key="${escapeHtml(key)}" ${checked} /><span>${escapeHtml(label)}</span><div class="pending-note-tags">${empresa}${destinoLogo}${manualBadge}${dueBadge}${noShowBadge}</div></div><div class="pending-nota-meta"><span><strong>Entrada:</strong> ${escapeHtml(dataEntrada)}</span><span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(Number(nota.peso || 0), 3))} kg</span><span><strong>Volumes:</strong> <span class="nota-volume-val" data-nota-key="${escapeHtml(key)}">${escapeHtml(volumeDisplay)}</span> <button type="button" class="btn-edit-volume" data-nota-key="${escapeHtml(key)}" title="Editar volumes">✏️</button></span></div></label></div>`;
+            return `<div class="pending-nota-item${dueClass}${manualClass}${noShowClass}" title="${escapeHtml(tooltip)}"><label class="pending-nota-card"><div class="pending-nota-check"><input type="checkbox" data-internal-key="${escapeHtml(key)}" data-fornecedor-id="${escapeHtml(fornecedorId)}" ${checked} /><span>${escapeHtml(label)}</span><div class="pending-note-tags">${empresa}${destinoLogo}${manualBadge}${dueBadge}${noShowBadge}</div></div><div class="pending-nota-meta"><span><strong>Entrada:</strong> ${escapeHtml(dataEntrada)}</span><span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(Number(nota.peso || 0), 3))} kg</span><span><strong>Volumes:</strong> <span class="nota-volume-val" data-nota-key="${escapeHtml(key)}">${escapeHtml(volumeDisplay)}</span> <button type="button" class="btn-edit-volume" data-nota-key="${escapeHtml(key)}" title="Editar volumes">✏️</button></span></div></label></div>`;
           }).join('')}</div></div>`).join('')}
         </div>
       `;
@@ -2073,7 +2079,29 @@
       syncPendingNotasSelectionUI(wrap);
     };
 
-    wrap.querySelectorAll('[data-internal-key]').forEach((el) => el.addEventListener('change', sync));
+    // Marcar uma nota de um fornecedor ainda não selecionado adiciona esse
+    // fornecedor à seleção automaticamente (busca cruzada por NF).
+    function garantirFornecedorSelecionado(fornecedorId) {
+      const id = String(fornecedorId || '').trim();
+      if (!id) return false;
+      const jaSelecionado = getSelectedInternalFornecedores().some((f) => String(f?.id || '') === id);
+      if (jaSelecionado) return false;
+      const fornecedorCompleto = getPendingFornecedorById(id);
+      if (!fornecedorCompleto) return false;
+      const novaSelecao = [...getSelectedInternalFornecedores(), fornecedorCompleto];
+      applyPendingFornecedoresInterno(novaSelecao);
+      renderInternalFornecedorDropdown();
+      autoFillTransportadoraForFornecedores(novaSelecao);
+      return true;
+    }
+
+    wrap.querySelectorAll('[data-internal-key]').forEach((el) => el.addEventListener('change', () => {
+      if (el.checked) {
+        state.internalSelectedNotaKeys.add(String(el.dataset.internalKey || '').trim());
+        if (garantirFornecedorSelecionado(el.dataset.fornecedorId)) return; // já re-renderizou tudo
+      }
+      sync();
+    }));
 
     // Wire up volume edit buttons
     wrap.querySelectorAll('.btn-edit-volume').forEach((btn) => {
@@ -2145,13 +2173,31 @@
     wrap.querySelector('#btnSelectAllPendingNotas')?.addEventListener('click', () => {
       const checkboxes = [...wrap.querySelectorAll('[data-internal-key]')];
       const allChecked = checkboxes.length > 0 && checkboxes.every((el) => el.checked);
-      checkboxes.forEach((el) => {
-        el.checked = !allChecked;
-        const key = String(el.dataset.internalKey || '').trim();
-        if (!key) return;
-        if (!allChecked) state.internalSelectedNotaKeys.add(key);
-        else state.internalSelectedNotaKeys.delete(key);
-      });
+      if (!allChecked) {
+        const fornecedorIdsNovos = new Set();
+        checkboxes.forEach((el) => {
+          const key = String(el.dataset.internalKey || '').trim();
+          if (key) state.internalSelectedNotaKeys.add(key);
+          const fid = String(el.dataset.fornecedorId || '').trim();
+          if (fid) fornecedorIdsNovos.add(fid);
+        });
+        const idsAtuais = new Set(getSelectedInternalFornecedores().map((f) => String(f?.id || '')));
+        const aAdicionar = [...fornecedorIdsNovos].filter((id) => !idsAtuais.has(id)).map((id) => getPendingFornecedorById(id)).filter(Boolean);
+        if (aAdicionar.length) {
+          const novaSelecao = [...getSelectedInternalFornecedores(), ...aAdicionar];
+          applyPendingFornecedoresInterno(novaSelecao);
+          renderInternalFornecedorDropdown();
+          autoFillTransportadoraForFornecedores(novaSelecao);
+          return; // já re-renderizou tudo
+        }
+        checkboxes.forEach((el) => { el.checked = true; });
+      } else {
+        checkboxes.forEach((el) => {
+          el.checked = false;
+          const key = String(el.dataset.internalKey || '').trim();
+          if (key) state.internalSelectedNotaKeys.delete(key);
+        });
+      }
       updateInternalTotals();
       syncPendingNotasSelectionUI(wrap);
     });
@@ -2190,6 +2236,57 @@
     form?.reset();
     modal?.classList.add('hidden');
     document.body.classList.remove('modal-open');
+  }
+
+  // Antes de inserir uma NF manualmente, verifica se ela já existe em outro
+  // fornecedor pendente — indício de que o operador selecionou o fornecedor errado.
+  function encontrarNotaEmOutroFornecedor(numeroNf, serie, fornecedorAtualNome = '') {
+    const numeroNorm = String(numeroNf || '').trim().toLowerCase();
+    if (!numeroNorm) return null;
+    const serieNorm = String(serie || '').trim().toLowerCase();
+    const atualNorm = String(fornecedorAtualNome || '').trim().toLowerCase();
+
+    for (const forn of state.pendingFornecedores || []) {
+      const nomeForn = String(forn?.fornecedor || forn?.nome || '').trim();
+      if (nomeForn.toLowerCase() === atualNorm) continue;
+      const notas = Array.isArray(forn?.notas) ? forn.notas : Array.isArray(forn?.notasFiscais) ? forn.notasFiscais : [];
+      const match = notas.find((nota) => {
+        const nfNorm = String(nota?.numeroNf || '').trim().toLowerCase();
+        if (nfNorm !== numeroNorm) return false;
+        const srNorm = String(nota?.serie || '').trim().toLowerCase();
+        if (serieNorm && srNorm) return srNorm === serieNorm;
+        return true;
+      });
+      if (match) return { fornecedor: nomeForn, nota: match };
+    }
+    return null;
+  }
+
+  function showNotaFornecedorErradoModal(nota = {}, fornecedorCorreto = '') {
+    byId('notaFornecedorErradoModal')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'notaFornecedorErradoModal';
+    overlay.style.cssText = [
+      'position:fixed;inset:0;z-index:9500',
+      'display:flex;align-items:center;justify-content:center',
+      'background:rgba(15,23,42,.6);padding:20px'
+    ].join(';');
+
+    const label = `NF ${escapeHtml(String(nota.numeroNf || '-'))}${nota.serie ? ` / Série ${escapeHtml(String(nota.serie))}` : ''}`;
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:20px;padding:32px 28px;max-width:440px;width:100%;box-shadow:0 24px 64px rgba(15,23,42,.32);text-align:center">
+        <div style="font-size:40px;margin-bottom:8px">⚠️</div>
+        <h2 style="margin:0 0 10px;font-size:20px;color:#0f172a">Essa NF já existe em outro fornecedor</h2>
+        <p style="margin:0 0 22px;font-size:14px;color:#475569;line-height:1.5">
+          A ${label} já está pendente para o fornecedor <strong>${escapeHtml(fornecedorCorreto)}</strong>.
+          Você pode estar com o fornecedor errado selecionado — confira antes de inserir manualmente.
+        </p>
+        <button type="button" id="notaFornecedorErradoOk" style="width:100%;padding:12px 20px;border-radius:12px;border:none;background:#111827;color:#fff;font-weight:700;font-size:14px;cursor:pointer">Entendi</button>
+      </div>`;
+
+    document.body.appendChild(overlay);
+    overlay.querySelector('#notaFornecedorErradoOk').onclick = () => overlay.remove();
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
   }
 
   function appendManualNotaToPendingFornecedor(nota = {}) {
@@ -4240,6 +4337,12 @@
           valorNf: 0,
           observacao: 'NF inserida manualmente - sem pré-lançamento'
         };
+        const nomeFornecedorAtual = String(state.internalPendingFornecedor?.fornecedor || state.internalPendingFornecedor?.nome || '').trim();
+        const encontradaEmOutro = encontrarNotaEmOutroFornecedor(draftNota.numeroNf, draftNota.serie, nomeFornecedorAtual);
+        if (encontradaEmOutro) {
+          showNotaFornecedorErradoModal(draftNota, encontradaEmOutro.fornecedor);
+          return;
+        }
         const response = await notifyFiscalForManualNota(draftNota);
         const nota = appendManualNotaToPendingFornecedor(response?.nota || draftNota);
         const ccInfo = String(response?.cc || '').trim();
