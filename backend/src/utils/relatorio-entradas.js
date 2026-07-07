@@ -1475,14 +1475,59 @@ export async function syncLatestRelatorioFromFolder({ forceWhenDatabaseEmpty = t
  
 export { countRelatorioRowsInDatabase };
  
-async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
+function normalizeNfDigits(value = '') {
+  return String(value ?? '').replace(/\D/g, '');
+}
+
+// Identidade de negócio de uma nota dentro do RelatorioTerceirizado: mesma
+// normalização usada por linkRelatorioRowsToAgendamento (LOWER/TRIM no
+// fornecedor, TRIM case-sensitive em número/série).
+function relatorioNaturalKey(fornecedor, numeroNf, serie) {
+  return `${normalizeCellValue(fornecedor).toLowerCase()}||${normalizeCellValue(numeroNf)}||${normalizeCellValue(serie)}`;
+}
+
+// Chave "solta" (só dígitos do número + série em maiúsculas) usada para cruzar
+// com a tabela NotaFiscal, que pode ter a formatação levemente diferente da
+// planilha do ERP.
+function crossCheckNotaKey(numeroNf, serie) {
+  return `${normalizeNfDigits(numeroNf)}||${normalizeCellValue(serie).toUpperCase()}`;
+}
+
+const AGENDAMENTO_STATUS_LIBERA_NOTA = new Set(['CANCELADO', 'REPROVADO', 'NO_SHOW']);
+
+// Cruza NotaFiscal + Agendamento para descobrir quais notas já estão presas a
+// um agendamento ativo mesmo que o vínculo em RelatorioTerceirizado.agendamentoId
+// não tenha sido gravado (linkRelatorioRowsToAgendamento roda num try/catch que
+// engole falhas de match).
+async function loadNotasComAgendamentoAtivo() {
+  const chaves = new Set();
+  try {
+    const notas = await prisma.notaFiscal.findMany({});
+    const agendamentoIds = [...new Set(
+      notas.map((nota) => Number(nota.agendamentoId)).filter((id) => Number.isFinite(id) && id > 0)
+    )];
+    if (!agendamentoIds.length) return chaves;
+
+    const agendamentos = await prisma.agendamento.findMany({ where: { id: { in: agendamentoIds } } });
+    const statusPorId = new Map(agendamentos.map((ag) => [Number(ag.id), String(ag.status || '').toUpperCase()]));
+
+    for (const nota of notas) {
+      const status = statusPorId.get(Number(nota.agendamentoId));
+      if (!status || AGENDAMENTO_STATUS_LIBERA_NOTA.has(status)) continue;
+      chaves.add(crossCheckNotaKey(nota.numeroNf, nota.serie));
+    }
+  } catch (error) {
+    console.error('[RELATORIO_IMPORT] Falha ao cruzar NotaFiscal/Agendamento para reconciliação:', error?.message || error);
+  }
+  return chaves;
+}
+
+async function reconcileDatabaseSnapshot(rows = [], sourceFileName = '') {
   if (!(await ensureRelatorioTable())) {
     throw new Error(relatorioDbDisableReason || 'Banco do relatório terceirizado indisponível.');
   }
 
-  // APPEND MODE: preserva linhas antigas (mantém histórico e vínculos de agendamentoId).
-  // Linhas que já existem (mesmo rowHash) têm apenas origemArquivo e colunas de planilha atualizadas.
-  // Linhas inseridas manualmente (origemArquivo = 'manual-ui') NUNCA são sobrescritas.
+  // Linhas inseridas manualmente (origemArquivo = 'manual-ui') NUNCA são tocadas pelo import.
   const deduplicatedRows = [];
   const seenRowHashes = new Set();
 
@@ -1494,12 +1539,64 @@ async function replaceDatabaseSnapshot(rows = [], sourceFileName = '') {
     deduplicatedRows.push({ normalizedRow, rowHash });
   }
 
+  const existentesRows = await prisma.$queryRawUnsafe(
+    `SELECT id, agendamentoId, ${quoteIdentifier('Fornecedor')} AS fornecedor, ${quoteIdentifier('Nr. nota')} AS numeroNf, ${quoteIdentifier('Série')} AS serie
+       FROM ${quoteIdentifier(TABLE_NAME)}
+      WHERE ${quoteIdentifier('origemArquivo')} IS NULL OR ${quoteIdentifier('origemArquivo')} <> 'manual-ui'`
+  );
+  const existentesPorChave = new Map();
+  for (const row of existentesRows || []) {
+    const chave = relatorioNaturalKey(row.fornecedor, row.numeroNf, row.serie);
+    if (!existentesPorChave.has(chave)) existentesPorChave.set(chave, []);
+    existentesPorChave.get(chave).push({
+      id: Number(row.id),
+      agendamentoId: row.agendamentoId == null ? null : Number(row.agendamentoId)
+    });
+  }
+
+  const chavesComAgendamentoAtivo = await loadNotasComAgendamentoAtivo();
+
+  const idsParaDeletar = new Set();
+  const linhasParaInserir = [];
+
+  for (const row of deduplicatedRows) {
+    const chave = relatorioNaturalKey(row.normalizedRow['Fornecedor'], row.normalizedRow['Nr. nota'], row.normalizedRow['Série']);
+    const chaveCrossCheck = crossCheckNotaKey(row.normalizedRow['Nr. nota'], row.normalizedRow['Série']);
+    const matches = existentesPorChave.get(chave) || [];
+    const matchAgendado = matches.some((match) => match.agendamentoId != null);
+    const temAgendamentoAtivo = matchAgendado || chavesComAgendamentoAtivo.has(chaveCrossCheck);
+
+    if (temAgendamentoAtivo) {
+      // Só remove duplicatas soltas (sem agendamento) quando existe de fato uma linha
+      // irmã já vinculada. Se o "ativo" veio só do cross-check (agendamentoId nulo aqui,
+      // mas vínculo confirmado via NotaFiscal/Agendamento), não mexe em nada — a única
+      // linha existente É o registro da nota, apagá-la perderia a informação.
+      if (matchAgendado) {
+        for (const match of matches) {
+          if (match.agendamentoId == null) idsParaDeletar.add(match.id);
+        }
+      }
+      continue;
+    }
+
+    // Nenhum agendamento ativo para esta nota: descarta a(s) linha(s) obsoleta(s) e sobe a nova versão do ERP.
+    for (const match of matches) idsParaDeletar.add(match.id);
+    existentesPorChave.set(chave, []); // evita reprocessar a mesma linha antiga se houver duplicata dentro do próprio arquivo
+    linhasParaInserir.push(row);
+  }
+
+  const idsParaDeletarArray = [...idsParaDeletar];
+  for (let i = 0; i < idsParaDeletarArray.length; i += 500) {
+    const chunk = idsParaDeletarArray.slice(i, i + 500);
+    await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)} WHERE id IN (${chunk.join(', ')})`);
+  }
+
   const columns = ['rowHash', 'agendamentoId', ...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson'];
   const updateAssignments = [...SHEET_COLUMNS, 'origemArquivo', 'dadosOriginaisJson']
     .map((col) => `${quoteIdentifier(col)} = IF(${quoteIdentifier('origemArquivo')} = 'manual-ui', ${quoteIdentifier(col)}, VALUES(${quoteIdentifier(col)}))`)
     .join(', ');
 
-  for (const row of deduplicatedRows) {
+  for (const row of linhasParaInserir) {
     const values = [
       row.rowHash,
       null, // agendamentoId null para novas entradas; ON DUPLICATE KEY não altera agendamentoId
@@ -1601,8 +1698,10 @@ export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, 
   if (!agendamentoId || !fornecedor || !Array.isArray(notas) || !notas.length) return;
   if (!(await ensureRelatorioTable())) return;
 
-  // Ao vincular a nota a um novo agendamento, o aviso de NO_SHOW anterior deixa de valer.
-  const setClause = `agendamentoId = ${sqlLiteral(Number(agendamentoId))}, noShowAgendamentoId = NULL, noShowEm = NULL`;
+  // Ao vincular a nota a um novo agendamento, o aviso de NO_SHOW anterior deixa de valer,
+  // e o status do ERP ('Ag. chegada da mercadoria') vira 'Agendado' para refletir que
+  // a nota já está presa a um agendamento (facilita a reconciliação da próxima importação).
+  const setClause = `agendamentoId = ${sqlLiteral(Number(agendamentoId))}, noShowAgendamentoId = NULL, noShowEm = NULL, ${quoteIdentifier('Status')} = 'Agendado'`;
 
   for (const nota of notas) {
     const rowHash = normalizeCellValue(nota?.rowHash || '');
@@ -1639,8 +1738,10 @@ export async function unlinkRelatorioRowsFromAgendamento(agendamentoId, { noShow
     const noShowSet = noShow
       ? `, noShowAgendamentoId = ${sqlLiteral(Number(agendamentoId))}, noShowEm = NOW()`
       : '';
+    // Ao desvincular (cancelar/reprovar/no-show), a nota volta a ficar disponível
+    // para agendamento; reverte o status para o valor padrão do ERP.
     await prisma.$executeRawUnsafe(
-      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = NULL${noShowSet} WHERE agendamentoId = ${sqlLiteral(Number(agendamentoId))}`
+      `UPDATE ${quoteIdentifier(TABLE_NAME)} SET agendamentoId = NULL, ${quoteIdentifier('Status')} = 'Ag. chegada da mercadoria'${noShowSet} WHERE agendamentoId = ${sqlLiteral(Number(agendamentoId))}`
     );
   } catch {}
 }
@@ -1657,7 +1758,7 @@ export async function importRelatorioSpreadsheet({ filePath, originalName = '', 
     let persistedIn = 'arquivo';
  
     try {
-      await replaceDatabaseSnapshot(validRows, originalName || path.basename(filePath));
+      await reconcileDatabaseSnapshot(validRows, originalName || path.basename(filePath));
       persistedIn = 'banco';
     } catch (error) {
       console.error('Falha ao persistir planilha no banco. Mantendo fallback em arquivo:', error?.message || error);
