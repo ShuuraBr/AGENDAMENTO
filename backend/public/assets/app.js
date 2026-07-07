@@ -3748,8 +3748,7 @@
     ].join(';');
 
     overlay.innerHTML = `
-      <div style="position:relative;background:#fff;border-radius:20px;padding:32px 28px 28px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 24px 64px rgba(15,23,42,.32);text-align:center">
-        <button id="pendingScheduleAlertClose" style="position:absolute;top:12px;right:14px;border:none;background:none;font-size:22px;line-height:1;color:#94a3b8;cursor:pointer" aria-label="Fechar">×</button>
+      <div style="position:relative;background:#fff;border-radius:20px;padding:36px 32px 32px;max-width:600px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 24px 64px rgba(15,23,42,.32);text-align:center">
         <div style="font-size:40px;margin-bottom:8px">⚠️</div>
         <h2 style="margin:0 0 10px;font-size:22px;color:#0f172a">Atenção: agendamentos pendentes</h2>
         <p style="margin:0 0 22px;font-size:14px;color:#475569;line-height:1.5">${escapeHtml(frase)}</p>
@@ -3773,8 +3772,6 @@
       </div>`;
 
     document.body.appendChild(overlay);
-    overlay.querySelector('#pendingScheduleAlertClose').onclick = () => overlay.remove();
-    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
     overlay.querySelector('#pendingScheduleAlertCta').onclick = () => {
       overlay.remove();
       showView('agendamentos');
