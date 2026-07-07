@@ -3646,6 +3646,7 @@
         await fillSelects();
         showView('dashboard');
         await loadDashboard();
+        showPendingScheduleAlertIfNeeded().catch(() => {});
         byId('loginMsg').textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
       } catch (err) {
         msg.textContent = err.message || 'Erro ao salvar senha.';
@@ -3656,6 +3657,128 @@
     [nova, confirmar].forEach((inp) => inp.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') btn.click();
     }));
+  }
+
+  // ── Alerta de agendamentos pendentes (exibido a cada login) ────────────
+  async function showPendingScheduleAlertIfNeeded() {
+    if (!hasPermission('agendamentos.create')) return;
+    let groups;
+    try {
+      groups = await api('/api/public/fornecedores-pendentes');
+    } catch {
+      return;
+    }
+    groups = Array.isArray(groups) ? groups : [];
+
+    let totalNotas = 0;
+    let totalProximoVencimento = 0;
+    let diasMinimo = null;
+    for (const grupo of groups) {
+      totalNotas += Number(grupo?.quantidadeNotas || 0);
+      totalProximoVencimento += Number(grupo?.totalNotasVencimentoProximo || 0);
+      const notas = Array.isArray(grupo?.notas) ? grupo.notas : Array.isArray(grupo?.notasFiscais) ? grupo.notasFiscais : [];
+      for (const nota of notas) {
+        if (nota?.diasParaPrimeiroVencimento == null) continue;
+        const dias = Number(nota.diasParaPrimeiroVencimento);
+        if (diasMinimo === null || dias < diasMinimo) diasMinimo = dias;
+      }
+    }
+    if (totalNotas === 0) return;
+
+    const totalFornecedores = groups.length;
+    const urgencia = diasMinimo == null ? { label: 'Sem vencimento próximo', bg: '#f1f5f9', color: '#334155' }
+      : diasMinimo < 0 ? { label: 'Nota(s) vencida(s)', bg: '#7f1d1d', color: '#fff' }
+      : diasMinimo === 0 ? { label: 'Vence hoje', bg: '#dc2626', color: '#fff' }
+      : diasMinimo <= 1 ? { label: 'Urgente', bg: '#ea580c', color: '#fff' }
+      : diasMinimo <= 3 ? { label: 'Atenção', bg: '#f59e0b', color: '#111827' }
+      : { label: 'Monitorar', bg: '#eab308', color: '#111827' };
+
+    const frase = totalProximoVencimento > 0
+      ? 'Há notas com vencimento próximo aguardando agendamento — cada dia de atraso aumenta o risco de multas e transtornos. Não deixe para depois!'
+      : 'Fornecedores aguardam o agendamento das notas pendentes. Organize a operação e agende agora.';
+
+    function topFornecedores(getValue) {
+      return groups
+        .map((grupo) => ({ fornecedor: String(grupo?.fornecedor || grupo?.nome || '-'), value: Number(getValue(grupo) || 0) }))
+        .filter((item) => item.value > 0)
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5);
+    }
+
+    function buildRankingTable(title, rows, valueLabel) {
+      if (!rows.length) return '';
+      const rowsHtml = rows.map((row) => `
+        <tr>
+          <td style="padding:6px 8px;text-align:left;border-bottom:1px solid #f1f5f9">${escapeHtml(row.fornecedor)}</td>
+          <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #f1f5f9;font-weight:700;color:#0f172a">${row.value}</td>
+        </tr>`).join('');
+      return `
+        <div style="margin-bottom:18px;text-align:left">
+          <h3 style="margin:0 0 8px;font-size:12.5px;color:#374151;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(title)}</h3>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr>
+                <th style="padding:6px 8px;text-align:left;color:#94a3b8;font-size:11px;font-weight:600">Fornecedor</th>
+                <th style="padding:6px 8px;text-align:right;color:#94a3b8;font-size:11px;font-weight:600">${escapeHtml(valueLabel)}</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>`;
+    }
+
+    const rankingPendentesHtml = buildRankingTable(
+      'Fornecedores com mais notas pendentes',
+      topFornecedores((grupo) => grupo.quantidadeNotas),
+      'Notas'
+    );
+    const rankingVencimentoHtml = buildRankingTable(
+      'Fornecedores com notas mais próximas do vencimento',
+      topFornecedores((grupo) => grupo.totalNotasVencimentoProximo),
+      'Próx. vencimento'
+    );
+
+    byId('pendingScheduleAlert')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'pendingScheduleAlert';
+    overlay.style.cssText = [
+      'position:fixed;inset:0;z-index:9000',
+      'display:flex;align-items:center;justify-content:center',
+      'background:rgba(15,23,42,.6);padding:20px'
+    ].join(';');
+
+    overlay.innerHTML = `
+      <div style="position:relative;background:#fff;border-radius:20px;padding:32px 28px 28px;max-width:480px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 24px 64px rgba(15,23,42,.32);text-align:center">
+        <button id="pendingScheduleAlertClose" style="position:absolute;top:12px;right:14px;border:none;background:none;font-size:22px;line-height:1;color:#94a3b8;cursor:pointer" aria-label="Fechar">×</button>
+        <div style="font-size:40px;margin-bottom:8px">⚠️</div>
+        <h2 style="margin:0 0 10px;font-size:22px;color:#0f172a">Atenção: agendamentos pendentes</h2>
+        <p style="margin:0 0 22px;font-size:14px;color:#475569;line-height:1.5">${escapeHtml(frase)}</p>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px">
+          <div style="display:grid;gap:4px;padding:14px 8px;border-radius:14px;background:#f8fafc">
+            <span style="font-size:24px;font-weight:700;color:#0f172a">${totalNotas}</span>
+            <span style="font-size:11.5px;color:#64748b;line-height:1.3">Nota${totalNotas === 1 ? '' : 's'} pendente${totalNotas === 1 ? '' : 's'}</span>
+          </div>
+          <div style="display:grid;gap:4px;padding:14px 8px;border-radius:14px;background:#f8fafc">
+            <span style="font-size:24px;font-weight:700;color:#0f172a">${totalFornecedores}</span>
+            <span style="font-size:11.5px;color:#64748b;line-height:1.3">Fornecedor${totalFornecedores === 1 ? '' : 'es'}</span>
+          </div>
+          <div style="display:grid;gap:4px;padding:14px 8px;border-radius:14px;background:${urgencia.bg}">
+            <span style="font-size:24px;font-weight:700;color:${urgencia.color}">${totalProximoVencimento}</span>
+            <span style="font-size:11.5px;color:${urgencia.color};line-height:1.3">${escapeHtml(urgencia.label)}</span>
+          </div>
+        </div>
+        ${rankingPendentesHtml}
+        ${rankingVencimentoHtml}
+        <button id="pendingScheduleAlertCta" style="width:100%;padding:14px 20px;border-radius:12px;border:none;background:#dc2626;color:#fff;font-weight:700;font-size:15px;cursor:pointer;box-shadow:0 8px 20px rgba(220,38,38,.35)">Iniciar agendamentos</button>
+      </div>`;
+
+    document.body.appendChild(overlay);
+    overlay.querySelector('#pendingScheduleAlertClose').onclick = () => overlay.remove();
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    overlay.querySelector('#pendingScheduleAlertCta').onclick = () => {
+      overlay.remove();
+      showView('agendamentos');
+    };
   }
 
   function show2FAStep(email) {
@@ -3702,6 +3825,7 @@
       const firstView = firstAllowedPrivateView();
       showView(firstView);
       if (firstView === 'dashboard') await loadDashboard().catch(() => {});
+      showPendingScheduleAlertIfNeeded().catch(() => {});
       byId('loginMsg').textContent = `Logado como ${data.user.nome} (${data.user.perfil || 'colaborador'})`;
     };
 
@@ -3818,6 +3942,7 @@
             showView(firstView);
             if (firstView === "dashboard") await loadDashboard().catch(() => {});
           }
+          showPendingScheduleAlertIfNeeded().catch(() => {});
         }
         byId("loginMsg").textContent = `Logado como ${data.user.nome} (${data.user.perfil})`;
       } catch (err) {
