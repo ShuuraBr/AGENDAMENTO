@@ -1694,23 +1694,35 @@ export async function listFornecedoresPendentesImportados() {
   }
 }
  
+// Retorna { vinculadas, naoEncontradas } para que o chamador saiba se algum
+// UPDATE não encontrou nenhuma linha correspondente (ex.: texto do fornecedor
+// ou número da NF divergente do que está no RelatorioTerceirizado) — esse tipo
+// de falha não lança erro, então sem esse retorno o chamador não teria como
+// perceber que a nota não foi de fato vinculada.
 export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, notas = []) {
-  if (!agendamentoId || !fornecedor || !Array.isArray(notas) || !notas.length) return;
-  if (!(await ensureRelatorioTable())) return;
+  const naoEncontradas = [];
+  if (!agendamentoId || !fornecedor || !Array.isArray(notas) || !notas.length) return { vinculadas: 0, naoEncontradas };
+  if (!(await ensureRelatorioTable())) {
+    return { vinculadas: 0, naoEncontradas: notas.map((nota) => ({ numeroNf: nota?.numeroNf || nota?.numero_nf || '', serie: nota?.serie || '' })) };
+  }
 
   // Ao vincular a nota a um novo agendamento, o aviso de NO_SHOW anterior deixa de valer,
   // e o status do ERP ('Ag. chegada da mercadoria') vira 'Agendado' para refletir que
   // a nota já está presa a um agendamento (facilita a reconciliação da próxima importação).
   const setClause = `agendamentoId = ${sqlLiteral(Number(agendamentoId))}, noShowAgendamentoId = NULL, noShowEm = NULL, ${quoteIdentifier('Status')} = 'Agendado'`;
 
+  let vinculadas = 0;
+
   for (const nota of notas) {
     const rowHash = normalizeCellValue(nota?.rowHash || '');
     const numeroNf = normalizeCellValue(nota?.numeroNf || nota?.numero_nf || '');
     const serie = normalizeCellValue(nota?.serie || '');
     if (rowHash) {
-      await prisma.$executeRawUnsafe(
+      const result = await prisma.$executeRawUnsafe(
         `UPDATE ${quoteIdentifier(TABLE_NAME)} SET ${setClause} WHERE rowHash = ${sqlLiteral(rowHash)}`
       );
+      if (Number(result?.affectedRows || 0) > 0) vinculadas += 1;
+      else naoEncontradas.push({ numeroNf, serie });
       continue;
     }
 
@@ -1725,10 +1737,14 @@ export async function linkRelatorioRowsToAgendamento(agendamentoId, fornecedor, 
       conditions.push(`TRIM(${quoteIdentifier('Série')}) = ${sqlLiteral(serie)}`);
     }
 
-    await prisma.$executeRawUnsafe(
+    const result = await prisma.$executeRawUnsafe(
       `UPDATE ${quoteIdentifier(TABLE_NAME)} SET ${setClause} WHERE ${conditions.join(' AND ')}`
     );
+    if (Number(result?.affectedRows || 0) > 0) vinculadas += 1;
+    else naoEncontradas.push({ numeroNf, serie });
   }
+
+  return { vinculadas, naoEncontradas };
 }
 
 export async function unlinkRelatorioRowsFromAgendamento(agendamentoId, { noShow = false } = {}) {

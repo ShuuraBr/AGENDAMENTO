@@ -10,8 +10,10 @@ import { pingDatabase } from "../utils/db-fallback.js";
 import { verifyMailTransport } from "../utils/email.js";
 import { getUploadDirectoriesHealth } from "../utils/upload-policy.js";
 import { getLogFilesHealth } from "../utils/telemetry.js";
-import { authRequired } from "../middlewares/auth.js";
+import { authRequired, requirePermission } from "../middlewares/auth.js";
 import { dispararRelatorioDiario, verificarEEnviarOptins } from "../utils/relatorio-supervisores.js";
+import { prisma } from "../utils/prisma.js";
+import { linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento } from "../utils/relatorio-entradas.js";
 
 const router = Router();
 
@@ -105,6 +107,71 @@ router.post("/admin/relatorio-supervisores/reenviar-optin", authRequired, async 
     await verificarEEnviarOptins();
     res.json({ ok: true, message: "Opt-in verificado/reenviado." });
   } catch (error) {
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
+  }
+});
+
+// Backfill manual: sincroniza RelatorioTerceirizado com os agendamentos já existentes no
+// banco (vincula agendamentoId + Status='Agendado' para os ativos; limpa o vínculo dos
+// cancelados/reprovados/no-show). Útil para corrigir notas que ficaram desatualizadas
+// antes da reconciliação automática entrar em vigor.
+router.post("/admin/relatorio-terceirizado/sincronizar-agendamentos", authRequired, requirePermission("relatorio.terceirizado.manage"), async (_req, res) => {
+  try {
+    const todos = await prisma.agendamento.findMany({ include: { notasFiscais: true } });
+    const statusLiberaNota = new Set(["CANCELADO", "REPROVADO", "NO_SHOW"]);
+
+    let totalVinculados = 0;
+    let totalDesvinculados = 0;
+    const notasNaoEncontradas = [];
+    const erros = [];
+
+    // Cada agendamento é processado isoladamente: um erro pontual (ex.: falha de
+    // conexão passageira) não deve abortar a sincronização dos demais.
+    for (const agendamento of todos) {
+      try {
+        const status = String(agendamento.status || "").toUpperCase();
+
+        if (statusLiberaNota.has(status)) {
+          await unlinkRelatorioRowsFromAgendamento(agendamento.id);
+          totalDesvinculados += 1;
+          continue;
+        }
+
+        const notas = Array.isArray(agendamento.notasFiscais) ? agendamento.notasFiscais : [];
+        if (!notas.length) continue;
+
+        const resultado = await linkRelatorioRowsToAgendamento(agendamento.id, agendamento.fornecedor, notas);
+        totalVinculados += 1;
+        for (const nota of resultado?.naoEncontradas || []) {
+          notasNaoEncontradas.push({
+            agendamentoId: agendamento.id,
+            protocolo: agendamento.protocolo || null,
+            fornecedor: agendamento.fornecedor,
+            numeroNf: nota.numeroNf,
+            serie: nota.serie
+          });
+        }
+      } catch (error) {
+        erros.push({ agendamentoId: agendamento.id, protocolo: agendamento.protocolo || null, message: error?.message || String(error) });
+      }
+    }
+
+    const partes = [`${totalVinculados} agendamento(s) vinculado(s)`, `${totalDesvinculados} desvinculado(s)`];
+    if (notasNaoEncontradas.length) partes.push(`${notasNaoEncontradas.length} nota(s) não encontrada(s) no RelatorioTerceirizado (confira "notasNaoEncontradas" — provável divergência de texto no fornecedor ou no número da NF)`);
+    if (erros.length) partes.push(`${erros.length} agendamento(s) com erro (confira "erros")`);
+
+    res.json({
+      ok: erros.length === 0,
+      totalAgendamentos: todos.length,
+      totalVinculados,
+      totalDesvinculados,
+      totalNotasNaoEncontradas: notasNaoEncontradas.length,
+      notasNaoEncontradas,
+      erros,
+      message: `Sincronização concluída: ${partes.join(", ")}.`
+    });
+  } catch (error) {
+    console.error("Erro em /admin/relatorio-terceirizado/sincronizar-agendamentos:", error);
     res.status(500).json({ ok: false, message: error?.message || String(error) });
   }
 });
