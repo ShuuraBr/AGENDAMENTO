@@ -12,8 +12,11 @@ import { getUploadDirectoriesHealth } from "../utils/upload-policy.js";
 import { getLogFilesHealth } from "../utils/telemetry.js";
 import { authRequired, requirePermission } from "../middlewares/auth.js";
 import { dispararRelatorioDiario, verificarEEnviarOptins } from "../utils/relatorio-supervisores.js";
-import { prisma } from "../utils/prisma.js";
-import { linkRelatorioRowsToAgendamento, unlinkRelatorioRowsFromAgendamento } from "../utils/relatorio-entradas.js";
+import {
+  sincronizarRelatorioComAgendamentos,
+  diagnosticarDuplicidadeRelatorio,
+  limparPendentesEReimportar
+} from "../utils/relatorio-entradas.js";
 
 const router = Router();
 
@@ -117,44 +120,7 @@ router.post("/admin/relatorio-supervisores/reenviar-optin", authRequired, async 
 // antes da reconciliação automática entrar em vigor.
 router.post("/admin/relatorio-terceirizado/sincronizar-agendamentos", authRequired, requirePermission("relatorio.terceirizado.manage"), async (_req, res) => {
   try {
-    const todos = await prisma.agendamento.findMany({ include: { notasFiscais: true } });
-    const statusLiberaNota = new Set(["CANCELADO", "REPROVADO", "NO_SHOW"]);
-
-    let totalVinculados = 0;
-    let totalDesvinculados = 0;
-    const notasNaoEncontradas = [];
-    const erros = [];
-
-    // Cada agendamento é processado isoladamente: um erro pontual (ex.: falha de
-    // conexão passageira) não deve abortar a sincronização dos demais.
-    for (const agendamento of todos) {
-      try {
-        const status = String(agendamento.status || "").toUpperCase();
-
-        if (statusLiberaNota.has(status)) {
-          await unlinkRelatorioRowsFromAgendamento(agendamento.id);
-          totalDesvinculados += 1;
-          continue;
-        }
-
-        const notas = Array.isArray(agendamento.notasFiscais) ? agendamento.notasFiscais : [];
-        if (!notas.length) continue;
-
-        const resultado = await linkRelatorioRowsToAgendamento(agendamento.id, agendamento.fornecedor, notas);
-        totalVinculados += 1;
-        for (const nota of resultado?.naoEncontradas || []) {
-          notasNaoEncontradas.push({
-            agendamentoId: agendamento.id,
-            protocolo: agendamento.protocolo || null,
-            fornecedor: agendamento.fornecedor,
-            numeroNf: nota.numeroNf,
-            serie: nota.serie
-          });
-        }
-      } catch (error) {
-        erros.push({ agendamentoId: agendamento.id, protocolo: agendamento.protocolo || null, message: error?.message || String(error) });
-      }
-    }
+    const { totalAgendamentos, totalVinculados, totalDesvinculados, notasNaoEncontradas, erros } = await sincronizarRelatorioComAgendamentos();
 
     const partes = [`${totalVinculados} agendamento(s) vinculado(s)`, `${totalDesvinculados} desvinculado(s)`];
     if (notasNaoEncontradas.length) partes.push(`${notasNaoEncontradas.length} nota(s) não encontrada(s) no RelatorioTerceirizado (confira "notasNaoEncontradas" — provável divergência de texto no fornecedor ou no número da NF)`);
@@ -162,7 +128,7 @@ router.post("/admin/relatorio-terceirizado/sincronizar-agendamentos", authRequir
 
     res.json({
       ok: erros.length === 0,
-      totalAgendamentos: todos.length,
+      totalAgendamentos,
       totalVinculados,
       totalDesvinculados,
       totalNotasNaoEncontradas: notasNaoEncontradas.length,
@@ -172,6 +138,43 @@ router.post("/admin/relatorio-terceirizado/sincronizar-agendamentos", authRequir
     });
   } catch (error) {
     console.error("Erro em /admin/relatorio-terceirizado/sincronizar-agendamentos:", error);
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
+  }
+});
+
+// Reset completo: sincroniza com os agendamentos existentes, apaga só as
+// notas sem NENHUM agendamento relacionado (nem ativo, nem histórico de
+// cancelado/reprovado/no-show — inclusive as manuais ainda não vindas do ERP)
+// e força a reimportação imediata do arquivo mais recente encontrado na pasta
+// monitorada — não espera o vigia automático nem depende do arquivo ter
+// mudado desde a última importação.
+router.post("/admin/relatorio-terceirizado/limpar-e-reimportar", authRequired, requirePermission("relatorio.terceirizado.manage"), async (req, res) => {
+  try {
+    const { sincronizacao, totalRemovidas, totalPreservadasComHistorico, reimportacao } = await limparPendentesEReimportar({ actor: req.user });
+
+    res.json({
+      ok: true,
+      sincronizacao,
+      totalRemovidas,
+      totalPreservadasComHistorico,
+      reimportacao,
+      message: `${sincronizacao.totalVinculados} agendamento(s) vinculado(s), ${totalRemovidas} nota(s) sem nenhum agendamento relacionado removida(s), ${totalPreservadasComHistorico} preservada(s) por ter histórico (cancelado/reprovado/no-show)${reimportacao ? `, arquivo "${reimportacao.fileName}" reimportado (${reimportacao.totalLinhasValidas} linha(s) válida(s))` : ', nenhum arquivo encontrado na pasta monitorada para reimportar'}.`
+    });
+  } catch (error) {
+    console.error("Erro em /admin/relatorio-terceirizado/limpar-e-reimportar:", error);
+    res.status(500).json({ ok: false, message: error?.message || String(error) });
+  }
+});
+
+// Diagnóstico somente leitura: mostra se o volume de notas pendentes é backlog
+// real (muitas NF distintas) ou duplicatas que sobraram sem reconciliar
+// (várias linhas para a mesma NF+fornecedor+série).
+router.get("/admin/relatorio-terceirizado/diagnostico", authRequired, requirePermission("relatorio.terceirizado.view"), async (_req, res) => {
+  try {
+    const diagnostico = await diagnosticarDuplicidadeRelatorio();
+    res.json({ ok: true, ...diagnostico });
+  } catch (error) {
+    console.error("Erro em /admin/relatorio-terceirizado/diagnostico:", error);
     res.status(500).json({ ok: false, message: error?.message || String(error) });
   }
 });

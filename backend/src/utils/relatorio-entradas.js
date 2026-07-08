@@ -1613,7 +1613,172 @@ async function reconcileDatabaseSnapshot(rows = [], sourceFileName = '') {
     );
   }
 }
- 
+
+// Diagnóstico somente leitura: quantas linhas do RelatorioTerceirizado (fora as
+// manuais) compartilham a mesma identidade de negócio (fornecedor + NF + série).
+// Serve para separar "backlog real grande" de "sobrou duplicata que não foi
+// reconciliada" sem precisar inspecionar o banco diretamente.
+export async function diagnosticarDuplicidadeRelatorio() {
+  if (!(await ensureRelatorioTable())) {
+    throw new Error(relatorioDbDisableReason || 'Banco do relatório terceirizado indisponível.');
+  }
+
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT id, agendamentoId, ${quoteIdentifier('Fornecedor')} AS fornecedor, ${quoteIdentifier('Nr. nota')} AS numeroNf, ${quoteIdentifier('Série')} AS serie
+       FROM ${quoteIdentifier(TABLE_NAME)}
+      WHERE ${quoteIdentifier('origemArquivo')} IS NULL OR ${quoteIdentifier('origemArquivo')} <> 'manual-ui'`
+  );
+
+  const porChave = new Map();
+  for (const row of rows || []) {
+    const chave = relatorioNaturalKey(row.fornecedor, row.numeroNf, row.serie);
+    if (!porChave.has(chave)) porChave.set(chave, []);
+    porChave.get(chave).push({
+      id: Number(row.id),
+      agendamentoId: row.agendamentoId == null ? null : Number(row.agendamentoId),
+      fornecedor: row.fornecedor,
+      numeroNf: row.numeroNf,
+      serie: row.serie
+    });
+  }
+
+  const duplicados = [];
+  let totalLinhasDuplicadas = 0;
+  for (const linhas of porChave.values()) {
+    if (linhas.length <= 1) continue;
+    totalLinhasDuplicadas += linhas.length - 1;
+    duplicados.push({
+      fornecedor: linhas[0].fornecedor,
+      numeroNf: linhas[0].numeroNf,
+      serie: linhas[0].serie,
+      totalLinhas: linhas.length,
+      comAgendamento: linhas.filter((linha) => linha.agendamentoId != null).length,
+      ids: linhas.map((linha) => linha.id)
+    });
+  }
+  duplicados.sort((a, b) => b.totalLinhas - a.totalLinhas);
+
+  return {
+    totalLinhas: rows.length,
+    totalChavesDistintas: porChave.size,
+    totalLinhasDuplicadas,
+    totalNotasComDuplicata: duplicados.length,
+    topDuplicados: duplicados.slice(0, 30)
+  };
+}
+
+// Percorre todos os agendamentos existentes e vincula (agendamentoId +
+// Status='Agendado') os ativos com notas, desvinculando os cancelados/
+// reprovados/no-show. Extraído para ser reaproveitado tanto pelo endpoint de
+// sincronização isolado quanto pelo fluxo de "limpar e reimportar".
+export async function sincronizarRelatorioComAgendamentos() {
+  const todos = await prisma.agendamento.findMany({ include: { notasFiscais: true } });
+  const statusLiberaNota = new Set(['CANCELADO', 'REPROVADO', 'NO_SHOW']);
+
+  let totalVinculados = 0;
+  let totalDesvinculados = 0;
+  const notasNaoEncontradas = [];
+  const erros = [];
+
+  for (const agendamento of todos) {
+    try {
+      const status = String(agendamento.status || '').toUpperCase();
+
+      if (statusLiberaNota.has(status)) {
+        await unlinkRelatorioRowsFromAgendamento(agendamento.id);
+        totalDesvinculados += 1;
+        continue;
+      }
+
+      const notas = Array.isArray(agendamento.notasFiscais) ? agendamento.notasFiscais : [];
+      if (!notas.length) continue;
+
+      const resultado = await linkRelatorioRowsToAgendamento(agendamento.id, agendamento.fornecedor, notas);
+      totalVinculados += 1;
+      for (const nota of resultado?.naoEncontradas || []) {
+        notasNaoEncontradas.push({
+          agendamentoId: agendamento.id,
+          protocolo: agendamento.protocolo || null,
+          fornecedor: agendamento.fornecedor,
+          numeroNf: nota.numeroNf,
+          serie: nota.serie
+        });
+      }
+    } catch (error) {
+      erros.push({ agendamentoId: agendamento.id, protocolo: agendamento.protocolo || null, message: error?.message || String(error) });
+    }
+  }
+
+  return { totalAgendamentos: todos.length, totalVinculados, totalDesvinculados, notasNaoEncontradas, erros };
+}
+
+// Notas cujo RelatorioTerceirizado.agendamentoId está nulo hoje, mas que já
+// tiveram QUALQUER agendamento no passado (inclusive cancelado/reprovado/
+// no-show — o desvínculo em tempo real zera agendamentoId pra elas poderem
+// ser reagendadas). A tabela NotaFiscal preserva esse histórico mesmo depois
+// do desvínculo, então usamos ela pra saber quais notas "têm algo
+// relacionado" e não devem ser tratadas como backlog nunca-agendado.
+async function loadChavesNotaFiscalComHistorico() {
+  const chaves = new Set();
+  try {
+    const notas = await prisma.notaFiscal.findMany({});
+    for (const nota of notas) {
+      if (nota?.agendamentoId == null) continue;
+      chaves.add(crossCheckNotaKey(nota.numeroNf, nota.serie));
+    }
+  } catch (error) {
+    console.error('[RELATORIO_IMPORT] Falha ao consultar histórico de NotaFiscal para preservar notas com relação:', error?.message || error);
+  }
+  return chaves;
+}
+
+// Reset completo do RelatorioTerceirizado: sincroniza com os agendamentos
+// existentes, apaga só as notas sem NENHUM agendamento relacionado (nem ativo,
+// nem histórico) — inclusive as inseridas manualmente que ainda não vieram do
+// ERP — e força a reimportação imediata do arquivo mais recente encontrado na
+// pasta monitorada, sem esperar o vigia automático nem depender do arquivo ter
+// mudado desde a última importação.
+export async function limparPendentesEReimportar({ actor = null } = {}) {
+  const sincronizacao = await sincronizarRelatorioComAgendamentos();
+
+  if (!(await ensureRelatorioTable())) {
+    throw new Error(relatorioDbDisableReason || 'Banco do relatório terceirizado indisponível.');
+  }
+
+  const chavesComHistorico = await loadChavesNotaFiscalComHistorico();
+
+  const semAgendamento = await prisma.$queryRawUnsafe(
+    `SELECT id, ${quoteIdentifier('Nr. nota')} AS numeroNf, ${quoteIdentifier('Série')} AS serie
+       FROM ${quoteIdentifier(TABLE_NAME)}
+      WHERE agendamentoId IS NULL`
+  );
+
+  const idsParaRemover = (semAgendamento || [])
+    .filter((row) => !chavesComHistorico.has(crossCheckNotaKey(row.numeroNf, row.serie)))
+    .map((row) => Number(row.id));
+
+  let totalRemovidas = 0;
+  for (let i = 0; i < idsParaRemover.length; i += 500) {
+    const chunk = idsParaRemover.slice(i, i + 500);
+    const result = await prisma.$executeRawUnsafe(`DELETE FROM ${quoteIdentifier(TABLE_NAME)} WHERE id IN (${chunk.join(', ')})`);
+    totalRemovidas += Number(result?.affectedRows || 0);
+  }
+  const totalPreservadasComHistorico = (semAgendamento?.length || 0) - idsParaRemover.length;
+
+  const latest = listSupportedImportFiles()[0] || null;
+  let reimportacao = null;
+  if (latest) {
+    reimportacao = await importRelatorioSpreadsheet({
+      filePath: latest.filePath,
+      originalName: latest.name,
+      actor,
+      source: 'admin-reset'
+    });
+  }
+
+  return { sincronizacao, totalRemovidas, totalPreservadasComHistorico, reimportacao };
+}
+
 function parseRowFromDatabase(row = {}) {
   const output = {
     rowHash: normalizeCellValue(row.rowHash ?? ''),
