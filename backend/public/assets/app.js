@@ -467,6 +467,7 @@
       quantidadeVolumes: Number(item.quantidadeVolumes ?? notas.reduce((acc, nota) => acc + Number(nota?.volumes || 0), 0)),
       pesoTotalKg: Number(item.pesoTotalKg ?? notas.reduce((acc, nota) => acc + Number(nota?.peso || 0), 0)),
       valorTotalNf: Number(item.valorTotalNf ?? notas.reduce((acc, nota) => acc + Number(nota?.valorNf || 0), 0)),
+      quantidadeNotasAgChegada: Number(item.quantidadeNotasAgChegada ?? item.quantidadeNotas ?? notas.length ?? 0),
       totalNotasVencimentoProximo: Number(item.totalNotasVencimentoProximo ?? notas.filter((nota) => nota.alertaVencimentoProximo).length),
       possuiVencimentoProximo: !!(item.possuiVencimentoProximo ?? notas.some((nota) => nota.alertaVencimentoProximo))
     };
@@ -1752,6 +1753,7 @@
 
   function updateInternalFornecedorDropdownTrigger() {
     const trigger = byId('internalFornecedorDropdownTrigger');
+    const menu = byId('internalFornecedorDropdownMenu');
     const hiddenInput = byId('internalFornecedorPendenteSelect');
     const fornecedorField = byId('internalFornecedorNome');
     const clearBtn = byId('btnClearInternalFornecedorSelection');
@@ -1762,16 +1764,17 @@
     if (fornecedorField) fornecedorField.value = names.join(', ');
     if (clearBtn) clearBtn.disabled = !selected.length;
     if (!trigger) return;
-    if (!selected.length) {
-      trigger.textContent = 'Selecione o fornecedor pendente';
-      trigger.classList.remove('is-selected');
-      trigger.setAttribute('aria-expanded', 'false');
-      return;
-    }
-    trigger.classList.add('is-selected');
-    trigger.textContent = selected.length === 1
+    const summary = selected.length === 1
       ? `${names[0]} (${formatIntegerBR(selected[0]?.quantidadeNotas ?? 0)} NF)`
-      : `${formatIntegerBR(selected.length)} fornecedores selecionados`;
+      : selected.length > 1
+        ? `${formatIntegerBR(selected.length)} fornecedores selecionados`
+        : '';
+    trigger.classList.toggle('is-selected', !!selected.length);
+    trigger.placeholder = summary || 'Buscar fornecedor pendente';
+    // Enquanto o menu está aberto o campo serve para digitar a busca; só exibimos o
+    // resumo da seleção quando ele está fechado, para não atrapalhar o operador.
+    const menuOpen = !!menu && !menu.classList.contains('hidden');
+    if (!menuOpen) trigger.value = summary;
   }
 
   function closeInternalFornecedorDropdown() {
@@ -1779,6 +1782,12 @@
     const trigger = byId('internalFornecedorDropdownTrigger');
     menu?.classList.add('hidden');
     trigger?.setAttribute('aria-expanded', 'false');
+    if (state.internalFornecedorSearchTerm) {
+      state.internalFornecedorSearchTerm = '';
+      renderInternalFornecedorDropdown();
+    } else {
+      updateInternalFornecedorDropdownTrigger();
+    }
   }
 
   function applyPendingFornecedoresInterno(items = []) {
@@ -1817,24 +1826,29 @@
       return;
     }
 
-    const activeSearchInput = document.activeElement?.id === 'internalFornecedorSearchInput' ? document.activeElement : null;
-    const activeSelectionStart = typeof activeSearchInput?.selectionStart === 'number' ? activeSearchInput.selectionStart : null;
-    const activeSelectionEnd = typeof activeSearchInput?.selectionEnd === 'number' ? activeSearchInput.selectionEnd : null;
     const fornecedorTerm = String(state.internalFornecedorSearchTerm || '').trim().toLowerCase();
     const fornecedoresVisiveis = fornecedorTerm
       ? state.pendingFornecedores.filter((item) => String(item?.fornecedor || item?.nome || '').toLowerCase().includes(fornecedorTerm))
       : [...state.pendingFornecedores];
 
     menu.innerHTML = `
-      <div class="multi-select-search">
-        <input type="text" id="internalFornecedorSearchInput" placeholder="Buscar fornecedor pendente" value="${escapeHtml(state.internalFornecedorSearchTerm || '')}" />
-      </div>
       <div style="padding:6px 10px;font-size:11px;color:#64748b;border-bottom:1px solid #f1f5f9">Não encontrou? Adicione manualmente abaixo ↓</div>
       ${fornecedoresVisiveis.map((item) => {
       const id = String(item?.id || '').trim();
       const checked = selectedIds.has(id) ? 'checked' : '';
-      const label = `${String(item.fornecedor || item.nome || '-').trim()} (${formatIntegerBR(item.quantidadeNotas ?? 0)} NF)`;
-      return `<label class="multi-select-option" data-fornecedor-id="${escapeHtml(id)}"><input type="checkbox" data-fornecedor-id="${escapeHtml(id)}" ${checked} /><span class="multi-select-option-text">${escapeHtml(label)}</span></label>`;
+      const nome = String(item.fornecedor || item.nome || '-').trim();
+      const agChegada = formatIntegerBR(item.quantidadeNotasAgChegada ?? item.quantidadeNotas ?? 0);
+      const vencProximo = Number(item.totalNotasVencimentoProximo || 0);
+      return `<label class="multi-select-option" data-fornecedor-id="${escapeHtml(id)}">
+        <input type="checkbox" data-fornecedor-id="${escapeHtml(id)}" ${checked} />
+        <span class="multi-select-option-body">
+          <span class="multi-select-option-text">${escapeHtml(nome)}</span>
+          <span class="multi-select-option-meta">
+            <span class="badge azul">${agChegada} ag. chegada da mercadoria</span>
+            ${vencProximo > 0 ? `<span class="badge laranja">${formatIntegerBR(vencProximo)} venc. próximo</span>` : ''}
+          </span>
+        </span>
+      </label>`;
     }).join('')}
       ${fornecedoresVisiveis.length ? '' : '<div class="multi-select-empty">Nenhum fornecedor encontrado para esta busca.</div>'}
       <div style="padding:8px 10px;border-top:1px solid #e2e8f0;display:flex;gap:6px;align-items:center">
@@ -1867,13 +1881,6 @@
       }
     });
 
-    menu.querySelector('#internalFornecedorSearchInput')?.addEventListener('input', (event) => {
-      state.internalFornecedorSearchTerm = String(event.target.value || '');
-      renderInternalFornecedorDropdown();
-      menu.classList.remove('hidden');
-      trigger.setAttribute('aria-expanded', 'true');
-    });
-
     menu.querySelectorAll('input[type="checkbox"][data-fornecedor-id]').forEach((input) => {
       input.addEventListener('change', () => {
         const checkedIds = [...menu.querySelectorAll('input[type="checkbox"][data-fornecedor-id]:checked')].map((el) => String(el.dataset.fornecedorId || '').trim()).filter(Boolean);
@@ -1885,22 +1892,24 @@
       });
     });
 
-    const refreshedSearchInput = menu.querySelector('#internalFornecedorSearchInput');
-    if (refreshedSearchInput && activeSearchInput) {
-      refreshedSearchInput.focus();
-      const start = activeSelectionStart == null ? refreshedSearchInput.value.length : Math.min(activeSelectionStart, refreshedSearchInput.value.length);
-      const end = activeSelectionEnd == null ? start : Math.min(activeSelectionEnd, refreshedSearchInput.value.length);
-      try { refreshedSearchInput.setSelectionRange(start, end); } catch {}
-    }
-
     if (!wrapper.dataset.bound) {
-      trigger.addEventListener('click', (event) => {
-        event.preventDefault();
-        const isHidden = menu.classList.contains('hidden');
-        closeInternalFornecedorDropdown();
-        if (isHidden) {
-          menu.classList.remove('hidden');
-          trigger.setAttribute('aria-expanded', 'true');
+      trigger.addEventListener('focus', () => {
+        trigger.value = state.internalFornecedorSearchTerm || '';
+        menu.classList.remove('hidden');
+        trigger.setAttribute('aria-expanded', 'true');
+      });
+
+      trigger.addEventListener('input', (event) => {
+        state.internalFornecedorSearchTerm = String(event.target.value || '');
+        renderInternalFornecedorDropdown();
+        menu.classList.remove('hidden');
+        trigger.setAttribute('aria-expanded', 'true');
+      });
+
+      trigger.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          trigger.blur();
+          closeInternalFornecedorDropdown();
         }
       });
 
@@ -1971,14 +1980,12 @@
 
   function refreshPendingFornecedorOptionText(item) {
     if (!item?.id) return;
-    const label = `${String(item.fornecedor || item.nome || '-').trim()} (${formatIntegerBR(item.quantidadeNotas ?? 0)} NF)`;
     const publicSelect = byId('fornecedorPendenteSelect');
     if (publicSelect?.options?.length) {
+      const label = `${String(item.fornecedor || item.nome || '-').trim()} (${formatIntegerBR(item.quantidadeNotas ?? 0)} NF)`;
       const option = [...publicSelect.options].find((entry) => String(entry.value || '') === String(item.id));
       if (option) option.textContent = label;
     }
-    const optionLabel = [...document.querySelectorAll('#internalFornecedorDropdownMenu .multi-select-option')].find((entry) => String(entry.dataset.fornecedorId || '') === String(item.id))?.querySelector('.multi-select-option-text');
-    if (optionLabel) optionLabel.textContent = label;
     updateInternalFornecedorDropdownTrigger();
   }
 
@@ -3769,14 +3776,16 @@
 
     let totalNotas = 0;
     let totalProximoVencimento = 0;
+    let totalVencidas = 0;
     let diasMinimo = null;
     for (const grupo of groups) {
-      totalNotas += Number(grupo?.quantidadeNotas || 0);
+      totalNotas += Number(grupo?.quantidadeNotasAgChegada ?? grupo?.quantidadeNotas ?? 0);
       totalProximoVencimento += Number(grupo?.totalNotasVencimentoProximo || 0);
       const notas = Array.isArray(grupo?.notas) ? grupo.notas : Array.isArray(grupo?.notasFiscais) ? grupo.notasFiscais : [];
       for (const nota of notas) {
         if (nota?.diasParaPrimeiroVencimento == null) continue;
         const dias = Number(nota.diasParaPrimeiroVencimento);
+        if (dias < 0) totalVencidas += 1;
         if (diasMinimo === null || dias < diasMinimo) diasMinimo = dias;
       }
     }
@@ -3789,6 +3798,18 @@
       : diasMinimo <= 1 ? { label: 'Urgente', bg: '#ea580c', color: '#fff' }
       : diasMinimo <= 3 ? { label: 'Atenção', bg: '#f59e0b', color: '#111827' }
       : { label: 'Monitorar', bg: '#eab308', color: '#111827' };
+
+    // Nível de serviço: % das notas pendentes que ainda NÃO estão em risco (vencidas ou
+    // próximas do vencimento) — quanto maior, mais saudável está o backlog de agendamentos.
+    const totalEmRisco = Math.min(totalNotas, totalVencidas + totalProximoVencimento);
+    const nivelServico = Math.max(0, Math.min(100, Math.round(((totalNotas - totalEmRisco) / totalNotas) * 100)));
+    const nivelServicoInfo = nivelServico >= 90
+      ? { bg: '#dcfce7', color: '#166534' }
+      : nivelServico >= 75
+        ? { bg: '#fef9c3', color: '#854d0e' }
+        : nivelServico >= 50
+          ? { bg: '#ffedd5', color: '#c2410c' }
+          : { bg: '#fee2e2', color: '#991b1b' };
 
     const frase = totalProximoVencimento > 0
       ? 'Há notas com vencimento próximo aguardando agendamento — cada dia de atraso aumenta o risco de multas e transtornos. Não deixe para depois!'
@@ -3810,23 +3831,25 @@
           <td style="padding:6px 8px;text-align:right;border-bottom:1px solid #f1f5f9;font-weight:700;color:#0f172a">${row.value}</td>
         </tr>`).join('');
       return `
-        <div style="margin-bottom:18px;text-align:left">
+        <div class="psa-ranking">
           <h3 style="margin:0 0 8px;font-size:12.5px;color:#374151;text-transform:uppercase;letter-spacing:.04em">${escapeHtml(title)}</h3>
-          <table style="width:100%;border-collapse:collapse;font-size:13px">
-            <thead>
-              <tr>
-                <th style="padding:6px 8px;text-align:left;color:#94a3b8;font-size:11px;font-weight:600">Fornecedor</th>
-                <th style="padding:6px 8px;text-align:right;color:#94a3b8;font-size:11px;font-weight:600">${escapeHtml(valueLabel)}</th>
-              </tr>
-            </thead>
-            <tbody>${rowsHtml}</tbody>
-          </table>
+          <div class="psa-table-wrap">
+            <table style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead>
+                <tr>
+                  <th style="padding:6px 8px;text-align:left;color:#94a3b8;font-size:11px;font-weight:600">Fornecedor</th>
+                  <th style="padding:6px 8px;text-align:right;color:#94a3b8;font-size:11px;font-weight:600">${escapeHtml(valueLabel)}</th>
+                </tr>
+              </thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          </div>
         </div>`;
     }
 
     const rankingPendentesHtml = buildRankingTable(
       'Fornecedores com mais notas pendentes',
-      topFornecedores((grupo) => grupo.quantidadeNotas),
+      topFornecedores((grupo) => grupo.quantidadeNotasAgChegada ?? grupo.quantidadeNotas),
       'Notas'
     );
     const rankingVencimentoHtml = buildRankingTable(
@@ -3835,32 +3858,54 @@
       'Próx. vencimento'
     );
 
+    if (!byId('pendingScheduleAlertStyles')) {
+      const style = document.createElement('style');
+      style.id = 'pendingScheduleAlertStyles';
+      style.textContent = `
+        #pendingScheduleAlert{position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.6);padding:20px}
+        #pendingScheduleAlert .psa-box{position:relative;background:#fff;border-radius:20px;padding:36px 32px 32px;max-width:600px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 24px 64px rgba(15,23,42,.32);text-align:center}
+        #pendingScheduleAlert .psa-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:24px}
+        #pendingScheduleAlert .psa-stat{display:grid;gap:4px;padding:14px 8px;border-radius:14px;min-width:0}
+        #pendingScheduleAlert .psa-stat-value{font-size:22px;font-weight:700;line-height:1.2;overflow-wrap:break-word}
+        #pendingScheduleAlert .psa-stat-label{font-size:11.5px;line-height:1.3}
+        #pendingScheduleAlert .psa-ranking{margin-bottom:18px;text-align:left}
+        #pendingScheduleAlert .psa-table-wrap{overflow-x:auto}
+        @media (max-width:560px){
+          #pendingScheduleAlert{padding:12px}
+          #pendingScheduleAlert .psa-box{padding:24px 16px 20px;border-radius:16px}
+          #pendingScheduleAlert h2{font-size:19px}
+          #pendingScheduleAlert .psa-stats{grid-template-columns:repeat(2,1fr);gap:8px}
+          #pendingScheduleAlert .psa-stat-value{font-size:19px}
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
     byId('pendingScheduleAlert')?.remove();
     const overlay = document.createElement('div');
     overlay.id = 'pendingScheduleAlert';
-    overlay.style.cssText = [
-      'position:fixed;inset:0;z-index:9000',
-      'display:flex;align-items:center;justify-content:center',
-      'background:rgba(15,23,42,.6);padding:20px'
-    ].join(';');
 
     overlay.innerHTML = `
-      <div style="position:relative;background:#fff;border-radius:20px;padding:36px 32px 32px;max-width:600px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 24px 64px rgba(15,23,42,.32);text-align:center">
+      <div class="psa-box">
         <div style="font-size:40px;margin-bottom:8px">⚠️</div>
         <h2 style="margin:0 0 10px;font-size:22px;color:#0f172a">Atenção: agendamentos pendentes</h2>
         <p style="margin:0 0 22px;font-size:14px;color:#475569;line-height:1.5">${escapeHtml(frase)}</p>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px">
-          <div style="display:grid;gap:4px;padding:14px 8px;border-radius:14px;background:#f8fafc">
-            <span style="font-size:24px;font-weight:700;color:#0f172a">${totalNotas}</span>
-            <span style="font-size:11.5px;color:#64748b;line-height:1.3">Nota${totalNotas === 1 ? '' : 's'} pendente${totalNotas === 1 ? '' : 's'}</span>
+        <div class="psa-stats">
+          <div class="psa-stat" style="background:#f8fafc">
+            <span class="psa-stat-value" style="color:#0f172a">${totalNotas}</span>
+            <span class="psa-stat-label" style="color:#64748b">Nota${totalNotas === 1 ? '' : 's'} pendente${totalNotas === 1 ? '' : 's'}</span>
           </div>
-          <div style="display:grid;gap:4px;padding:14px 8px;border-radius:14px;background:#f8fafc">
-            <span style="font-size:24px;font-weight:700;color:#0f172a">${totalFornecedores}</span>
-            <span style="font-size:11.5px;color:#64748b;line-height:1.3">Fornecedor${totalFornecedores === 1 ? '' : 'es'}</span>
+          <div class="psa-stat" style="background:#f8fafc">
+            <span class="psa-stat-value" style="color:#0f172a">${totalFornecedores}</span>
+            <span class="psa-stat-label" style="color:#64748b">Fornecedor${totalFornecedores === 1 ? '' : 'es'}</span>
           </div>
-          <div style="display:grid;gap:4px;padding:14px 8px;border-radius:14px;background:${urgencia.bg}">
-            <span style="font-size:24px;font-weight:700;color:${urgencia.color}">${totalProximoVencimento}</span>
-            <span style="font-size:11.5px;color:${urgencia.color};line-height:1.3">${escapeHtml(urgencia.label)}</span>
+          <div class="psa-stat" style="background:${urgencia.bg}">
+            <span class="psa-stat-value" style="color:${urgencia.color}">${totalProximoVencimento}</span>
+            <span class="psa-stat-label" style="color:${urgencia.color}">${escapeHtml(urgencia.label)}</span>
+          </div>
+          <div class="psa-stat" style="background:${nivelServicoInfo.bg}">
+            <span class="psa-stat-value" style="color:${nivelServicoInfo.color}">${nivelServico}%</span>
+            <span class="psa-stat-label" style="color:${nivelServicoInfo.color}">Nível de serviço</span>
           </div>
         </div>
         ${rankingPendentesHtml}

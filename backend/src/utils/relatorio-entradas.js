@@ -515,6 +515,7 @@ function normalizeImportedItems(rows = []) {
         quantidadeVolumes: 0,
         pesoTotalKg: 0,
         valorTotalNf: 0,
+        quantidadeNotasAgChegada: 0,
         totalNotasVencimentoProximo: 0,
         possuiVencimentoProximo: false,
         status: 'AGUARDANDO_CHEGADA',
@@ -525,8 +526,12 @@ function normalizeImportedItems(rows = []) {
  
     const current = groups.get(fornecedor);
     const dueFields = buildDueFields(normalizedRow['Data 1º vencimento']);
+    const statusRawText = normalizeCellValue(normalizedRow['Status']);
     const isManualNote = normalizeCellValue(normalizedRow['Entrada']).toUpperCase() === 'MANUAL'
-      || normalizeCellValue(normalizedRow['Status']).toUpperCase().includes('MANUAL');
+      || statusRawText.toUpperCase().includes('MANUAL');
+    // Notas pendentes (agendamentoId NULL) refletem o status do ERP 'Ag. chegada da mercadoria';
+    // linhas sem status preenchido caem no mesmo caso, pois ainda não foram agendadas nem inseridas manualmente.
+    const isAguardandoChegada = !isManualNote && (!statusRawText || /chegada/i.test(statusRawText));
     const noShowAgendamentoId = row?.noShowAgendamentoId ? Number(row.noShowAgendamentoId) : null;
     const noShowEmRaw = row?.noShowEm || null;
     const noShowEmDate = noShowEmRaw instanceof Date ? noShowEmRaw : (noShowEmRaw ? new Date(noShowEmRaw) : null);
@@ -571,6 +576,7 @@ function normalizeImportedItems(rows = []) {
     current.quantidadeVolumes = toFixedNumber(current.quantidadeVolumes + Number(note.volumes || 0), 3);
     current.pesoTotalKg = toFixedNumber(current.pesoTotalKg + Number(note.peso || 0), 3);
     current.valorTotalNf = toFixedNumber(current.valorTotalNf + Number(note.valorNf || 0), 2);
+    if (isAguardandoChegada) current.quantidadeNotasAgChegada += 1;
     if (dueFields.alertaVencimentoProximo) {
       current.totalNotasVencimentoProximo += 1;
       current.possuiVencimentoProximo = true;
