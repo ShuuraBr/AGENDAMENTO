@@ -532,6 +532,10 @@ function normalizeImportedItems(rows = []) {
     // Notas pendentes (agendamentoId NULL) refletem o status do ERP 'Ag. chegada da mercadoria';
     // linhas sem status preenchido caem no mesmo caso, pois ainda não foram agendadas nem inseridas manualmente.
     const isAguardandoChegada = !isManualNote && (!statusRawText || /chegada/i.test(statusRawText));
+    // Contado aqui, antes da deduplicação por NF abaixo, para refletir TODAS as linhas da
+    // RelatorioTerceirizado com esse status — inclusive duplicatas ainda não reconciliadas —
+    // e não só a contagem de NFs distintas usada na lista de seleção.
+    if (isAguardandoChegada) current.quantidadeNotasAgChegada += 1;
     const noShowAgendamentoId = row?.noShowAgendamentoId ? Number(row.noShowAgendamentoId) : null;
     const noShowEmRaw = row?.noShowEm || null;
     const noShowEmDate = noShowEmRaw instanceof Date ? noShowEmRaw : (noShowEmRaw ? new Date(noShowEmRaw) : null);
@@ -576,7 +580,6 @@ function normalizeImportedItems(rows = []) {
     current.quantidadeVolumes = toFixedNumber(current.quantidadeVolumes + Number(note.volumes || 0), 3);
     current.pesoTotalKg = toFixedNumber(current.pesoTotalKg + Number(note.peso || 0), 3);
     current.valorTotalNf = toFixedNumber(current.valorTotalNf + Number(note.valorNf || 0), 2);
-    if (isAguardandoChegada) current.quantidadeNotasAgChegada += 1;
     if (dueFields.alertaVencimentoProximo) {
       current.totalNotasVencimentoProximo += 1;
       current.possuiVencimentoProximo = true;
