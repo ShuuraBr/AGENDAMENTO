@@ -206,7 +206,7 @@ if arquivos_faltando:
     for arquivo in arquivos_faltando:
         print(f"  - {arquivo}")
 
-resultado_add = git("add", "--", *arquivos_existentes) if arquivos_existentes else None
+resultado_add = git("add", "-f", "--", *arquivos_existentes) if arquivos_existentes else None
 if resultado_add is None:
     print("Nenhum arquivo existente para adicionar ao commit.")
 elif resultado_add.returncode != 0:
