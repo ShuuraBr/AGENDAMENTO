@@ -235,12 +235,15 @@ if arquivos_faltando:
     for arquivo in arquivos_faltando:
         print(f"  - {arquivo}")
 
+git_sync_falhou = False
+
 resultado_add = git("add", "-f", "--", *arquivos_existentes) if arquivos_existentes else None
 if resultado_add is None:
     print("Nenhum arquivo existente para adicionar ao commit.")
 elif resultado_add.returncode != 0:
     print("Erro no git add:")
     print(resultado_add.stderr)
+    git_sync_falhou = True
 elif git("diff", "--cached", "--quiet").returncode == 0:
     print("Nenhuma alteração para commitar.")
 else:
@@ -251,6 +254,7 @@ else:
     if resultado_commit.returncode != 0:
         print("Erro no git commit:")
         print(resultado_commit.stderr)
+        git_sync_falhou = True
     else:
         git("fetch", "origin")
         resultado_merge = git("merge", "--no-edit", "origin/main")
@@ -259,6 +263,7 @@ else:
             print("Erro no git merge (conflito com origin/main, abortando):")
             print(resultado_merge.stderr)
             git("merge", "--abort")
+            git_sync_falhou = True
         else:
             resultado_push = git("push", "origin", "HEAD:main")
             print(resultado_push.stdout)
@@ -266,5 +271,10 @@ else:
             if resultado_push.returncode != 0:
                 print("Erro no git push:")
                 print(resultado_push.stderr)
+                git_sync_falhou = True
             else:
                 print("Push realizado com sucesso!")
+
+if git_sync_falhou:
+    print("\n❌ Sincronização com o Git falhou — ver mensagens de erro acima.")
+    sys.exit(1)
