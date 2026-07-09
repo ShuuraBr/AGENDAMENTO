@@ -1891,7 +1891,69 @@ export async function cleanupOrphanRelatorioAgendamentoLinks() {
   }
 }
  
+// Contagem 100% bruta, direto da tabela: quantas linhas têm
+// Status = 'Ag. chegada da mercadoria', por fornecedor — sem olhar
+// agendamentoId, sem deduplicar por NF, sem cruzar com agendamentos ativos.
+// É o número que precisa bater com uma contagem manual feita direto no banco.
+async function fetchRawAgChegadaCountsPorFornecedor() {
+  const resultado = new Map();
+  try {
+    if (!(await ensureRelatorioTable())) return resultado;
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT ${quoteIdentifier('Fornecedor')} AS fornecedor, COUNT(*) AS total
+         FROM ${quoteIdentifier(TABLE_NAME)}
+        WHERE LOWER(TRIM(${quoteIdentifier('Status')})) = LOWER('Ag. chegada da mercadoria')
+        GROUP BY ${quoteIdentifier('Fornecedor')}`
+    );
+    for (const row of rows || []) {
+      const fornecedor = normalizeCellValue(row?.fornecedor || '');
+      if (!fornecedor) continue;
+      resultado.set(fornecedor, Number(row?.total || 0));
+    }
+  } catch (error) {
+    console.error('[RELATORIO_IMPORT] Falha ao contar notas brutas por status "Ag. chegada da mercadoria":', error?.message || error);
+  }
+  return resultado;
+}
+
+// Aplica a contagem bruta acima em cima dos grupos já montados pelo pipeline
+// de agendamento (que existem para permitir SELECIONAR notas, então continuam
+// filtrados por agendamentoId/deduplicados). Sobrescreve quantidadeNotasAgChegada
+// com o valor real da tabela e cria uma entrada mínima (sem notas selecionáveis)
+// para fornecedores que só aparecem na contagem bruta.
+function applyRawAgChegadaCounts(groups, rawCounts) {
+  const restantes = new Map(rawCounts);
+  const ajustados = (Array.isArray(groups) ? groups : []).map((group) => {
+    const fornecedor = normalizeCellValue(group?.fornecedor || group?.nome || '');
+    const total = restantes.get(fornecedor);
+    restantes.delete(fornecedor);
+    return { ...group, quantidadeNotasAgChegada: total ?? 0 };
+  });
+
+  let proximoId = ajustados.reduce((max, g) => Math.max(max, Number(g?.id) || 0), 0) + 1;
+  for (const [fornecedor, total] of restantes) {
+    ajustados.push({
+      id: proximoId++,
+      fornecedor,
+      transportadora: null,
+      notas: [],
+      notasFiscais: [],
+      quantidadeNotas: 0,
+      quantidadeVolumes: 0,
+      pesoTotalKg: 0,
+      valorTotalNf: 0,
+      quantidadeNotasAgChegada: total,
+      totalNotasVencimentoProximo: 0,
+      possuiVencimentoProximo: false,
+      status: 'AGUARDANDO_CHEGADA',
+      statusRelatorio: 'Aguardando Chegada'
+    });
+  }
+  return ajustados;
+}
+
 export async function listFornecedoresPendentesImportados() {
+  let groups = null;
   try {
     if (await ensureRelatorioTable()) {
       await cleanupOrphanRelatorioAgendamentoLinks();
@@ -1921,10 +1983,9 @@ export async function listFornecedoresPendentesImportados() {
           }
         })
         .filter((row) => row && row['Fornecedor'] && row['Nr. nota']);
- 
+
         if (parsedRows.length) {
-          const groups = filterScheduledNotesFromGroups(normalizeImportedItems(parsedRows));
-          return await enrichGroupsWithEntradaVolumes(groups);
+          groups = await enrichGroupsWithEntradaVolumes(filterScheduledNotesFromGroups(normalizeImportedItems(parsedRows)));
         }
       }
     }
@@ -1932,14 +1993,18 @@ export async function listFornecedoresPendentesImportados() {
     disableRelatorioDb(error, 'listFornecedoresPendentesImportados');
     console.error('Falha ao listar pendências importadas no banco:', error?.message || error);
   }
- 
-  try {
-    if (!fs.existsSync(fallbackFile)) return [];
-    const groups = filterScheduledNotesFromGroups(JSON.parse(fs.readFileSync(fallbackFile, 'utf8')) || []);
-    return await enrichGroupsWithEntradaVolumes(groups);
-  } catch {
-    return [];
+
+  if (groups === null) {
+    try {
+      if (!fs.existsSync(fallbackFile)) groups = [];
+      else groups = await enrichGroupsWithEntradaVolumes(filterScheduledNotesFromGroups(JSON.parse(fs.readFileSync(fallbackFile, 'utf8')) || []));
+    } catch {
+      groups = [];
+    }
   }
+
+  const rawCounts = await fetchRawAgChegadaCountsPorFornecedor();
+  return rawCounts.size ? applyRawAgChegadaCounts(groups, rawCounts) : groups;
 }
  
 // Retorna { vinculadas, naoEncontradas } para que o chamador saiba se algum
