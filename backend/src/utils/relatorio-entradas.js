@@ -1953,13 +1953,16 @@ function applyRawAgChegadaCounts(groups, rawCounts) {
 }
 
 const AGENDAMENTO_STATUS_VALIDOS_NIVEL_SERVICO = ['PENDENTE_APROVACAO', 'APROVADO', 'EM_DESCARGA'];
+const AGENDAMENTO_STATUS_EXCLUIR_NIVEL_SERVICO = new Set(['FINALIZADO', 'CANCELADO', 'REPROVADO']);
 
 // Nível de serviço = total de agendamentos nos status pendente aprovação/aprovado/
 // em descarga, dividido pelo universo de notas da RelatorioTerceirizado (TODA a
-// tabela, incluindo linhas já vinculadas a um agendamento, independente do status
-// desse agendamento) somado de novo com as notas em vencimento próximo (peso extra
-// de urgência). Finalizados, cancelados e reprovados NÃO contam — só agendamentos
-// ainda "em andamento" contam como capacidade de atendimento válida.
+// tabela, incluindo linhas já vinculadas a um agendamento) somado de novo com as
+// notas em vencimento próximo (peso extra de urgência). Finalizados, cancelados e
+// reprovados NÃO contam dos dois lados da conta: nem como agendamento válido no
+// numerador, nem como nota do universo no denominador (a nota de um agendamento
+// finalizado, por exemplo, continua vinculada pra sempre — sem essa exclusão ela
+// infla o denominador sem nunca contar no numerador).
 export async function calcularNivelServico() {
   let totalAgendamentosValidos = 0;
   try {
@@ -1975,10 +1978,24 @@ export async function calcularNivelServico() {
   try {
     if (await ensureRelatorioTable()) {
       const rows = await prisma.$queryRawUnsafe(
-        `SELECT ${quoteIdentifier('Data 1º vencimento')} AS vencimento FROM ${quoteIdentifier(TABLE_NAME)}`
+        `SELECT agendamentoId, ${quoteIdentifier('Data 1º vencimento')} AS vencimento FROM ${quoteIdentifier(TABLE_NAME)}`
       );
-      totalNotasTabela = Array.isArray(rows) ? rows.length : 0;
+
+      const agendamentoIds = [...new Set(
+        (rows || []).map((row) => Number(row.agendamentoId)).filter((id) => Number.isFinite(id) && id > 0)
+      )];
+      let statusPorAgendamentoId = new Map();
+      if (agendamentoIds.length) {
+        const agendamentos = await prisma.agendamento.findMany({ where: { id: { in: agendamentoIds } } });
+        statusPorAgendamentoId = new Map(agendamentos.map((ag) => [Number(ag.id), String(ag.status || '').toUpperCase()]));
+      }
+
       for (const row of rows || []) {
+        const agendamentoId = row.agendamentoId == null ? null : Number(row.agendamentoId);
+        const statusAgendamento = agendamentoId != null ? statusPorAgendamentoId.get(agendamentoId) : null;
+        if (statusAgendamento && AGENDAMENTO_STATUS_EXCLUIR_NIVEL_SERVICO.has(statusAgendamento)) continue;
+
+        totalNotasTabela += 1;
         if (computeDueInfo({ dueDateValue: row?.vencimento }).nearDue) totalNotasVencimentoProximo += 1;
       }
     }
