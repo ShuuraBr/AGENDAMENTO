@@ -1676,6 +1676,80 @@ export async function diagnosticarDuplicidadeRelatorio() {
   };
 }
 
+// Diagnóstico somente leitura: mostra, etapa por etapa, quantas linhas com
+// Status 'Ag. chegada da mercadoria' sobrevivem em cada filtro do pipeline
+// (agendamentoId preenchido, deduplicação por NF dentro do mesmo fornecedor,
+// cross-check com notas de agendamentos ativos) — serve para achar exatamente
+// onde a contagem exibida no app diverge de um SELECT COUNT(*) bruto na tabela.
+export async function diagnosticarContagemAgChegada() {
+  if (!(await ensureRelatorioTable())) {
+    throw new Error(relatorioDbDisableReason || 'Banco do relatório terceirizado indisponível.');
+  }
+
+  const brutoRows = await prisma.$queryRawUnsafe(
+    `SELECT ${quoteIdentifier('Status')} AS status, agendamentoId FROM ${quoteIdentifier(TABLE_NAME)}`
+  );
+  let totalBrutoTabelaInteira = 0;
+  let totalBrutoAgendamentoNulo = 0;
+  let totalBrutoAgendamentoPreenchido = 0;
+  for (const row of brutoRows || []) {
+    const status = normalizeCellValue(row?.status || '');
+    if (!/chegada/i.test(status)) continue;
+    totalBrutoTabelaInteira += 1;
+    if (row?.agendamentoId == null) totalBrutoAgendamentoNulo += 1;
+    else totalBrutoAgendamentoPreenchido += 1;
+  }
+
+  await cleanupOrphanRelatorioAgendamentoLinks();
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT rel.rowHash, rel.agendamentoId, rel.dadosOriginaisJson, rel.importedAt, rel.updatedAt,
+            rel.noShowAgendamentoId, rel.noShowEm, ag.protocolo AS noShowProtocolo
+       FROM ${quoteIdentifier(TABLE_NAME)} rel
+       LEFT JOIN ${quoteIdentifier('Agendamento')} ag ON ag.id = rel.noShowAgendamentoId
+      WHERE rel.agendamentoId IS NULL
+      ORDER BY rel.importedAt ASC, rel.updatedAt ASC, rel.rowHash ASC`
+  );
+
+  const parsedRows = (rows || [])
+    .map((row) => {
+      try {
+        const parsed = row?.dadosOriginaisJson ? JSON.parse(String(row.dadosOriginaisJson)) : {};
+        return {
+          ...normalizeSpreadsheetRow(parsed || {}),
+          rowHash: normalizeCellValue(row?.rowHash || ''),
+          noShowAgendamentoId: row?.noShowAgendamentoId ?? null,
+          noShowEm: row?.noShowEm ?? null,
+          noShowProtocolo: normalizeCellValue(row?.noShowProtocolo || '')
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter((row) => row && row['Fornecedor'] && row['Nr. nota']);
+
+  const gruposAntesDoCrossCheck = normalizeImportedItems(parsedRows);
+  const totalAposDedupPorNf = gruposAntesDoCrossCheck.reduce((acc, grupo) => acc + Number(grupo?.quantidadeNotasAgChegada || 0), 0);
+
+  const gruposFinal = filterScheduledNotesFromGroups(gruposAntesDoCrossCheck);
+  const totalExibidoNoApp = gruposFinal.reduce((acc, grupo) => acc + Number(grupo?.quantidadeNotasAgChegada || 0), 0);
+
+  const idsFinais = new Set(gruposFinal.map((grupo) => grupo.id));
+  const fornecedoresRemovidosPeloCrossCheck = gruposAntesDoCrossCheck
+    .filter((grupo) => !idsFinais.has(grupo.id) && Number(grupo?.quantidadeNotasAgChegada || 0) > 0)
+    .map((grupo) => ({ fornecedor: grupo.fornecedor, quantidadeNotasAgChegada: grupo.quantidadeNotasAgChegada }));
+
+  return {
+    totalBrutoTabelaInteira,
+    totalBrutoComAgendamentoNulo: totalBrutoAgendamentoNulo,
+    totalBrutoComAgendamentoPreenchido: totalBrutoAgendamentoPreenchido,
+    totalAposDedupPorNf,
+    totalExibidoNoApp,
+    diferencaDedupPorNf: totalBrutoAgendamentoNulo - totalAposDedupPorNf,
+    diferencaCrossCheckAgendamentosAtivos: totalAposDedupPorNf - totalExibidoNoApp,
+    fornecedoresRemovidosPeloCrossCheck
+  };
+}
+
 // Percorre todos os agendamentos existentes e vincula (agendamentoId +
 // Status='Agendado') os ativos com notas, desvinculando os cancelados/
 // reprovados/no-show. Extraído para ser reaproveitado tanto pelo endpoint de
