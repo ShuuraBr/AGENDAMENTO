@@ -1952,13 +1952,14 @@ function applyRawAgChegadaCounts(groups, rawCounts) {
   return ajustados;
 }
 
-const AGENDAMENTO_STATUS_VALIDOS_NIVEL_SERVICO = ['PENDENTE_APROVACAO', 'APROVADO', 'EM_DESCARGA', 'FINALIZADO'];
+const AGENDAMENTO_STATUS_VALIDOS_NIVEL_SERVICO = ['PENDENTE_APROVACAO', 'APROVADO', 'EM_DESCARGA'];
 
 // Nível de serviço = total de agendamentos nos status pendente aprovação/aprovado/
-// em descarga/finalizado, dividido pelo universo de notas da RelatorioTerceirizado
-// (TODA a tabela, incluindo linhas já vinculadas a um agendamento, independente do
-// status desse agendamento) somado de novo com as notas em vencimento próximo
-// (peso extra de urgência).
+// em descarga, dividido pelo universo de notas da RelatorioTerceirizado (TODA a
+// tabela, incluindo linhas já vinculadas a um agendamento, independente do status
+// desse agendamento) somado de novo com as notas em vencimento próximo (peso extra
+// de urgência). Finalizados, cancelados e reprovados NÃO contam — só agendamentos
+// ainda "em andamento" contam como capacidade de atendimento válida.
 export async function calcularNivelServico() {
   let totalAgendamentosValidos = 0;
   try {
