@@ -3767,8 +3767,12 @@
   async function showPendingScheduleAlertIfNeeded() {
     if (!hasPermission('agendamentos.create')) return;
     let groups;
+    let nivelServicoData;
     try {
-      groups = await api('/api/public/fornecedores-pendentes');
+      [groups, nivelServicoData] = await Promise.all([
+        api('/api/public/fornecedores-pendentes'),
+        api('/api/public/nivel-servico').catch(() => null)
+      ]);
     } catch {
       return;
     }
@@ -3776,7 +3780,6 @@
 
     let totalNotas = 0;
     let totalProximoVencimento = 0;
-    let totalVencidas = 0;
     let diasMinimo = null;
     for (const grupo of groups) {
       totalNotas += Number(grupo?.quantidadeNotasAgChegada ?? grupo?.quantidadeNotas ?? 0);
@@ -3785,7 +3788,6 @@
       for (const nota of notas) {
         if (nota?.diasParaPrimeiroVencimento == null) continue;
         const dias = Number(nota.diasParaPrimeiroVencimento);
-        if (dias < 0) totalVencidas += 1;
         if (diasMinimo === null || dias < diasMinimo) diasMinimo = dias;
       }
     }
@@ -3799,15 +3801,16 @@
       : diasMinimo <= 3 ? { label: 'Atenção', bg: '#f59e0b', color: '#111827' }
       : { label: 'Monitorar', bg: '#eab308', color: '#111827' };
 
-    // Nível de serviço: % das notas pendentes que ainda NÃO estão em risco (vencidas ou
-    // próximas do vencimento) — quanto maior, mais saudável está o backlog de agendamentos.
-    const totalEmRisco = Math.min(totalNotas, totalVencidas + totalProximoVencimento);
-    const nivelServico = Math.max(0, Math.min(100, Math.round(((totalNotas - totalEmRisco) / totalNotas) * 100)));
-    const nivelServicoInfo = nivelServico >= 90
+    // Nível de serviço: agendamentos em pendente aprovação/aprovado/em descarga/finalizado,
+    // dividido pelo universo de notas da RelatorioTerceirizado (tabela inteira, com peso extra
+    // para as em vencimento próximo). Calculado no backend em calcularNivelServico().
+    // Faixas de cor ainda são um ponto de partida — ajustar quando soubermos a escala real.
+    const nivelServico = Number(nivelServicoData?.nivelServico ?? 0);
+    const nivelServicoInfo = nivelServico >= 20
       ? { bg: '#dcfce7', color: '#166534' }
-      : nivelServico >= 75
+      : nivelServico >= 10
         ? { bg: '#fef9c3', color: '#854d0e' }
-        : nivelServico >= 50
+        : nivelServico >= 5
           ? { bg: '#ffedd5', color: '#c2410c' }
           : { bg: '#fee2e2', color: '#991b1b' };
 

@@ -1952,6 +1952,52 @@ function applyRawAgChegadaCounts(groups, rawCounts) {
   return ajustados;
 }
 
+const AGENDAMENTO_STATUS_VALIDOS_NIVEL_SERVICO = ['PENDENTE_APROVACAO', 'APROVADO', 'EM_DESCARGA', 'FINALIZADO'];
+
+// Nível de serviço = total de agendamentos nos status pendente aprovação/aprovado/
+// em descarga/finalizado, dividido pelo universo de notas da RelatorioTerceirizado
+// (TODA a tabela, incluindo linhas já vinculadas a um agendamento, independente do
+// status desse agendamento) somado de novo com as notas em vencimento próximo
+// (peso extra de urgência).
+export async function calcularNivelServico() {
+  let totalAgendamentosValidos = 0;
+  try {
+    totalAgendamentosValidos = await prisma.agendamento.count({
+      where: { status: { in: AGENDAMENTO_STATUS_VALIDOS_NIVEL_SERVICO } }
+    });
+  } catch (error) {
+    console.error('[NIVEL_SERVICO] Falha ao contar agendamentos válidos:', error?.message || error);
+  }
+
+  let totalNotasTabela = 0;
+  let totalNotasVencimentoProximo = 0;
+  try {
+    if (await ensureRelatorioTable()) {
+      const rows = await prisma.$queryRawUnsafe(
+        `SELECT ${quoteIdentifier('Data 1º vencimento')} AS vencimento FROM ${quoteIdentifier(TABLE_NAME)}`
+      );
+      totalNotasTabela = Array.isArray(rows) ? rows.length : 0;
+      for (const row of rows || []) {
+        if (computeDueInfo({ dueDateValue: row?.vencimento }).nearDue) totalNotasVencimentoProximo += 1;
+      }
+    }
+  } catch (error) {
+    console.error('[NIVEL_SERVICO] Falha ao contar notas da RelatorioTerceirizado:', error?.message || error);
+  }
+
+  const denominador = totalNotasTabela + totalNotasVencimentoProximo;
+  const nivelServico = denominador > 0
+    ? Math.round((totalAgendamentosValidos / denominador) * 1000) / 10
+    : 0;
+
+  return {
+    totalAgendamentosValidos,
+    totalNotasTabela,
+    totalNotasVencimentoProximo,
+    nivelServico
+  };
+}
+
 export async function listFornecedoresPendentesImportados() {
   let groups = null;
   try {

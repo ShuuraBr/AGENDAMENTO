@@ -17,7 +17,7 @@ import {
   updateAgendamentoFile,
   readRegras
 } from "../utils/file-store.js";
-import { ensureLatestRelatorioImport, listFornecedoresPendentesImportados, getRelatorioImportStatus, getRelatorioRowsCount } from "../utils/relatorio-entradas.js";
+import { ensureLatestRelatorioImport, listFornecedoresPendentesImportados, getRelatorioImportStatus, getRelatorioRowsCount, calcularNivelServico } from "../utils/relatorio-entradas.js";
 import { auditLog } from "../utils/audit.js";
 import { getFeedbackRequestByToken, submitFeedbackByToken, maskCpf } from "../utils/driver-feedback.js";
 import { sendDriverFeedbackRequestEmail } from "../utils/feedback-notifications.js";
@@ -982,6 +982,15 @@ router.get("/fornecedores-pendentes", async (_req, res) => {
   } catch (error) {
     console.error("[RELATORIO_IMPORT] Falha ao montar fornecedores pendentes:", error?.message || error);
     return res.json(readFornecedoresPendentes());
+  }
+});
+
+router.get("/nivel-servico", async (_req, res) => {
+  try {
+    return res.json(await calcularNivelServico());
+  } catch (error) {
+    console.error("[NIVEL_SERVICO] Falha ao calcular nível de serviço:", error?.message || error);
+    return res.status(500).json({ message: error?.message || "Falha ao calcular nível de serviço." });
   }
 });
 
