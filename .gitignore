@@ -11,3 +11,5 @@ logs
 
 # Runtime / test data (should not be versioned)
 backend/data/*.json
+tratando_tabelas/__pycache__/
+tratando_tabelas/log_tratamento_*.txt

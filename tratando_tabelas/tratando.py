@@ -1,8 +1,35 @@
 import pandas as pd
 import os
 import subprocess
+import sys
 import time
+import atexit
+from io import StringIO
 from datetime import datetime
+
+# =========================
+# LOG: garante que sobra um arquivo dizendo o que aconteceu,
+# mesmo se o script travar no meio ou rodar sem ninguém olhando
+# =========================
+_log_buffer = StringIO()
+_stdout_original = sys.stdout
+_stderr_original = sys.stderr
+sys.stdout = _log_buffer
+sys.stderr = _log_buffer
+
+
+def _salvar_log():
+    sys.stdout = _stdout_original
+    sys.stderr = _stderr_original
+    data_hora = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_path = rf"H:\00 - HTML\AGENDAMENTO\tratando_tabelas\log_tratamento_{data_hora}.txt"
+    conteudo = _log_buffer.getvalue()
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write(conteudo)
+    print(conteudo)
+
+
+atexit.register(_salvar_log)
 
 # =========================
 # FUNÇÃO DE CONVERSÃO ODS → XLSX
@@ -224,12 +251,12 @@ else:
         print(resultado_commit.stderr)
     else:
         git("fetch", "origin")
-        resultado_rebase = git("rebase", "origin/main")
+        resultado_merge = git("merge", "--no-edit", "origin/main")
 
-        if resultado_rebase.returncode != 0:
-            print("Erro no git rebase (main local ficou divergente, abortando rebase):")
-            print(resultado_rebase.stderr)
-            git("rebase", "--abort")
+        if resultado_merge.returncode != 0:
+            print("Erro no git merge (conflito com origin/main, abortando):")
+            print(resultado_merge.stderr)
+            git("merge", "--abort")
         else:
             resultado_push = git("push", "origin", "HEAD:main")
             print(resultado_push.stdout)
