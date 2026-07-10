@@ -3947,10 +3947,14 @@
         <path d="M-100,200 C200,260 380,100 640,190 C900,280 1040,120 1300,200 C1460,250 1540,200 1700,230" stroke="#00965E" stroke-width="1" opacity="0.18"/>
         <path d="M-100,840 C220,900 420,780 680,850 C940,920 1080,800 1340,860 C1480,895 1560,850 1700,870" stroke="#00965E" stroke-width="1" opacity="0.16"/>
       </svg>
-      <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;width:100%;max-width:380px">
-        <img src="/assets/logo-branca.png" alt="Objetiva Atacadista" style="width:200px;height:auto;margin-bottom:24px">
-        <div style="background:linear-gradient(180deg,#ffffff 0%,#F7F9FF 100%);border-radius:24px;padding:32px 28px;width:100%;box-shadow:0 30px 70px -15px rgba(0,9,40,.65),0 0 100px rgba(14,46,155,.35),0 0 0 1px rgba(255,255,255,.06);display:grid;gap:14px;text-align:center;box-sizing:border-box">
+      <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;width:100%;max-width:384px">
+        <img src="/assets/logo-branca.png" alt="Objetiva Atacadista" style="width:256px;height:auto;margin-bottom:32px">
+        <div style="background:linear-gradient(180deg,#ffffff 0%,#F7F9FF 100%);border-radius:24px;padding:32px;width:100%;box-shadow:0 30px 70px -15px rgba(0,9,40,.65),0 0 100px rgba(14,46,155,.35),0 0 0 1px rgba(255,255,255,.06);display:grid;gap:14px;text-align:center;box-sizing:border-box">
           <h3 style="margin:0;font-size:20px;font-weight:700;color:#0E2E9B">Verificação em duas etapas</h3>
+          <div style="display:flex;justify-content:center;gap:8px;margin-top:-6px">
+            <span style="width:8px;height:8px;border-radius:50%;background:#00965E"></span>
+            <span style="width:8px;height:8px;border-radius:50%;background:#0E2E9B"></span>
+          </div>
           <p style="margin:0;font-size:13px;color:#4A5170;line-height:1.4">
             Enviamos um código de 6 dígitos para<br>
             <strong style="color:#000928;font-weight:600">${escapeHtml(email)}</strong>.
@@ -4043,7 +4047,8 @@
       if (!input || !button) return;
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
-      button.textContent = show ? 'Ocultar' : 'Mostrar';
+      button.querySelector('.icon-eye').style.display = show ? 'none' : '';
+      button.querySelector('.icon-eye-off').style.display = show ? '' : 'none';
       button.setAttribute('aria-pressed', show ? 'true' : 'false');
       button.setAttribute('aria-label', show ? 'Ocultar senha' : 'Visualizar senha');
     });

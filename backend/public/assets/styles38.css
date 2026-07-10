@@ -325,7 +325,7 @@ body.modal-open{overflow:hidden}
 .pending-search-toolbar{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:12px;align-items:end}.pending-search-field{display:grid;gap:6px;font-size:13px;font-weight:700;color:#334155}.pending-search-field input{font-weight:400}.pending-notas-empty-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}.pending-nota-item-manual{border-style:dashed;border-color:#2563eb;background:#eff6ff}.pending-note-manual-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:700}.manual-nota-modal-card{width:min(860px,100%)}.manual-nota-form{display:grid;gap:14px}@media (max-width:720px){.pending-search-toolbar{grid-template-columns:1fr}.pending-search-toolbar button{width:100%}}
 
 
-.password-input-wrap{position:relative;display:flex;align-items:center}.password-input-wrap input{padding-right:96px}.password-toggle-btn{position:absolute;right:6px;top:50%;transform:translateY(-50%);padding:7px 12px;border-radius:8px;background:#475569;font-size:12px;line-height:1;z-index:2}.password-toggle-btn:hover{opacity:.96}
+.password-input-wrap{position:relative;display:flex;align-items:center}.password-input-wrap input{padding-right:40px}.password-toggle-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:6px;border:none;background:none;color:#8890AC;display:flex;align-items:center;z-index:2}.password-toggle-btn:hover{color:#4A5170}.password-toggle-btn svg{width:18px;height:18px}
 
 .readonly-form{opacity:.78}.readonly-form input:disabled,.readonly-form select:disabled,.readonly-form textarea:disabled{background:#e2e8f0;cursor:not-allowed}
 
@@ -470,14 +470,18 @@ body.modal-open{overflow:hidden}
     padding:16px;
 }
 #login .login-waves{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-#login .login-brand-logo{position:relative;z-index:1;display:block;max-width:200px;height:auto;margin:0 auto 24px auto}
+#login .login-brand-logo{position:relative;z-index:1;display:block;max-width:256px;height:auto;margin:0 auto 32px auto}
 #login .login-card{
     position:relative;z-index:1;
     background:linear-gradient(180deg,#ffffff 0%,#F7F9FF 100%);
-    padding:36px 32px 30px;border-radius:24px;
+    padding:32px;border-radius:24px;
     box-shadow:0 30px 70px -15px rgba(0,9,40,.65),0 0 100px rgba(14,46,155,.35),0 0 0 1px rgba(255,255,255,.06);
 }
-#login .login-card h2{font-family:'Poppins',sans-serif;color:#000928;font-weight:700;font-size:20px;text-align:center;margin:0 0 20px}
+#login .login-card h2{font-family:'Poppins',sans-serif;color:#0E2E9B;font-weight:700;font-size:24px;text-align:center;margin:0 0 8px}
+#login .login-step-indicator{display:flex;justify-content:center;gap:8px;margin-bottom:20px}
+#login .step-dot{width:8px;height:8px;border-radius:50%;background-color:#DDE3F5}
+#login .step-dot.active{background-color:#0E2E9B}
+#login .step-dot.done{background-color:#00965E}
 #login .login-card label{display:block;font-size:12px;font-weight:600;color:#4A5170;text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px}
 #login .login-card input{
     margin-top:6px;background:#F7F9FF;border:1px solid rgba(0,9,40,.1);border-radius:12px;
