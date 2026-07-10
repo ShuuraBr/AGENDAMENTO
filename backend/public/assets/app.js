@@ -3927,29 +3927,40 @@
     // Remove existing step if any
     byId('twoFAStep')?.remove();
 
-    // Build overlay modal (always centered, always visible)
+    // Build overlay modal (always centered, always visible) — mesmo visual do
+    // passo de verificação do COMPRAS: fundo azul-marinho com glow + ondas,
+    // card branco arredondado, código monoespaçado.
     const overlay = document.createElement('div');
     overlay.id = 'twoFAStep';
     overlay.style.cssText = [
       'position:fixed;inset:0;z-index:9000',
-      'display:flex;align-items:center;justify-content:center',
-      'background:rgba(15,23,42,.55);backdrop-filter:blur(4px)'
+      'display:flex;align-items:center;justify-content:center;overflow:auto;padding:16px',
+      'background:radial-gradient(60% 50% at 50% 30%,rgba(14,46,155,.55) 0%,rgba(0,9,40,0) 70%),#000928',
+      "font-family:'Poppins','Arial',sans-serif"
     ].join(';');
 
     overlay.innerHTML = `
-      <div style="background:#fff;border-radius:20px;padding:32px 28px;width:min(420px,92vw);box-shadow:0 24px 64px rgba(15,23,42,.28);display:grid;gap:14px;text-align:center">
-        <div style="font-size:40px;line-height:1">🔐</div>
-        <h3 style="margin:0;font-size:20px;color:#0f172a">Verificação em duas etapas</h3>
-        <p style="margin:0;font-size:14px;color:#475569">
-          Um código de 6 dígitos foi enviado para<br>
-          <strong>${escapeHtml(email)}</strong><br>
-          Verifique sua caixa de entrada.
-        </p>
-        <input id="twoFACode" type="text" maxlength="6" placeholder="000000" inputmode="numeric" autocomplete="one-time-code"
-          style="font-size:32px;letter-spacing:12px;text-align:center;padding:14px;border-radius:12px;border:2px solid #2563eb;font-weight:700;width:100%;box-sizing:border-box" />
-        <button id="btnVerify2FA" style="padding:14px;border-radius:12px;font-size:16px;font-weight:700;width:100%">Verificar código ✓</button>
-        <button id="btnResend2FA" style="background:#475569;padding:10px;border-radius:10px;font-size:13px;width:100%">Reenviar código</button>
-        <p id="twoFAMsg" style="margin:0;font-size:13px;color:#ef4444;min-height:16px"></p>
+      <svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="none" aria-hidden="true">
+        <path d="M-100,760 C150,660 320,860 560,720 C800,580 950,780 1200,660 C1380,580 1500,660 1700,600" stroke="#00965E" stroke-width="2" opacity="0.5"/>
+        <path d="M-100,660 C180,760 380,560 620,680 C860,800 1020,600 1260,700 C1420,760 1520,680 1700,720" stroke="#00965E" stroke-width="1.5" opacity="0.32"/>
+        <path d="M-100,120 C180,60 360,180 600,100 C840,20 1000,140 1240,90 C1400,60 1500,110 1700,70" stroke="#00965E" stroke-width="1.5" opacity="0.28"/>
+        <path d="M-100,200 C200,260 380,100 640,190 C900,280 1040,120 1300,200 C1460,250 1540,200 1700,230" stroke="#00965E" stroke-width="1" opacity="0.18"/>
+        <path d="M-100,840 C220,900 420,780 680,850 C940,920 1080,800 1340,860 C1480,895 1560,850 1700,870" stroke="#00965E" stroke-width="1" opacity="0.16"/>
+      </svg>
+      <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;width:100%;max-width:380px">
+        <img src="/assets/logo-branca.png" alt="Objetiva Atacadista" style="width:200px;height:auto;margin-bottom:24px">
+        <div style="background:linear-gradient(180deg,#ffffff 0%,#F7F9FF 100%);border-radius:24px;padding:32px 28px;width:100%;box-shadow:0 30px 70px -15px rgba(0,9,40,.65),0 0 100px rgba(14,46,155,.35),0 0 0 1px rgba(255,255,255,.06);display:grid;gap:14px;text-align:center;box-sizing:border-box">
+          <h3 style="margin:0;font-size:20px;font-weight:700;color:#0E2E9B">Verificação em duas etapas</h3>
+          <p style="margin:0;font-size:13px;color:#4A5170;line-height:1.4">
+            Enviamos um código de 6 dígitos para<br>
+            <strong style="color:#000928;font-weight:600">${escapeHtml(email)}</strong>.
+          </p>
+          <input id="twoFACode" type="text" maxlength="6" placeholder="000000" inputmode="numeric" autocomplete="one-time-code"
+            style="font-family:'Courier New',monospace;font-size:24px;letter-spacing:0.4em;text-align:center;padding:12px 14px;border-radius:12px;border:1px solid rgba(0,9,40,.1);background:#F7F9FF;box-shadow:inset 0 1px 4px rgba(0,9,40,.10);font-weight:700;color:#000928;width:100%;box-sizing:border-box" />
+          <button id="btnVerify2FA" style="padding:13px;border-radius:999px;font-size:15px;font-weight:700;width:100%;border:none;cursor:pointer;color:#fff;background:linear-gradient(180deg,#00965E 0%,rgba(0,150,94,.85) 100%);box-shadow:0 8px 20px rgba(0,150,94,.3)">Verificar código ✓</button>
+          <button id="btnResend2FA" style="background:none;border:none;color:#8890AC;font-size:13px;cursor:pointer;padding:2px">Reenviar código</button>
+          <p id="twoFAMsg" style="margin:0;font-size:13px;font-weight:600;color:#C1392B;min-height:16px"></p>
+        </div>
       </div>`;
 
     document.body.appendChild(overlay);

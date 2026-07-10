@@ -460,4 +460,35 @@ body.modal-open{overflow:hidden}
 #twoFaModal{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:999}
 #twoFaBox{background:#fff;border-radius:18px;padding:28px 32px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(15,23,42,.2)}
 #twoFaCode{font-size:28px;letter-spacing:.5em;text-align:center;font-weight:700;border:2px solid #cbd5e1;border-radius:12px;padding:14px;width:100%}
+
+/* Tela de login — padrão visual COMPRAS */
+#login.view.active{
+    position:fixed;inset:0;z-index:100000;min-height:0;
+    display:flex;align-items:center;justify-content:center;overflow:auto;
+    background:radial-gradient(60% 50% at 50% 30%,rgba(14,46,155,.55) 0%,rgba(0,9,40,0) 70%),#000928;
+    font-family:'Poppins','Arial',sans-serif;
+    padding:16px;
+}
+#login .login-waves{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#login .login-brand-logo{position:relative;z-index:1;display:block;max-width:200px;height:auto;margin:0 auto 24px auto}
+#login .login-card{
+    position:relative;z-index:1;
+    background:linear-gradient(180deg,#ffffff 0%,#F7F9FF 100%);
+    padding:36px 32px 30px;border-radius:24px;
+    box-shadow:0 30px 70px -15px rgba(0,9,40,.65),0 0 100px rgba(14,46,155,.35),0 0 0 1px rgba(255,255,255,.06);
+}
+#login .login-card h2{font-family:'Poppins',sans-serif;color:#000928;font-weight:700;font-size:20px;text-align:center;margin:0 0 20px}
+#login .login-card label{display:block;font-size:12px;font-weight:600;color:#4A5170;text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px}
+#login .login-card input{
+    margin-top:6px;background:#F7F9FF;border:1px solid rgba(0,9,40,.1);border-radius:12px;
+    box-shadow:inset 0 1px 4px rgba(0,9,40,.10);font-weight:500;color:#000928;
+}
+#login .login-card input:focus{outline:none;border-color:rgba(14,46,155,.3);background:#fff}
+#login .login-card button[type="submit"]{
+    margin-top:8px;background:linear-gradient(180deg,#00965E 0%,rgba(0,150,94,.85) 100%);
+    color:#fff;border:none;border-radius:999px;padding:13px;font-size:15px;font-weight:700;
+    cursor:pointer;box-shadow:0 8px 20px rgba(0,150,94,.3);transition:opacity .2s;
+}
+#login .login-card button[type="submit"]:hover{opacity:.9}
+#login .login-card .msg{text-align:center;font-weight:600;color:#C1392B}
 #twoFaCode:focus{border-color:#2563eb;outline:none}

@@ -4,7 +4,13 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(node -e ' *)",
-      "Bash(cat \"Z:/00 - HTML/AGENDAMENTO/backend/data/transportadoras.json\" 2>/dev/null || echo \"não existe no repositório principal\" *)"
+      "Bash(cat \"Z:/00 - HTML/AGENDAMENTO/backend/data/transportadoras.json\" 2>/dev/null || echo \"não existe no repositório principal\" *)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(node --check backend/src/utils/relatorio-entradas.js)",
+      "Bash(git rev-list *)",
+      "Bash(git push *)"
     ]
   }
 }
