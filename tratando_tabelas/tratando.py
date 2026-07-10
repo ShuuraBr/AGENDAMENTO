@@ -283,4 +283,3 @@ else:
 
 if git_sync_falhou:
     print("\n❌ Sincronização com o Git falhou — ver mensagens de erro acima.")
-    sys.exit(1)
