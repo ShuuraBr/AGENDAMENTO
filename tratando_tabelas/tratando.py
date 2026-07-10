@@ -217,7 +217,13 @@ ARQUIVOS_GIT = [
 
 def git(*args):
     return subprocess.run(
-        ["git", "-C", REPO_PATH, *args],
+        [
+            "git",
+            "-c", "safe.directory=//srv-fls-01/PLANEJAMENTO/00 - HTML/AGENDAMENTO",
+            "-c", "safe.directory=H:/00 - HTML/AGENDAMENTO",
+            "-C", REPO_PATH,
+            *args
+        ],
         capture_output=True,
         text=True,
         encoding="utf-8",
