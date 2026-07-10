@@ -946,6 +946,14 @@
       btn.classList.toggle("active", btn.dataset.view === target);
     });
 
+    // Sempre volta pro passo de credenciais ao (re)abrir a tela de login —
+    // evita ficar preso na etapa de verificação se o usuário saiu no meio.
+    if (target === 'login') {
+      byId('twoFAForm')?.classList.add('hidden');
+      byId('loginHeaderText')?.classList.remove('hidden');
+      byId('loginForm')?.classList.remove('hidden');
+    }
+
     if (target === 'confirmacoes' && logged) {
       loadAgendamentos().catch(() => {});
       loadAuditoria().catch(() => {});
@@ -3697,7 +3705,8 @@
     if (existing) existing.remove();
     const modal = document.createElement('div');
     modal.id = 'passwordChangeModal';
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px';
+    // z-index acima de #login.view.active (100000) pelo mesmo motivo do 2FA.
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:100001;padding:16px';
     modal.innerHTML = `
       <div style="background:#fff;border-radius:18px;padding:32px;max-width:420px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
         <h3 style="margin:0 0 8px;font-size:20px;color:#0f172a">Definir nova senha</h3>
@@ -3924,53 +3933,29 @@
   }
 
   function show2FAStep(email) {
-    // Remove existing step if any
-    byId('twoFAStep')?.remove();
+    // Troca o conteúdo do mesmo card de login (sem modal por cima) — igual
+    // ao passo de verificação do COMPRAS: uma tela só, o card só troca o
+    // que mostra dentro dela.
+    byId('loginHeaderText').classList.add('hidden');
+    byId('loginForm').classList.add('hidden');
+    byId('twoFAForm').classList.remove('hidden');
+    byId('twoFAEmailDestino').textContent = email;
+    const codeInput = byId('twoFACode');
+    const msgEl = byId('twoFAMsg');
+    const verifyBtn = byId('btnVerify2FA');
+    codeInput.value = '';
+    msgEl.textContent = '';
+    msgEl.style.color = '#C1392B';
+    setTimeout(() => codeInput.focus(), 80);
 
-    // Build overlay modal (always centered, always visible) — mesmo visual do
-    // passo de verificação do COMPRAS: fundo azul-marinho com glow + ondas,
-    // card branco arredondado, código monoespaçado.
-    const overlay = document.createElement('div');
-    overlay.id = 'twoFAStep';
-    overlay.style.cssText = [
-      'position:fixed;inset:0;z-index:9000',
-      'display:flex;align-items:center;justify-content:center;overflow:auto;padding:16px',
-      'background:radial-gradient(60% 50% at 50% 30%,rgba(14,46,155,.55) 0%,rgba(0,9,40,0) 70%),#000928',
-      "font-family:'Poppins','Arial',sans-serif"
-    ].join(';');
-
-    overlay.innerHTML = `
-      <svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="none" aria-hidden="true">
-        <path d="M-100,760 C150,660 320,860 560,720 C800,580 950,780 1200,660 C1380,580 1500,660 1700,600" stroke="#00965E" stroke-width="2" opacity="0.5"/>
-        <path d="M-100,660 C180,760 380,560 620,680 C860,800 1020,600 1260,700 C1420,760 1520,680 1700,720" stroke="#00965E" stroke-width="1.5" opacity="0.32"/>
-        <path d="M-100,120 C180,60 360,180 600,100 C840,20 1000,140 1240,90 C1400,60 1500,110 1700,70" stroke="#00965E" stroke-width="1.5" opacity="0.28"/>
-        <path d="M-100,200 C200,260 380,100 640,190 C900,280 1040,120 1300,200 C1460,250 1540,200 1700,230" stroke="#00965E" stroke-width="1" opacity="0.18"/>
-        <path d="M-100,840 C220,900 420,780 680,850 C940,920 1080,800 1340,860 C1480,895 1560,850 1700,870" stroke="#00965E" stroke-width="1" opacity="0.16"/>
-      </svg>
-      <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;width:100%;max-width:384px">
-        <img src="/assets/logo-branca.png" alt="Objetiva Atacadista" style="width:256px;height:auto;margin-bottom:32px">
-        <div style="background:linear-gradient(180deg,#ffffff 0%,#F7F9FF 100%);border-radius:24px;padding:32px;width:100%;box-shadow:0 30px 70px -15px rgba(0,9,40,.65),0 0 100px rgba(14,46,155,.35),0 0 0 1px rgba(255,255,255,.06);display:grid;gap:14px;text-align:center;box-sizing:border-box">
-          <h3 style="margin:0;font-size:20px;font-weight:700;color:#0E2E9B">Verificação em duas etapas</h3>
-          <div style="display:flex;justify-content:center;gap:8px;margin-top:-6px">
-            <span style="width:8px;height:8px;border-radius:50%;background:#00965E"></span>
-            <span style="width:8px;height:8px;border-radius:50%;background:#0E2E9B"></span>
-          </div>
-          <p style="margin:0;font-size:13px;color:#4A5170;line-height:1.4">
-            Enviamos um código de 6 dígitos para<br>
-            <strong style="color:#000928;font-weight:600">${escapeHtml(email)}</strong>.
-          </p>
-          <input id="twoFACode" type="text" maxlength="6" placeholder="000000" inputmode="numeric" autocomplete="one-time-code"
-            style="font-family:'Courier New',monospace;font-size:24px;letter-spacing:0.4em;text-align:center;padding:12px 14px;border-radius:12px;border:1px solid rgba(0,9,40,.1);background:#F7F9FF;box-shadow:inset 0 1px 4px rgba(0,9,40,.10);font-weight:700;color:#000928;width:100%;box-sizing:border-box" />
-          <button id="btnVerify2FA" style="padding:13px;border-radius:999px;font-size:15px;font-weight:700;width:100%;border:none;cursor:pointer;color:#fff;background:linear-gradient(180deg,#00965E 0%,rgba(0,150,94,.85) 100%);box-shadow:0 8px 20px rgba(0,150,94,.3)">Verificar código ✓</button>
-          <button id="btnResend2FA" style="background:none;border:none;color:#8890AC;font-size:13px;cursor:pointer;padding:2px">Reenviar código</button>
-          <p id="twoFAMsg" style="margin:0;font-size:13px;font-weight:600;color:#C1392B;min-height:16px"></p>
-        </div>
-      </div>`;
-
-    document.body.appendChild(overlay);
+    const backToLogin = () => {
+      byId('twoFAForm').classList.add('hidden');
+      byId('loginHeaderText').classList.remove('hidden');
+      byId('loginForm').classList.remove('hidden');
+    };
 
     const afterLogin = async (data) => {
-      overlay.remove();
+      backToLogin();
       state.token = data.token;
       localStorage.setItem('token', data.token);
       state.currentUser = data.user || null;
@@ -3986,37 +3971,34 @@
       byId('loginMsg').textContent = `Logado como ${data.user.nome} (${data.user.perfil || 'colaborador'})`;
     };
 
-    overlay.querySelector('#btnVerify2FA').onclick = async () => {
-      const code = overlay.querySelector('#twoFACode').value.trim();
-      const msgEl = overlay.querySelector('#twoFAMsg');
-      const btn = overlay.querySelector('#btnVerify2FA');
+    byId('twoFAForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const code = codeInput.value.trim();
       if (code.length !== 6) { msgEl.textContent = 'Digite os 6 dígitos.'; return; }
-      btn.disabled = true; btn.textContent = 'Verificando…';
+      verifyBtn.disabled = true; verifyBtn.textContent = 'Verificando…';
       try {
         const data = await api('/api/auth/verify-2fa', { method: 'POST', body: JSON.stringify({ email, code }) });
         await afterLogin(data);
       } catch (err) {
         msgEl.textContent = err.message || 'Código inválido ou expirado.';
-        btn.disabled = false; btn.textContent = 'Verificar código ✓';
+        verifyBtn.disabled = false; verifyBtn.textContent = 'Verificar código ✓';
       }
     };
 
-    overlay.querySelector('#twoFACode').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') overlay.querySelector('#btnVerify2FA').click();
-    });
-
-    overlay.querySelector('#btnResend2FA').onclick = async () => {
-      const msgEl = overlay.querySelector('#twoFAMsg');
+    byId('btnResend2FA').onclick = async () => {
       try {
         const form = byId('loginForm');
         const fd = new FormData(form);
         await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, senha: fd.get('senha') || '' }) });
-        msgEl.style.color = '#10b981'; msgEl.textContent = 'Novo código enviado!';
-        setTimeout(() => { msgEl.textContent = ''; msgEl.style.color = '#ef4444'; }, 3000);
+        msgEl.style.color = '#00965E'; msgEl.textContent = 'Novo código enviado!';
+        setTimeout(() => { msgEl.textContent = ''; msgEl.style.color = '#C1392B'; }, 3000);
       } catch (err) { msgEl.textContent = err.message; }
     };
 
-    setTimeout(() => overlay.querySelector('#twoFACode')?.focus(), 80);
+    byId('btnVoltar2FA').onclick = () => {
+      backToLogin();
+      byId('loginMsg').textContent = '';
+    };
   }
 
   document.addEventListener("DOMContentLoaded", async () => {

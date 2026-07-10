@@ -64,10 +64,12 @@
       <div class="login-content" style="position:relative;z-index:1;width:100%;max-width:384px;">
       <img src="/assets/logo-branca.png" alt="Objetiva Atacadista" class="login-brand-logo">
       <div class="card narrow login-card">
-        <h2>Login do colaborador</h2>
-        <div class="login-step-indicator">
-          <div class="step-dot active"></div>
-          <div class="step-dot"></div>
+        <div id="loginHeaderText">
+          <h2>Login do colaborador</h2>
+          <div class="login-step-indicator">
+            <div class="step-dot active"></div>
+            <div class="step-dot"></div>
+          </div>
         </div>
         <form id="loginForm" autocomplete="off">
           <label>Login / E-mail<input name="email" type="text" value="" placeholder="Digite seu login" autocomplete="off" /></label>
@@ -83,6 +85,21 @@
           </label>
           <button type="submit">Entrar</button>
         </form>
+
+        <form id="twoFAForm" class="hidden">
+          <h2>Verificação em duas etapas</h2>
+          <div class="login-step-indicator">
+            <div class="step-dot done"></div>
+            <div class="step-dot active"></div>
+          </div>
+          <p class="otp-subtitle">Enviamos um código de 6 dígitos para<br><strong id="twoFAEmailDestino"></strong>.</p>
+          <input id="twoFACode" type="text" maxlength="6" placeholder="000000" inputmode="numeric" autocomplete="one-time-code" class="otp-input">
+          <button type="submit" id="btnVerify2FA">Verificar código ✓</button>
+          <button type="button" id="btnResend2FA" class="btn-voltar-otp">Reenviar código</button>
+          <button type="button" id="btnVoltar2FA" class="btn-voltar-otp">Voltar para login</button>
+          <p id="twoFAMsg" class="msg"></p>
+        </form>
+
         <p id="loginMsg" class="msg"></p>
       </div>
       </div>

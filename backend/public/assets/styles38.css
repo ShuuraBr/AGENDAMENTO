@@ -495,4 +495,18 @@ body.modal-open{overflow:hidden}
 }
 #login .login-card button[type="submit"]:hover{opacity:.9}
 #login .login-card .msg{text-align:center;font-weight:600;color:#C1392B}
-#twoFaCode:focus{border-color:#2563eb;outline:none}
+
+/* Verificação em duas etapas — mesmo visual do código do COMPRAS */
+#twoFAForm h2{font-size:20px;margin-bottom:6px}
+#twoFAForm .otp-subtitle{color:#4A5170;font-size:13px;line-height:1.4;margin-bottom:14px}
+#twoFAForm .otp-subtitle strong{color:#000928;font-weight:600}
+.otp-input{
+    font-family:'Courier New',monospace !important;font-size:24px !important;font-weight:700 !important;
+    text-align:center;letter-spacing:0.4em;padding:12px 14px !important;
+}
+.otp-input::placeholder{color:rgba(136,144,172,.4)}
+.btn-voltar-otp{
+    display:block;width:100%;background:none;border:none;color:#8890AC;font-size:13px;
+    margin-top:10px;cursor:pointer;text-decoration:none;transition:color .2s;
+}
+.btn-voltar-otp:hover{color:#0E2E9B;text-decoration:underline}
