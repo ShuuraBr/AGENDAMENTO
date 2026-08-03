@@ -1559,7 +1559,9 @@ async function reconcileDatabaseSnapshot(rows = [], sourceFileName = '') {
     if (!existentesPorChave.has(chave)) existentesPorChave.set(chave, []);
     existentesPorChave.get(chave).push({
       id: Number(row.id),
-      agendamentoId: row.agendamentoId == null ? null : Number(row.agendamentoId)
+      agendamentoId: row.agendamentoId == null ? null : Number(row.agendamentoId),
+      numeroNf: row.numeroNf,
+      serie: row.serie
     });
   }
 
@@ -1567,9 +1569,11 @@ async function reconcileDatabaseSnapshot(rows = [], sourceFileName = '') {
 
   const idsParaDeletar = new Set();
   const linhasParaInserir = [];
+  const chavesNoArquivoNovo = new Set();
 
   for (const row of deduplicatedRows) {
     const chave = relatorioNaturalKey(row.normalizedRow['Fornecedor'], row.normalizedRow['Nr. nota'], row.normalizedRow['Série']);
+    chavesNoArquivoNovo.add(chave);
     const chaveCrossCheck = crossCheckNotaKey(row.normalizedRow['Nr. nota'], row.normalizedRow['Série']);
     const matches = existentesPorChave.get(chave) || [];
     const matchAgendado = matches.some((match) => match.agendamentoId != null);
@@ -1592,6 +1596,22 @@ async function reconcileDatabaseSnapshot(rows = [], sourceFileName = '') {
     for (const match of matches) idsParaDeletar.add(match.id);
     existentesPorChave.set(chave, []); // evita reprocessar a mesma linha antiga se houver duplicata dentro do próprio arquivo
     linhasParaInserir.push(row);
+  }
+
+  // Notas que ficaram pendentes (sem agendamento) numa importação anterior e sumiram
+  // da planilha mais nova: o ERP já não lista mais essa entrada como pendente (foi
+  // baixada por lá), então não faz sentido continuar mostrando como pendente aqui.
+  // Só apaga quando não há NENHUM vínculo com agendamento (nem direto, nem via
+  // cross-check) — se houver vínculo, a linha é preservada mesmo sumindo da planilha.
+  for (const [chave, matches] of existentesPorChave) {
+    if (chavesNoArquivoNovo.has(chave)) continue;
+    const matchAgendado = matches.some((match) => match.agendamentoId != null);
+    if (matchAgendado) continue;
+    const [primeiro] = matches;
+    if (!primeiro) continue;
+    const chaveCrossCheck = crossCheckNotaKey(primeiro.numeroNf, primeiro.serie);
+    if (chavesComAgendamentoAtivo.has(chaveCrossCheck)) continue;
+    for (const match of matches) idsParaDeletar.add(match.id);
   }
 
   const idsParaDeletarArray = [...idsParaDeletar];

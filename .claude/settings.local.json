@@ -10,7 +10,10 @@
       "Bash(git merge *)",
       "Bash(node --check backend/src/utils/relatorio-entradas.js)",
       "Bash(git rev-list *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(env)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist)"
     ]
   }
 }
