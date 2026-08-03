@@ -3791,7 +3791,7 @@
     let totalProximoVencimento = 0;
     let diasMinimo = null;
     for (const grupo of groups) {
-      totalNotas += Number(grupo?.quantidadeNotasAgChegada ?? grupo?.quantidadeNotas ?? 0);
+      totalNotas += Number(grupo?.quantidadeNotas ?? grupo?.quantidadeNotasAgChegada ?? 0);
       totalProximoVencimento += Number(grupo?.totalNotasVencimentoProximo || 0);
       const notas = Array.isArray(grupo?.notas) ? grupo.notas : Array.isArray(grupo?.notasFiscais) ? grupo.notasFiscais : [];
       for (const nota of notas) {
@@ -3861,7 +3861,7 @@
 
     const rankingPendentesHtml = buildRankingTable(
       'Fornecedores com mais notas pendentes',
-      topFornecedores((grupo) => grupo.quantidadeNotasAgChegada ?? grupo.quantidadeNotas),
+      topFornecedores((grupo) => grupo.quantidadeNotas ?? grupo.quantidadeNotasAgChegada),
       'Notas'
     );
     const rankingVencimentoHtml = buildRankingTable(
