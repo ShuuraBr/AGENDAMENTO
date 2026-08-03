@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../../services/api';
+import { api } from '../services/api';
 
 const STATUS_COLORS = {
   PENDENTE_APROVACAO: { bg: '#fef3c7', border: '#f59e0b', text: '#92400e', label: 'Pendente' },
@@ -90,7 +90,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div style={{ padding: 24, display: 'grid', gap: 20, background: '#f8fafc', minHeight: '100vh' }}>
+    <div style={{ padding: 'clamp(12px, 4vw, 24px)', display: 'grid', gap: 20, background: '#f8fafc', minHeight: '100vh' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <div>
@@ -143,7 +143,7 @@ export default function DashboardPage() {
       )}
 
       {/* Agendamentos Table */}
-      <div style={{ background: '#fff', borderRadius: 16, padding: 20, boxShadow: '0 8px 20px rgba(15,23,42,0.06)', border: '1px solid #e5e7eb' }}>
+      <div style={{ background: '#fff', borderRadius: 16, padding: 20, boxShadow: '0 8px 20px rgba(15,23,42,0.06)', border: '1px solid #e5e7eb', minWidth: 0 }}>
         <div style={{ marginBottom: 14 }}>
           <h2 style={{ margin: '0 0 12px', fontSize: 18 }}>
             Agendamentos

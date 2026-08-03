@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api } from '../../services/api';
+import { api } from '../services/api';
 
 const initialForm = {
   transportadora: '',
@@ -184,7 +184,7 @@ function EditAgendamentoModal({ agendamento, docas, janelas, onClose, onSaved })
             ⚠️ Agendamento aprovado. Salvar cancelará o atual.
           </div>
         )}
-        <div style={styles.grid2}>
+        <div className="responsive-form-grid" style={styles.grid2}>
           {fields.map(([label, key]) => (
             <div key={key}>
               <label style={styles.label}>{label}</label>
@@ -500,7 +500,7 @@ export default function AgendamentosPage() {
         <div style={{ ...styles.feedback, ...(error ? styles.feedbackError : styles.feedbackSuccess) }}>{error || message}</div>
       )}
 
-      <div style={styles.layout}>
+      <div className="responsive-two-col" style={styles.layout}>
         <form onSubmit={handleSave} style={styles.card}>
           <h2 style={styles.cardTitle}>Novo agendamento</h2>
 
@@ -524,7 +524,7 @@ export default function AgendamentosPage() {
             transportadoras={transportadoras}
           />
 
-          <div style={styles.grid2}>
+          <div className="responsive-form-grid" style={styles.grid2}>
             <div>
               <label style={styles.label}>
                 Transportadora
@@ -697,7 +697,7 @@ export default function AgendamentosPage() {
                   <strong>{item.protocolo || 'Sem protocolo'}</strong>
                   <span>{item.horaAgendada || '-'}</span>
                 </div>
-                <div style={styles.queueMeta}>
+                <div className="responsive-form-grid" style={styles.queueMeta}>
                   <span>Fornecedor: {item.fornecedor || '-'}</span>
                   <span>Transportadora: {item.transportadora || '-'}</span>
                   <span>Notas: {item.quantidadeNotas || 0}</span>
@@ -825,7 +825,7 @@ export default function AgendamentosPage() {
 }
 
 const styles = {
-  page: { padding: 24, display: 'grid', gap: 16, background: '#f8fafc', minHeight: '100vh' },
+  page: { padding: 'clamp(12px, 4vw, 24px)', display: 'grid', gap: 16, background: '#f8fafc', minHeight: '100vh' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   title: { margin: 0, fontSize: 28 },
   subtitle: { margin: '6px 0 0', color: '#475569' },
@@ -833,7 +833,7 @@ const styles = {
   feedbackSuccess: { background: '#ecfdf5', borderColor: '#10b981', color: '#065f46' },
   feedbackError: { background: '#fef2f2', borderColor: '#ef4444', color: '#991b1b' },
   layout: { display: 'grid', gridTemplateColumns: '1.25fr 1fr', gap: 16 },
-  card: { background: '#fff', borderRadius: 16, padding: 20, boxShadow: '0 8px 20px rgba(15,23,42,0.06)', border: '1px solid #e5e7eb' },
+  card: { background: '#fff', borderRadius: 16, padding: 20, boxShadow: '0 8px 20px rgba(15,23,42,0.06)', border: '1px solid #e5e7eb', minWidth: 0 },
   cardTitle: { marginTop: 0, marginBottom: 16, fontSize: 20 },
   label: { display: 'block', marginBottom: 6, fontWeight: 600, color: '#0f172a' },
   input: { width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1', boxSizing: 'border-box' },

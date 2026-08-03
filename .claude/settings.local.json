@@ -18,7 +18,17 @@
       "Bash(cp \"H:/00 - HTML/AGENDAMENTO/backend/public/assets/styles38.css\" \"/c/Users/BRENO~1.VIL/AppData/Local/Temp/claude/H--00---HTML-AGENDAMENTO/abd2b7ee-c9cf-4bf6-9280-29b8c52b3e7a/scratchpad/styles38.css\" 2>&1 || echo FAILED)",
       "Bash(node --check \"H:/00 - HTML/AGENDAMENTO/backend/src/utils/direct-cadastros.js\")",
       "Bash(node --check \"H:/00 - HTML/AGENDAMENTO/backend/src/routes/cadastros.js\")",
-      "Bash(cp \"H:/00 - HTML/AGENDAMENTO/backend/public/assets/styles38.css\" \"/c/Users/BRENO~1.VIL/AppData/Local/Temp/claude/H--00---HTML-AGENDAMENTO/abd2b7ee-c9cf-4bf6-9280-29b8c52b3e7a/scratchpad/styles38.css\")"
+      "Bash(cp \"H:/00 - HTML/AGENDAMENTO/backend/public/assets/styles38.css\" \"/c/Users/BRENO~1.VIL/AppData/Local/Temp/claude/H--00---HTML-AGENDAMENTO/abd2b7ee-c9cf-4bf6-9280-29b8c52b3e7a/scratchpad/styles38.css\")",
+      "Bash(grep -o \"@media[^{]\\\\{1,40\\\\}\" backend/dist-admin/assets/admin-BSDyArap.js)",
+      "Bash(xargs grep -l \"style={{\")",
+      "Bash(grep -n \"gridTemplateColumns\\\\|width: [0-9]\\\\|minWidth: [0-9]\\\\{3,\\\\}\" backend/public/src/pages/PublicFornecedorPage.jsx backend/public/src/pages/PublicMotoristaPage.jsx)",
+      "Bash(npm run *)",
+      "PowerShell(subst)",
+      "PowerShell(net use)",
+      "PowerShell(Set-Location \"Z:\\\\00 - HTML\\\\AGENDAMENTO\\\\backend\\\\public\"; Start-Job -Name viteadmin -ScriptBlock { Set-Location \"Z:\\\\00 - HTML\\\\AGENDAMENTO\\\\backend\\\\public\"; npx vite preview --port 4173 --strictPort } | Out-Null; Start-Sleep -Seconds 4; Get-Job -Name viteadmin | Receive-Job -Keep)",
+      "PowerShell(Get-Job -Name viteadmin)",
+      "PowerShell(Receive-Job -Keep -ErrorAction SilentlyContinue)",
+      "Bash(git check-ignore *)"
     ]
   }
 }

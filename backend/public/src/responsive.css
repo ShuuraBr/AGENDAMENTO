@@ -1,0 +1,13 @@
+/* Colapsa layouts de duas colunas (formulário + lista/painel) para 1 coluna em telas estreitas */
+@media (max-width: 900px) {
+  .responsive-two-col {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Colapsa grids de campos de formulário (2 colunas) para 1 coluna em telas muito estreitas */
+@media (max-width: 560px) {
+  .responsive-form-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

@@ -372,8 +372,8 @@ export default function CadastrosPage() {
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(320px, 420px) 1fr", gap: 20, alignItems: "start" }}>
-        <section style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 18, background: "#fff" }}>
+      <div className="responsive-two-col" style={{ display: "grid", gridTemplateColumns: "minmax(320px, 420px) 1fr", gap: 20, alignItems: "start" }}>
+        <section style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 18, background: "#fff", minWidth: 0 }}>
           <h3 style={{ marginTop: 0 }}>{editingId ? `Editar ${config.label.slice(0, -1)}` : `Novo ${config.label.slice(0, -1)}`}</h3>
           <p style={{ color: "#555", marginTop: 0 }}>{config.description}</p>
 
@@ -417,7 +417,7 @@ export default function CadastrosPage() {
           {error && <p style={{ color: "#b91c1c", marginBottom: 0 }}>{error}</p>}
         </section>
 
-        <section style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 18, background: "#fff" }}>
+        <section style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 18, background: "#fff", minWidth: 0 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
             <div>
               <h3 style={{ margin: 0 }}>Registros cadastrados</h3>

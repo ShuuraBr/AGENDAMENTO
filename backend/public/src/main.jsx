@@ -7,6 +7,7 @@ import CadastrosPage from "./pages/CadastrosPage";
 import AgendamentosPage from "./pages/AgendamentosPage";
 import PublicFornecedorPage from "./pages/PublicFornecedorPage";
 import PublicMotoristaPage from "./pages/PublicMotoristaPage";
+import "./responsive.css";
 
 // ── JWT helpers ──────────────────────────────────────────────────────────────
 function parseJwt(token) {
@@ -148,9 +149,10 @@ function Layout({ children }) {
           zIndex: 100,
           background: "#fff",
           borderBottom: "1px solid #e2e8f0",
-          padding: "10px 24px",
+          padding: "10px clamp(12px, 4vw, 24px)",
           display: "flex",
           alignItems: "center",
+          flexWrap: "wrap",
           gap: 16,
           boxShadow: "0 1px 8px rgba(15,23,42,0.06)",
         }}
@@ -191,7 +193,7 @@ function Layout({ children }) {
         </div>
       </header>
 
-      <main style={{ padding: 24 }}>{children}</main>
+      <main style={{ padding: "clamp(12px, 4vw, 24px)" }}>{children}</main>
     </div>
   );
 }
