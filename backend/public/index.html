@@ -26,17 +26,21 @@
     </nav>
 
     <nav id="privateNav" class="nav-menu hidden">
-      <button type="button" class="nav-btn" data-view="dashboard">Dashboard</button>
-      <button type="button" class="nav-btn" data-view="docas">Painel de Docas</button>
-      <button type="button" class="nav-btn" data-view="cadastros">Cadastros</button>
-      <button type="button" class="nav-btn" data-view="agendamentos">Agendamentos</button>
-      <button type="button" class="nav-btn" data-view="confirmacoes">Confirmações</button>
-      <button type="button" class="nav-btn" data-view="consulta-nf">Consulta por NF</button>
-      <button type="button" class="nav-btn" data-view="checkin">Check-in / Check-out QR</button>
-      <button type="button" id="btnNotificacoes" class="nav-btn notif-bell" title="Notificações" aria-label="Notificações">
-        &#128276;<span id="notifBadge" class="notif-badge hidden">0</span>
-      </button>
-      <button type="button" id="btnLogout">Sair</button>
+      <div class="nav-links">
+        <button type="button" class="nav-btn" data-view="dashboard"><span class="nav-btn-icon">&#128202;</span>Dashboard</button>
+        <button type="button" class="nav-btn" data-view="docas"><span class="nav-btn-icon">&#128682;</span>Painel de Docas</button>
+        <button type="button" class="nav-btn" data-view="cadastros"><span class="nav-btn-icon">&#128193;</span>Cadastros</button>
+        <button type="button" class="nav-btn" data-view="agendamentos"><span class="nav-btn-icon">&#128197;</span>Agendamentos</button>
+        <button type="button" class="nav-btn" data-view="confirmacoes"><span class="nav-btn-icon">&#9989;</span>Confirmações</button>
+        <button type="button" class="nav-btn" data-view="consulta-nf"><span class="nav-btn-icon">&#128269;</span>Consulta por NF</button>
+        <button type="button" class="nav-btn" data-view="checkin"><span class="nav-btn-icon">&#128247;</span>Check-in / Check-out QR</button>
+      </div>
+      <div class="nav-utils">
+        <button type="button" id="btnNotificacoes" class="notif-bell" title="Notificações" aria-label="Notificações">
+          &#128276;<span id="notifBadge" class="notif-badge hidden">0</span>
+        </button>
+        <button type="button" id="btnLogout" class="nav-btn-logout" title="Sair">&#8618; Sair</button>
+      </div>
     </nav>
     <div id="notifDropdown" class="notif-dropdown hidden"></div>
   </header>

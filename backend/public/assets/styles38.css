@@ -2,7 +2,7 @@
 .topbar{background:#0f172a;color:#fff;padding:18px 24px;display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:16px;justify-content:space-between;width:100%}
 .topbar h1{margin:0;font-size:28px}
-.nav-menu{display:flex;gap:8px;flex-wrap:wrap}
+.nav-menu{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .logo{height:92px;max-width:300px;object-fit:contain}
 button{border:0;background:#2563eb;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
 button:hover{opacity:.94}
@@ -42,7 +42,19 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 #login.view.active{min-height:calc(100vh - 180px);display:flex;align-items:center;justify-content:center}.login-card{width:100%;margin:0 auto}.btn-secondary{background:#475569}.nf-row{padding:14px;border:1px solid #dbe2ea;border-radius:12px;background:#f8fafc}.nf-full{grid-column:1/-1}
 
 .info-box{padding:12px 14px;border:1px dashed #94a3b8;border-radius:12px;background:#f8fafc;color:#334155;font-size:14px}
-.nav-menu{position:relative;z-index:20}.nav-btn,.cad-tab{position:relative;z-index:21;pointer-events:auto}.nav-btn.active,.cad-tab.active{background:#1d4ed8;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)}
+.nav-menu{position:relative;z-index:20}.nav-btn,.cad-tab{position:relative;z-index:21;pointer-events:auto}.cad-tab.active{background:#1d4ed8;box-shadow:inset 0 0 0 2px rgba(255,255,255,.35)}
+
+/* Menu principal (topbar) — links fantasma + estado ativo sólido para facilitar leitura */
+#privateNav.nav-menu{justify-content:space-between;width:100%;gap:16px}
+.nav-links{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.nav-utils{display:flex;gap:8px;align-items:center;margin-left:auto;padding-left:12px;border-left:1px solid rgba(255,255,255,.15)}
+.nav-links .nav-btn{background:transparent;color:#cbd5e1;font-size:13px;font-weight:600;padding:9px 14px;border-radius:10px;border:1px solid transparent;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;transition:background .15s,color .15s}
+.nav-links .nav-btn:hover{background:rgba(255,255,255,.08);color:#fff}
+.nav-links .nav-btn.active{background:#2563eb;color:#fff;box-shadow:none}
+.nav-btn-icon{font-size:14px;line-height:1}
+.nav-btn-logout{background:transparent;color:#fca5a5;font-size:13px;font-weight:600;padding:9px 14px;border-radius:10px;border:1px solid rgba(252,165,165,.3)}
+.nav-btn-logout:hover{background:rgba(252,165,165,.12);opacity:1}
+@media (max-width:1100px){#privateNav.nav-menu{justify-content:flex-start}.nav-utils{margin-left:0;padding-left:0;border-left:none}}
 .cadastro-layout{display:grid;grid-template-columns:1.1fr 1fr;gap:16px}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.form-group{display:flex;flex-direction:column;gap:6px}.form-group-full{grid-column:1/-1}.form-group label{font-size:13px;font-weight:700;color:#334155}.btn-edit{background:#0f766e}.table button{padding:8px 10px;border-radius:8px}
 @media (max-width:900px){.cadastro-layout,.form-grid{grid-template-columns:1fr}}
 
