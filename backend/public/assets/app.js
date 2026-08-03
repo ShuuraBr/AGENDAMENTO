@@ -3312,6 +3312,7 @@
       return `
         <div class="${wrapperClass}">
           <label>${field.label}</label>
+          <input type="text" id="cad_${field.name}_search" class="fornecedores-checklist-search" placeholder="Buscar fornecedor..." autocomplete="off" />
           <div id="cad_${field.name}" class="fornecedores-checklist" data-selected="${escapeHtml(JSON.stringify([...selected]))}">
             <p class="hint">Carregando fornecedores...</p>
           </div>
@@ -3356,12 +3357,23 @@
       const nome = String(f.nome || '').trim();
       const checked = selected.has(nome.toLowerCase()) ? 'checked' : '';
       return `
-        <label class="fornecedores-checklist-item">
+        <label class="fornecedores-checklist-item" data-search-key="${escapeHtml(normalizeCompanyKey(nome))}">
           <input type="checkbox" value="${escapeHtml(nome)}" ${checked} />
           <span>${escapeHtml(nome)}</span>
         </label>
       `;
     }).join('');
+
+    const searchInput = byId(`cad_${field.name}_search`);
+    if (searchInput && !searchInput.dataset.bound) {
+      searchInput.dataset.bound = '1';
+      searchInput.addEventListener('input', () => {
+        const term = normalizeCompanyKey(searchInput.value || '');
+        byId(`cad_${field.name}`)?.querySelectorAll('.fornecedores-checklist-item').forEach((item) => {
+          item.classList.toggle('hidden', !!term && !item.dataset.searchKey.includes(term));
+        });
+      });
+    }
   }
 
   function renderCadastroForm(record = null) {
