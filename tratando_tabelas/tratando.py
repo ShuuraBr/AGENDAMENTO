@@ -149,7 +149,7 @@ df_final = pd.concat(dfs, ignore_index=True)
 df_final = df_final.dropna(how="all")
 
 # Limpa espaços e quebras de linha
-df_final = df_final.applymap(
+df_final = df_final.map(
     lambda x: x.strip().replace("\n", "").replace("\r", "") if isinstance(x, str) else x
 )
 

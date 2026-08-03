@@ -3330,7 +3330,9 @@
   async function getFornecedoresChecklistOptions() {
     if (state.fornecedoresChecklistCache) return state.fornecedoresChecklistCache;
     try {
-      const items = await api('/api/cadastros/fornecedores');
+      // Fornecedores reais vêm do relatório terceirizado importado (RelatorioTerceirizado),
+      // não do cadastro manual "Fornecedor" (que é um cadastro administrativo à parte).
+      const items = await api('/api/cadastros/fornecedores-relatorio');
       state.fornecedoresChecklistCache = Array.isArray(items) ? items : [];
     } catch {
       state.fornecedoresChecklistCache = [];
@@ -3456,7 +3458,6 @@
       method = "PUT";
     }
     await api(endpoint, { method, body: JSON.stringify(payload) });
-    if (state.cadastroTipo === 'fornecedores') state.fornecedoresChecklistCache = null;
     byId("cadastroMsg").textContent = state.cadastroEditId ? "Cadastro atualizado com sucesso." : "Cadastro salvo com sucesso.";
     renderCadastroForm();
     await loadCadastro();

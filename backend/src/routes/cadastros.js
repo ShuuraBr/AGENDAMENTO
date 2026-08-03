@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { auditLog } from "../utils/audit.js";
 import { readCadastroFile, upsertCadastroFile, patchCadastroFileById } from "../utils/file-store.js";
 import { createCadastroDirect, directCadastrosEnabled, listCadastroDirect, updateCadastroDirect } from "../utils/direct-cadastros.js";
+import { listDistinctFornecedoresFromRelatorio } from "../utils/relatorio-entradas.js";
 import { logOnce } from "../utils/log-once.js";
 
 const router = Router();
@@ -38,6 +39,19 @@ async function listItems(tipo) {
   }
   return readCadastroFile(tipo);
 }
+
+// GET /api/cadastros/fornecedores-relatorio
+// Lista os fornecedores reais (nomes distintos já importados no RelatorioTerceirizado),
+// usados para o vínculo Transportadora -> Fornecedores. Precisa vir antes de "/:tipo"
+// para não ser interpretado como um tipo de cadastro.
+router.get("/fornecedores-relatorio", requirePermission("cadastros.view"), async (req, res) => {
+  try {
+    const fornecedores = await listDistinctFornecedoresFromRelatorio();
+    res.json(fornecedores.map((nome) => ({ nome })));
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
 
 router.get("/:tipo", requirePermission("cadastros.view"), async (req, res) => {
   try {

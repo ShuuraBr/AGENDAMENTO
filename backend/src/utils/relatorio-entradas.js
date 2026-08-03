@@ -2091,6 +2091,30 @@ export async function listFornecedoresPendentesImportados() {
   return rawCounts.size ? applyRawAgChegadaCounts(groups, rawCounts) : groups;
 }
  
+// Lista os nomes de fornecedor distintos já vistos em qualquer importação do
+// relatório terceirizado (não só os pendentes) — usada para alimentar o
+// vínculo Transportadora -> Fornecedores no cadastro interno, já que
+// RelatorioTerceirizado é a fonte real dos nomes de fornecedor usados no
+// sistema (a tabela Fornecedor é um cadastro manual à parte).
+export async function listDistinctFornecedoresFromRelatorio() {
+  try {
+    if (!(await ensureRelatorioTable())) return [];
+    const rows = await prisma.$queryRawUnsafe(
+      `SELECT DISTINCT TRIM(${quoteIdentifier('Fornecedor')}) AS fornecedor
+         FROM ${quoteIdentifier(TABLE_NAME)}
+        WHERE ${quoteIdentifier('Fornecedor')} IS NOT NULL AND TRIM(${quoteIdentifier('Fornecedor')}) <> ''
+        ORDER BY fornecedor ASC`
+    );
+    return (Array.isArray(rows) ? rows : [])
+      .map((row) => normalizeCellValue(row?.fornecedor || ''))
+      .filter(Boolean);
+  } catch (error) {
+    disableRelatorioDb(error, 'listDistinctFornecedoresFromRelatorio');
+    console.error('Falha ao listar fornecedores distintos do relatório:', error?.message || error);
+    return [];
+  }
+}
+
 // Retorna { vinculadas, naoEncontradas } para que o chamador saiba se algum
 // UPDATE não encontrou nenhuma linha correspondente (ex.: texto do fornecedor
 // ou número da NF divergente do que está no RelatorioTerceirizado) — esse tipo
