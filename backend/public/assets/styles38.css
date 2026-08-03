@@ -46,6 +46,25 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 .cadastro-layout{display:grid;grid-template-columns:1.1fr 1fr;gap:16px}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.form-group{display:flex;flex-direction:column;gap:6px}.form-group-full{grid-column:1/-1}.form-group label{font-size:13px;font-weight:700;color:#334155}.btn-edit{background:#0f766e}.table button{padding:8px 10px;border-radius:8px}
 @media (max-width:900px){.cadastro-layout,.form-grid{grid-template-columns:1fr}}
 
+/* Tela de Cadastros internos — reorganização visual */
+#cadastroTabs.tabs{gap:6px;padding:4px;background:#f1f5f9;border-radius:12px}
+#cadastroTabs .cad-tab{background:transparent;color:#475569;font-size:13px;font-weight:600;padding:8px 14px;border-radius:9px}
+#cadastroTabs .cad-tab:hover{background:#e2e8f0}
+#cadastroTabs .cad-tab.active{background:#2563eb;color:#fff;box-shadow:none}
+
+.cadastro-layout .card.inner{display:flex;flex-direction:column}
+.cadastro-layout .card.inner h3{margin:0}
+
+#cadastroList{max-height:520px;overflow:auto;border-radius:10px}
+#cadastroList .table thead th{position:sticky;top:0;background:#f1f5f9;z-index:2;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:#475569}
+#cadastroList .table tbody tr:nth-child(even){background:#f8fafc}
+#cadastroList .table tbody tr:hover{background:#eef2ff}
+
+.fornecedores-checklist{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px;max-height:220px;overflow:auto;padding:10px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc}
+.fornecedores-checklist-item{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:400;color:#1e293b;padding:4px 6px;border-radius:6px;cursor:pointer}
+.fornecedores-checklist-item:hover{background:#eef2ff}
+.fornecedores-checklist-item input{width:auto;padding:0}
+
 .portal-links{display:flex;gap:10px;flex-wrap:wrap}
 .result-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .result-card{background:#f8fafc;border:1px solid #dbe2ea;border-radius:14px;padding:16px}

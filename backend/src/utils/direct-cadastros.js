@@ -2,7 +2,7 @@ import { executeMysql, isDirectMysqlEnabled, queryMysql } from './mysql-direct.j
 
 const CADASTRO_CONFIG = {
   fornecedores: { table: 'Fornecedor', columns: ['nome', 'cnpj', 'email', 'telefone'] },
-  transportadoras: { table: 'Transportadora', columns: ['nome', 'cnpj', 'email', 'telefone'] },
+  transportadoras: { table: 'Transportadora', columns: ['nome', 'cnpj', 'email', 'telefone', 'fornecedoresVinculados'] },
   motoristas: { table: 'Motorista', columns: ['nome', 'cpf', 'telefone', 'transportadora'] },
   veiculos: { table: 'Veiculo', columns: ['placa', 'tipo', 'transportadora'] },
   docas: { table: 'Doca', columns: ['codigo', 'descricao'] },
@@ -22,9 +22,31 @@ function sanitizePayload(tipo, payload = {}) {
   const clean = {};
   for (const column of columns) {
     if (payload[column] === undefined) continue;
-    clean[column] = payload[column];
+    let value = payload[column];
+    // JSON columns (e.g. Transportadora.fornecedoresVinculados) must be stringified for mysql2.
+    if (column === 'fornecedoresVinculados' && Array.isArray(value)) value = JSON.stringify(value);
+    clean[column] = value;
   }
   return clean;
+}
+
+function parseVinculados(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string' && value) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  }
+  return [];
+}
+
+function normalizeRow(tipo, row) {
+  if (!row) return row;
+  if (tipo === 'transportadoras' && 'fornecedoresVinculados' in row) {
+    return { ...row, fornecedoresVinculados: parseVinculados(row.fornecedoresVinculados) };
+  }
+  return row;
 }
 
 export function directCadastrosEnabled() {
@@ -33,7 +55,8 @@ export function directCadastrosEnabled() {
 
 export async function listCadastroDirect(tipo) {
   const { table } = getConfig(tipo);
-  return queryMysql(`SELECT * FROM \`${table}\` ORDER BY \`id\` DESC`);
+  const rows = await queryMysql(`SELECT * FROM \`${table}\` ORDER BY \`id\` DESC`);
+  return rows.map((row) => normalizeRow(tipo, row));
 }
 
 export async function createCadastroDirect(tipo, payload = {}) {
@@ -46,7 +69,7 @@ export async function createCadastroDirect(tipo, payload = {}) {
   const sql = `INSERT INTO \`${table}\` (${columns.map((column) => `\`${column}\``).join(', ')}, \`createdAt\`, \`updatedAt\`) VALUES (${placeholders}, NOW(), NOW())`;
   const result = await executeMysql(sql, params);
   const rows = await queryMysql(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [result.insertId]);
-  return rows?.[0] || { id: result.insertId, ...clean };
+  return normalizeRow(tipo, rows?.[0] || { id: result.insertId, ...clean });
 }
 
 export async function updateCadastroDirect(tipo, id, payload = {}) {
@@ -60,7 +83,7 @@ export async function updateCadastroDirect(tipo, id, payload = {}) {
   const sql = `UPDATE \`${table}\` SET ${sets.join(', ')} WHERE \`id\` = ?`;
   await executeMysql(sql, params);
   const rows = await queryMysql(`SELECT * FROM \`${table}\` WHERE \`id\` = ? LIMIT 1`, [Number(id)]);
-  return rows?.[0] || null;
+  return normalizeRow(tipo, rows?.[0] || null);
 }
 
 export async function findUserByEmailDirect(email) {

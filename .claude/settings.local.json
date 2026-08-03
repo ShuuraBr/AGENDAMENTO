@@ -15,7 +15,9 @@
       "Bash(netstat -ano)",
       "Bash(tasklist)",
       "Bash(node --check \"H:/00 - HTML/AGENDAMENTO/backend/public/assets/app.js\")",
-      "Bash(cp \"H:/00 - HTML/AGENDAMENTO/backend/public/assets/styles38.css\" \"/c/Users/BRENO~1.VIL/AppData/Local/Temp/claude/H--00---HTML-AGENDAMENTO/abd2b7ee-c9cf-4bf6-9280-29b8c52b3e7a/scratchpad/styles38.css\" 2>&1 || echo FAILED)"
+      "Bash(cp \"H:/00 - HTML/AGENDAMENTO/backend/public/assets/styles38.css\" \"/c/Users/BRENO~1.VIL/AppData/Local/Temp/claude/H--00---HTML-AGENDAMENTO/abd2b7ee-c9cf-4bf6-9280-29b8c52b3e7a/scratchpad/styles38.css\" 2>&1 || echo FAILED)",
+      "Bash(node --check \"H:/00 - HTML/AGENDAMENTO/backend/src/utils/direct-cadastros.js\")",
+      "Bash(node --check \"H:/00 - HTML/AGENDAMENTO/backend/src/routes/cadastros.js\")"
     ]
   }
 }

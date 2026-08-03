@@ -44,14 +44,16 @@ router.get("/:tipo", requirePermission("cadastros.view"), async (req, res) => {
     const tipo = ensureTipo(req.params.tipo);
     ensureUserCadastroPermission(req, tipo);
     let items = await listItems(tipo);
-    // fornecedoresVinculados lives only in the JSON file (no DB column).
-    // When MySQL is active, merge it back so the edit form always shows the correct value.
+    // fornecedoresVinculados: prefer the MySQL column (source of truth when the DB is reachable).
+    // Fall back to the local JSON file for older records saved before the column existed.
     if (tipo === 'transportadoras') {
       const fileItems = readCadastroFile(tipo);
       const fileMap = new Map(fileItems.map((f) => [String(f.id), f]));
       items = items.map((item) => ({
         ...item,
-        fornecedoresVinculados: fileMap.get(String(item.id))?.fornecedoresVinculados || []
+        fornecedoresVinculados: Array.isArray(item.fornecedoresVinculados) && item.fornecedoresVinculados.length
+          ? item.fornecedoresVinculados
+          : (fileMap.get(String(item.id))?.fornecedoresVinculados || [])
       }));
     }
     res.json(items);

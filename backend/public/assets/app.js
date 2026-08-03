@@ -25,7 +25,8 @@
     missingRelatorioAlertKeys: new Set(),
     notificacoes: [],
     notifPollInterval: null,
-    confirmacoesSelecionados: new Set()
+    confirmacoesSelecionados: new Set(),
+    fornecedoresChecklistCache: null
   };
 
   const PROFILE_PERMISSIONS = {
@@ -99,7 +100,7 @@
         { name: "cnpj", label: "CNPJ", type: "text" },
         { name: "email", label: "E-mail", type: "email" },
         { name: "telefone", label: "Telefone", type: "text" },
-        { name: "fornecedoresVinculados", label: "Fornecedores vinculados (separados por vírgula)", type: "text", full: true, isArray: true }
+        { name: "fornecedoresVinculados", label: "Fornecedores vinculados", type: "fornecedores-checklist", full: true, isArray: true }
       ]
     },
     motoristas: {
@@ -3306,12 +3307,59 @@
       `;
     }
 
+    if (field.type === "fornecedores-checklist") {
+      const selected = new Set((Array.isArray(value) ? value : []).map((v) => String(v).trim().toLowerCase()));
+      return `
+        <div class="${wrapperClass}">
+          <label>${field.label}</label>
+          <div id="cad_${field.name}" class="fornecedores-checklist" data-selected="${escapeHtml(JSON.stringify([...selected]))}">
+            <p class="hint">Carregando fornecedores...</p>
+          </div>
+        </div>
+      `;
+    }
+
     return `
       <div class="${wrapperClass}">
         <label for="cad_${field.name}">${field.label}</label>
         <input id="cad_${field.name}" name="${field.name}" type="${field.type || "text"}" value="${escapeHtml(safeValue)}" ${requiredAttr} />
       </div>
     `;
+  }
+
+  async function getFornecedoresChecklistOptions() {
+    if (state.fornecedoresChecklistCache) return state.fornecedoresChecklistCache;
+    try {
+      const items = await api('/api/cadastros/fornecedores');
+      state.fornecedoresChecklistCache = Array.isArray(items) ? items : [];
+    } catch {
+      state.fornecedoresChecklistCache = [];
+    }
+    return state.fornecedoresChecklistCache;
+  }
+
+  async function populateFornecedoresChecklist(config) {
+    const field = config.fields.find((f) => f.type === 'fornecedores-checklist');
+    if (!field) return;
+    const container = byId(`cad_${field.name}`);
+    if (!container) return;
+    const selected = new Set(JSON.parse(container.dataset.selected || '[]'));
+    const fornecedores = await getFornecedoresChecklistOptions();
+    if (!byId(`cad_${field.name}`)) return; // form re-rendered meanwhile
+    if (!fornecedores.length) {
+      container.innerHTML = '<p class="hint">Nenhum fornecedor cadastrado ainda.</p>';
+      return;
+    }
+    container.innerHTML = fornecedores.map((f) => {
+      const nome = String(f.nome || '').trim();
+      const checked = selected.has(nome.toLowerCase()) ? 'checked' : '';
+      return `
+        <label class="fornecedores-checklist-item">
+          <input type="checkbox" value="${escapeHtml(nome)}" ${checked} />
+          <span>${escapeHtml(nome)}</span>
+        </label>
+      `;
+    }).join('');
   }
 
   function renderCadastroForm(record = null) {
@@ -3323,6 +3371,7 @@
     byId("cadastroMsg").textContent = state.cadastroEditId ? `Modo edição: ID ${state.cadastroEditId}` : "Modo novo cadastro";
     applyInputMasks(byId("cadastroForm"));
     applyRoleAccess();
+    populateFornecedoresChecklist(config);
   }
 
   function getCadastroPayload() {
@@ -3330,6 +3379,12 @@
     const payload = {};
     config.fields.forEach((field) => {
       if (field.type === 'info') return;
+      if (field.type === 'fornecedores-checklist') {
+        const container = byId(`cad_${field.name}`);
+        const checked = container ? [...container.querySelectorAll('input[type="checkbox"]:checked')].map((chk) => chk.value) : [];
+        payload[field.name] = checked;
+        return;
+      }
       // Read directly from DOM element so disabled fields are still included.
       // FormData skips disabled inputs, which silently wipes isArray fields like fornecedoresVinculados.
       const el = byId(`cad_${field.name}`);
@@ -3345,7 +3400,11 @@
       byId("cadastroList").innerHTML = "<p>Nenhum registro encontrado.</p>";
       return;
     }
-    const cols = Array.from(new Set(state.cadastroCache.flatMap((item) => Object.keys(item)))).filter((col) => typeof state.cadastroCache[0][col] !== "object");
+    const cols = Array.from(new Set(state.cadastroCache.flatMap((item) => Object.keys(item)))).filter((col) => {
+      const sample = state.cadastroCache.find((item) => item[col] !== undefined);
+      const value = sample ? sample[col] : undefined;
+      return typeof value !== "object" || Array.isArray(value);
+    });
     byId("cadastroList").innerHTML = `
       <table class="table">
         <thead>
@@ -3397,6 +3456,7 @@
       method = "PUT";
     }
     await api(endpoint, { method, body: JSON.stringify(payload) });
+    if (state.cadastroTipo === 'fornecedores') state.fornecedoresChecklistCache = null;
     byId("cadastroMsg").textContent = state.cadastroEditId ? "Cadastro atualizado com sucesso." : "Cadastro salvo com sucesso.";
     renderCadastroForm();
     await loadCadastro();
