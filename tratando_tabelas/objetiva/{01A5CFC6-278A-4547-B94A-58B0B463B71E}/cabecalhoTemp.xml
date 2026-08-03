@@ -1,0 +1,290 @@
+﻿<table:table-column table:style-name="co1" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co1" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co2" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co2" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co2" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co3" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co4" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co5" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co6" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co7" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co7" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co8" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co9" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co10" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co9" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co11" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co5" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co10" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co5" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co8" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co12" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co5" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co13" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co14" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co15" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co10" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co1" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co6" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co5" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co5" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co10" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co11" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co13" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co8" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co5" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co10" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co16" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co17" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co5" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co17" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co16" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co4" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co6" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co13" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co5" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co7" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co16" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co17" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co11" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co5" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co6" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co6" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co18" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co19" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co10" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co8" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co11" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co11" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co11" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co5" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co9" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co9" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co20" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co8" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co20" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co7" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co21" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co22" table:default-cell-style-name="Default"/>
+<table:table-column table:style-name="co22" table:default-cell-style-name="Default"/>
+<table:table-row table:style-name="ro1">
+<table:table-cell table:style-name="ce2" table:number-columns-spanned="65"  table:number-rows-spanned="1" office:value-type="string" calcext:value-type="string"> 
+  <text:p>Santri ADM 1.1.5.8 R1</text:p>
+</table:table-cell>
+	<table:covered-table-cell table:number-columns-repeated="64"/>
+<table:table-cell table:style-name="ce3" table:number-columns-spanned="4"  table:number-rows-spanned="1" office:value-type="string" calcext:value-type="string"> 
+  <text:p>Emitido em: 03/08/2026 15:21:48</text:p>
+</table:table-cell>
+	<table:covered-table-cell table:number-columns-repeated="3"/>
+</table:table-row>
+<table:table-row table:style-name="ro2">
+<table:table-cell table:style-name="ce1" table:number-columns-spanned="69"  table:number-rows-spanned="1" office:value-type="string" calcext:value-type="string"> 
+  <text:p>Relação de entradas - Sintético</text:p>
+</table:table-cell>
+	<table:covered-table-cell table:number-columns-repeated="68"/>
+</table:table-row>
+<table:table-row table:style-name="ro1">
+  <table:table-cell table:style-name="ce0" table:number-columns-spanned="0" table:number-rows-spanned="1"/>
+	<table:table-cell table:number-columns-repeated="0"/>
+</table:table-row>
+<table:table-row table:style-name="ro3">
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Entrada</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81" table:number-columns-spanned="4"  table:number-rows-spanned="1" office:value-type="string" calcext:value-type="string"> 
+  <text:p>Fornecedor</text:p>
+</table:table-cell>
+	<table:covered-table-cell table:number-columns-repeated="3"/>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Nr. nota</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce82"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Série</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Data emissão</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Data de Entrada</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Data 1º vencimento</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce82"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Tipo custo entrada</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Valor da nota</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Valor desconto</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Qtd. itens</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Valor produtos</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Total frete</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Volume total</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Peso total</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Outras desp.</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Total entradas</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce82"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Status</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Base IBS/CBS</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Vlr IBS estadual</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Vlr IBS municipal</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Vlr CBS</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Prazo médio</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Empresa</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Data do cadastro</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Total de IPI</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Base de ICMS</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Total ICMS</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Desp. extras</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Desp. extr. mad.</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Frete conhec.</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Desp. financ.</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Base de ST</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Total ST</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>DARE guia</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>DARE antecip.</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>DARE 1566</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Serviços</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>ISSQN</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Valor apropriar</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Valor custo oper.</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>ISSQN retido</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Valor ICMS diferido</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Base FCP</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Valor FCP</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Base FCP ST</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Valor FCP ST</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Valor FEEF - MT</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>ICMS desonerado</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>ICMS descontado PIS/COFINS</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>CFOP</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>PIS retido</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>COFINS retida</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>INSS retido</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>IRRF retido</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>CSLL retido</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>ISSQN retido</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Número do CT-e</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Transportadora</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Data de emissão do CT-e</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce79"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Valor do CT-e</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Data de entrada do CT-e</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Identificação NF-e</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Identificação CT-e/NF-e principal</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce81"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Identificação CT-e/NF-e auxiliar</text:p>
+</table:table-cell>
+<table:table-cell table:style-name="ce82"  office:value-type="string" calcext:value-type="string"> 
+  <text:p>Fornecedor substituto tributário</text:p>
+</table:table-cell>
+</table:table-row>

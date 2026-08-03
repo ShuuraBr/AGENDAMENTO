@@ -3419,6 +3419,12 @@
     if (vFornecedor) list = list.filter((ag) => norm(ag.fornecedor).includes(vFornecedor));
     if (vTransportadora) list = list.filter((ag) => norm(ag.transportadora).includes(vTransportadora));
     if (vNf) list = list.filter((ag) => (ag.notasFiscais || []).some((nf) => norm(nf.numeroNf).includes(vNf)));
+    const activeFiltersCount = [vStatus, vProtocolo, vData, vFornecedor, vTransportadora, vNf].filter(Boolean).length;
+    const filtersBadge = byId('confirmFiltersCount');
+    if (filtersBadge) {
+      filtersBadge.textContent = String(activeFiltersCount);
+      filtersBadge.classList.toggle('hidden', activeFiltersCount === 0);
+    }
     renderOperationalTable(list, {
       targetId: 'agendamentosList',
       includeActions: false,
@@ -4427,6 +4433,26 @@
       const drop = byId('notifDropdown');
       const bell = byId('btnNotificacoes');
       if (drop && bell && !drop.contains(e.target) && !bell.contains(e.target)) drop.classList.add('hidden');
+    });
+
+    // "Mais ações" toggle (tela Confirmações)
+    byId('confirmacoesMoreBtn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      byId('confirmacoesMoreMenu')?.classList.toggle('hidden');
+    });
+    document.addEventListener('click', (e) => {
+      const menu = byId('confirmacoesMoreMenu');
+      const wrap = byId('confirmacoesMoreWrap');
+      if (menu && wrap && !wrap.contains(e.target)) menu.classList.add('hidden');
+    });
+    byId('confirmacoesMoreMenu')?.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', () => byId('confirmacoesMoreMenu')?.classList.add('hidden'));
+    });
+
+    // Painel de filtros colapsável (tela Confirmações)
+    byId('confirmFiltersToggle')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      byId('confirmFiltersPanel')?.classList.toggle('hidden');
     });
 
     // ── Multi-seleção e botões da aba Confirmações ─────────────────────────────

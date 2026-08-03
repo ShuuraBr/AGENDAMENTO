@@ -119,11 +119,60 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 .notif-empty{padding:24px;text-align:center;color:#94a3b8;font-size:13px}
 
 /* Multi-seleção na tabela de confirmações */
-.confirmacoes-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.confirmacoes-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px;position:sticky;top:0;z-index:15;background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:10px 14px;box-shadow:0 4px 12px rgba(15,23,42,.06)}
+.confirmacoes-toolbar-count{font-size:13px;color:#78350f;font-weight:700}
+.confirmacoes-toolbar-clear{font-size:12px;padding:7px 12px}
 .btn-danger{background:#dc2626}
 .btn-warning{background:#d97706}
 .confirmacoes-layout-single .agendamento-form-card{max-width:860px}
 .agendamentos-layout-single{grid-template-columns:1fr}
+
+/* Tela de Confirmações — reorganização visual */
+.confirmacoes-page{display:flex;flex-direction:column;gap:4px}
+.confirmacoes-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:4px}
+.confirmacoes-header h2{margin:0}
+.confirmacoes-header-tools{display:flex;gap:8px;align-items:center}
+.confirmacoes-header-tools input{width:180px;padding:9px 12px;font-size:13px}
+.confirmacoes-header-tools button{padding:9px 14px;font-size:13px;white-space:nowrap}
+
+.confirmacoes-actionbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:10px;padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px}
+.confirmacoes-actions-primary{display:flex;gap:8px;flex-wrap:wrap}
+.btn-action{font-size:13px;padding:9px 16px;font-weight:600}
+.btn-action-approve{background:#16a34a}
+.btn-action-reject{background:#991b1b}
+
+.confirmacoes-actions-more{position:relative}
+.confirmacoes-more-btn{font-size:13px}
+.confirmacoes-more-menu{position:absolute;top:calc(100% + 6px);right:0;z-index:30;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 12px 32px rgba(15,23,42,.16);padding:10px;display:flex;flex-direction:column;gap:6px;min-width:220px}
+.confirmacoes-more-menu button{width:100%;text-align:left;font-size:13px}
+.confirmacoes-more-divider{height:1px;background:#e5e7eb;margin:4px 0}
+.confirmacoes-more-encerrar{display:flex;flex-direction:column;gap:6px;padding:6px 2px 2px}
+.confirmacoes-more-encerrar label{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.confirmacoes-more-encerrar input{font-size:13px;padding:8px 10px}
+
+.confirmacoes-filters-bar{display:flex;align-items:center;gap:14px;margin-top:12px}
+.confirmacoes-filters-toggle{font-size:13px;display:inline-flex;align-items:center;gap:6px}
+.confirmacoes-filters-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#2563eb;color:#fff;font-size:11px;font-weight:700}
+.btn-link-plain{background:none;border:none;color:#2563eb;font-size:13px;font-weight:600;cursor:pointer;padding:6px 4px}
+.btn-link-plain:hover{text-decoration:underline;opacity:1}
+.confirmacoes-filters-panel{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;padding:14px;background:#fff;border:1px solid #e2e8f0;border-radius:12px}
+.confirmacoes-filter-field{display:flex;flex-direction:column;gap:4px}
+.confirmacoes-filter-field label{font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+.confirmacoes-filter-field input,.confirmacoes-filter-field select{padding:8px 10px;border-radius:9px;border:1px solid #e2e8f0;font-size:13px;background:#fff}
+.confirmacoes-filter-field input{width:150px}
+#confirmFilterFornecedor,#confirmFilterTransportadora{width:170px !important}
+
+.confirmacoes-ocorrencias{margin-top:16px}
+.confirmacoes-ocorrencias summary{cursor:pointer;list-style:none}
+.confirmacoes-ocorrencias summary::-webkit-details-marker{display:none}
+.confirmacoes-ocorrencias summary h3{display:inline-flex;align-items:center;gap:6px;margin:0}
+.confirmacoes-ocorrencias summary h3::before{content:'\25B8';font-size:13px;color:#64748b;transition:transform .15s}
+.confirmacoes-ocorrencias[open] summary h3::before{transform:rotate(90deg)}
+
+.confirmacoes-list .operational-table thead th{position:sticky;top:0;background:#f1f5f9;z-index:5;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:#475569}
+.confirmacoes-list .operational-table tbody tr:nth-child(even){background:#f8fafc}
+.confirmacoes-list .operational-table tbody tr:hover{background:#eef2ff}
+.confirmacoes-list{max-height:70vh;overflow:auto;border-radius:12px}
 
 
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;width:100%}
