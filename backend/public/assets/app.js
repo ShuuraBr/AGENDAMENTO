@@ -3340,10 +3340,20 @@
     const wrap = byId('docaPainel');
     if (!wrap) return;
 
-    wrap.innerHTML = data.map((d) => {
-      const isADefinir = String(d.codigo || '').toLowerCase().includes('definir') || String(d.codigo || '').toLowerCase() === 'a definir';
-      const fila = Array.isArray(d.fila) ? d.fila : [];
-      return `<div class="doca-card sem-${String(d.semaforo).toLowerCase()}">
+    const isADefinirDoca = (d) => String(d.codigo || '').toLowerCase().includes('definir') || String(d.codigo || '').toLowerCase() === 'a definir';
+    const totalAgendamentosDoca = (d) => Number(d.totalAgendamentos || (Array.isArray(d.fila) ? d.fila.length : 0) || 0);
+    // "A definir" (precisa de ação) sempre primeiro; depois as docas mais movimentadas, deixando as vazias por último.
+    const sortedData = [...data].sort((a, b) => {
+      const aDef = isADefinirDoca(a), bDef = isADefinirDoca(b);
+      if (aDef !== bDef) return aDef ? -1 : 1;
+      return totalAgendamentosDoca(b) - totalAgendamentosDoca(a);
+    });
+
+    wrap.innerHTML = sortedData.map((d) => {
+      const isADefinir = isADefinirDoca(d);
+      const totalAg = totalAgendamentosDoca(d);
+      const isVazia = !isADefinir && totalAg === 0;
+      return `<div class="doca-card sem-${String(d.semaforo).toLowerCase()}${isADefinir ? ' doca-card-atencao' : ''}${isVazia ? ' doca-card-vazia' : ''}">
         <button type="button" class="doca-card-toggle" data-doca-open="${escapeHtml(String(d.docaId||d.codigo))}">
           <div>
             <h3>${isADefinir ? '⚠️ ' : ''}${escapeHtml(d.codigo)}</h3>
@@ -3352,7 +3362,7 @@
           <span class="badge ${statusTone(d.ocupacaoAtual, d.semaforo)}">${escapeHtml(d.semaforo)}</span>
         </button>
         <div class="doca-detail-summary mt12 doca-meta-summary">
-          <span><strong>Agendamentos:</strong> ${escapeHtml(formatIntegerBR(d.totalAgendamentos || fila.length || 0))}</span>
+          <span><strong>Agendamentos:</strong> ${escapeHtml(formatIntegerBR(totalAg))}</span>
           <span><strong>Total NF:</strong> ${escapeHtml(formatIntegerBR(d.totalNotas || 0))}</span>
           <span><strong>Peso:</strong> ${escapeHtml(formatDecimalBR(d.totalPesoKg || 0, 3))} kg</span>
           <span><strong>Volumes:</strong> ${escapeHtml(formatDecimalBR(d.totalVolumes || 0, 3))}</span>
