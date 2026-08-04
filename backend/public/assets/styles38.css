@@ -212,6 +212,14 @@ small{color:#cbd5e1}.hidden{display:none !important}.narrow{max-width:520px}.vid
 
 mark.search-hit{background:#fde047;color:#1e293b;padding:0 2px;border-radius:3px;font-weight:700}
 .nf-series-item-hit{outline:2px solid #fbbf24;outline-offset:1px;border-radius:4px}
+
+.btn-icon-eye{background:none;border:1px solid #e2e8f0;border-radius:8px;width:32px;height:32px;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .15s}
+.btn-icon-eye:hover{background:#f1f5f9}
+.ag-detalhes-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px}
+.ag-detalhes-grid > div{display:flex;flex-direction:column;gap:4px}
+.ag-detalhes-destinos{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:8px}
+.ag-detalhes-destino{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;background:#f8fafc}
+.ag-detalhes-destino .field-label{display:block;margin-bottom:6px}
 .confirmacoes-list .operational-table tbody tr:nth-child(even){background:#f8fafc}
 .confirmacoes-list .operational-table tbody tr:hover{background:#eef2ff}
 .confirmacoes-list{max-height:70vh;overflow:auto;border-radius:12px}

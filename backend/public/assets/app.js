@@ -303,6 +303,26 @@
     return String(value || '').replace(/\D/g, '');
   }
 
+  function buildAgendamentoDetalhesHtml(item, highlight = null) {
+    const empresas = ['FINITURA', 'OBJ', 'AC COELHO', 'SR ACABAMENTOS'];
+    const destinosHtml = empresas.map((empresa) => `
+      <div class="ag-detalhes-destino">
+        <span class="field-label">${escapeHtml(empresa)}</span>
+        ${renderEmpresaNotas(item, empresa, highlight)}
+      </div>
+    `).join('');
+    return `
+      <div class="ag-detalhes-grid">
+        <div><span class="field-label">Motorista</span><strong>${escapeHtml(item.motorista || '-')}</strong></div>
+        <div><span class="field-label">Transportadora</span><strong>${escapeHtml(item.transportadora || '-')}</strong></div>
+        <div><span class="field-label">Placa</span><strong>${escapeHtml(item.placa || '-')}</strong></div>
+        <div><span class="field-label">WhatsApp</span>${renderWhatsappConfirmacaoBadge(item.whatsappConfirmacaoStatus)}</div>
+      </div>
+      <h4 class="mt16">Destinos das notas</h4>
+      <div class="ag-detalhes-destinos">${destinosHtml}</div>
+    `;
+  }
+
   // Recebe um texto já escapado para HTML e destaca o trecho que casa com a busca.
   // Para dígitos, ignora pontuação entre eles (ex.: query "230" acha "2.230" ou "230-1").
   function highlightSearchMatch(escapedText, { digits = '', raw = '' } = {}) {
@@ -2609,18 +2629,11 @@
             <th>Protocolo</th>
             <th>Status</th>
             <th>Fornecedor</th>
-            <th>Transportadora</th>
-            <th>Motorista</th>
-            <th>WhatsApp</th>
-            <th>Placa</th>
             <th>Data</th>
             <th>Hora</th>
-            <th>FINITURA</th>
-            <th>OBJ</th>
-            <th>AC COELHO</th>
-            <th>SR ACABAMENTOS</th>
             <th>Volumes</th>
             <th>Peso kg</th>
+            <th style="width:44px"></th>
             ${allowDockActions ? '<th>Ações</th>' : ''}
           </tr>
         </thead>
@@ -2632,18 +2645,11 @@
               <td>${highlightSearchMatch(escapeHtml(item.protocolo || ''), { digits: highlight?.digits, raw: highlight?.raw })}</td>
               <td>${renderStatusBadge(item.status, item.semaforo)}</td>
               <td>${escapeHtml(item.fornecedor || '')}</td>
-              <td>${escapeHtml(item.transportadora || '')}</td>
-              <td>${escapeHtml(item.motorista || '')}</td>
-              <td>${renderWhatsappConfirmacaoBadge(item.whatsappConfirmacaoStatus)}</td>
-              <td>${escapeHtml(item.placa || '')}</td>
               <td>${escapeHtml(formatDateBR(item.dataAgendada || '') || '')}</td>
               <td>${escapeHtml(formatHour(item.horaAgendada || '') || '')}</td>
-              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'FINITURA', highlight)}</td>
-              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'OBJ', highlight)}</td>
-              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'AC COELHO', highlight)}</td>
-              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'SR ACABAMENTOS', highlight)}</td>
               <td>${escapeHtml(formatDecimalBR(item.quantidadeVolumes || 0, 3))}</td>
               <td>${escapeHtml(formatDecimalBR(item.pesoTotalKg || 0, 3))}</td>
+              <td><button type="button" class="btn-icon-eye" data-detalhes-id="${escapeHtml(String(item.id))}" title="Ver detalhes">&#128065;</button></td>
               ${allowDockActions ? `<td>
                 <div class="row gap8 wrap action-cell">
                   <button type="button" class="btn-secondary" data-select-agendamento="${escapeHtml(item.id)}">Usar ID</button>
@@ -2656,6 +2662,19 @@
         </tbody>
       </table>
     `;
+
+    wrap.querySelectorAll('[data-detalhes-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const item = items.find((i) => String(i.id) === btn.dataset.detalhesId);
+        if (!item) return;
+        showHtmlModal({
+          title: `Detalhes — ${item.protocolo || `ID ${item.id}`}`,
+          html: buildAgendamentoDetalhesHtml(item, highlight),
+          confirmText: 'Fechar',
+          wide: true
+        });
+      });
+    });
 
     if (includeSelect) {
       const chkAll = wrap.querySelector('#chkSelectAll');
