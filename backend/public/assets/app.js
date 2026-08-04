@@ -88,6 +88,7 @@
     fornecedores: {
       titulo: "Cadastro de fornecedores",
       endpoint: "/api/cadastros/fornecedores",
+      listColumns: ["nome", "cnpj"],
       fields: [
         { name: "nome", label: "Nome / Razão social", type: "text", required: true },
         { name: "cnpj", label: "CNPJ", type: "text" },
@@ -98,6 +99,7 @@
     transportadoras: {
       titulo: "Cadastro de transportadoras",
       endpoint: "/api/cadastros/transportadoras",
+      listColumns: ["nome", "cnpj"],
       fields: [
         { name: "nome", label: "Nome / Razão social", type: "text", required: true },
         { name: "cnpj", label: "CNPJ", type: "text" },
@@ -109,6 +111,7 @@
     motoristas: {
       titulo: "Cadastro de motoristas",
       endpoint: "/api/cadastros/motoristas",
+      listColumns: ["nome", "cpf"],
       fields: [
         { name: "nome", label: "Nome", type: "text", required: true },
         { name: "cpf", label: "CPF", type: "text" },
@@ -119,6 +122,7 @@
     veiculos: {
       titulo: "Cadastro de veículos",
       endpoint: "/api/cadastros/veiculos",
+      listColumns: ["placa", "tipo"],
       fields: [
         { name: "placa", label: "Placa", type: "text", required: true },
         { name: "tipo", label: "Tipo", type: "text" },
@@ -128,6 +132,7 @@
     docas: {
       titulo: "Cadastro de docas",
       endpoint: "/api/cadastros/docas",
+      listColumns: ["codigo", "descricao"],
       fields: [
         { name: "codigo", label: "Código", type: "text", required: true },
         { name: "descricao", label: "Descrição", type: "text", full: true }
@@ -136,6 +141,7 @@
     janelas: {
       titulo: "Cadastro de janelas",
       endpoint: "/api/cadastros/janelas",
+      listColumns: ["codigo", "descricao"],
       fields: [
         { name: "codigo", label: "Código da janela", type: "text", required: true },
         { name: "descricao", label: "Descrição", type: "text", full: true }
@@ -144,6 +150,7 @@
     regras: {
       titulo: "Cadastro de regras",
       endpoint: "/api/cadastros/regras",
+      listColumns: ["nome", "toleranciaAtrasoMin"],
       fields: [
         { name: "nome", label: "Nome", type: "text", required: true },
         { name: "toleranciaAtrasoMin", label: "Tolerância atraso (min)", type: "number" },
@@ -153,6 +160,7 @@
     usuarios: {
       titulo: "Cadastro de usuários",
       endpoint: "/api/cadastros/usuarios",
+      listColumns: ["nome", "email", "perfil"],
       fields: [
         { name: "nome", label: "Nome", type: "text", required: true },
         { name: "email", label: "E-mail", type: "email", required: true },
@@ -301,6 +309,55 @@
 
   function normalizeDigitsValue(value) {
     return String(value || '').replace(/\D/g, '');
+  }
+
+  function prettifyCadastroKey(key) {
+    const known = { createdAt: 'Criado em', updatedAt: 'Atualizado em' };
+    if (known[key]) return known[key];
+    return String(key || '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/^./, (c) => c.toUpperCase());
+  }
+
+  function formatDateTimeBR(value) {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value ?? '-') || '-';
+    return d.toLocaleString('pt-BR');
+  }
+
+  function formatCadastroFieldValue(field, value) {
+    if (field?.type === 'select') {
+      const opt = (field.options || []).find((o) => String(o.value) === String(value));
+      return opt ? opt.text : (value || '-');
+    }
+    if (Array.isArray(value)) return value.length ? value.join(', ') : '-';
+    const str = String(value ?? '').trim();
+    return str || '-';
+  }
+
+  function buildCadastroDetalhesHtml(config, item) {
+    const shown = new Set(['id']);
+    const rows = [];
+    (config.fields || []).filter((f) => f.type !== 'info').forEach((field) => {
+      shown.add(field.name);
+      const raw = item[field.name];
+      const valueHtml = Array.isArray(raw)
+        ? (raw.length ? `<ul class="ag-detalhes-list">${raw.map((v) => `<li>${escapeHtml(String(v))}</li>`).join('')}</ul>` : '<span>-</span>')
+        : escapeHtml(formatCadastroFieldValue(field, raw));
+      rows.push({ label: field.label, valueHtml, full: !!field.full });
+    });
+    Object.keys(item).forEach((key) => {
+      if (shown.has(key)) return;
+      const raw = item[key];
+      if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) return;
+      const isDateKey = /(At|Em)$/.test(key) && !Number.isNaN(new Date(raw).getTime()) && raw;
+      const valueHtml = Array.isArray(raw)
+        ? (raw.length ? `<ul class="ag-detalhes-list">${raw.map((v) => `<li>${escapeHtml(String(v))}</li>`).join('')}</ul>` : '<span>-</span>')
+        : escapeHtml(isDateKey ? formatDateTimeBR(raw) : (String(raw ?? '').trim() || '-'));
+      rows.push({ label: prettifyCadastroKey(key), valueHtml, full: false });
+    });
+    if (!rows.length) return '<p class="hint">Nenhum detalhe adicional.</p>';
+    return `<div class="ag-detalhes-grid">${rows.map((r) => `<div${r.full ? ' class="ag-detalhes-full"' : ''}><span class="field-label">${escapeHtml(r.label)}</span><div class="ag-detalhes-value">${r.valueHtml}</div></div>`).join('')}</div>`;
   }
 
   function buildAgendamentoDetalhesHtml(item, highlight = null) {
@@ -3478,24 +3535,26 @@
 
   function renderCadastroList(items) {
     state.cadastroCache = Array.isArray(items) ? items : [];
+    const config = CADASTRO_CONFIG[state.cadastroTipo];
     if (!state.cadastroCache.length) {
       byId("cadastroList").innerHTML = "<p>Nenhum registro encontrado.</p>";
       return;
     }
-    const cols = Array.from(new Set(state.cadastroCache.flatMap((item) => Object.keys(item)))).filter((col) => {
-      const sample = state.cadastroCache.find((item) => item[col] !== undefined);
-      const value = sample ? sample[col] : undefined;
-      return typeof value !== "object" || Array.isArray(value);
-    });
+    const fieldMap = new Map((config?.fields || []).map((f) => [f.name, f]));
+    const cols = ['id', ...(config?.listColumns || [])];
+    const colLabel = (col) => col === 'id' ? 'ID' : (fieldMap.get(col)?.label || prettifyCadastroKey(col));
     byId("cadastroList").innerHTML = `
       <table class="table">
         <thead>
-          <tr>${cols.map((col) => `<th>${escapeHtml(col)}</th>`).join("")}<th>Ações</th></tr>
+          <tr>${cols.map((col) => `<th>${escapeHtml(colLabel(col))}</th>`).join("")}<th style="width:44px"></th><th>Ações</th></tr>
         </thead>
         <tbody>
           ${state.cadastroCache.map((item) => `
             <tr>
-              ${cols.map((col) => `<td>${escapeHtml(item[col] ?? "")}</td>`).join("")}
+              ${cols.map((col) => `<td>${escapeHtml(col === 'id' ? String(item.id ?? '') : formatCadastroFieldValue(fieldMap.get(col), item[col]))}</td>`).join("")}
+              <td><button type="button" class="btn-icon-eye" data-cadastro-detalhes-id="${escapeHtml(String(item.id))}" title="Ver detalhes" aria-label="Ver detalhes">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button></td>
               <td><button type="button" class="btn-edit" data-edit-id="${item.id}">Editar</button></td>
             </tr>
           `).join("")}
@@ -3507,6 +3566,20 @@
       btn.addEventListener("click", () => {
         const record = state.cadastroCache.find((item) => Number(item.id) === Number(btn.dataset.editId));
         if (record) renderCadastroForm(record);
+      });
+    });
+
+    byId("cadastroList").querySelectorAll("[data-cadastro-detalhes-id]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const record = state.cadastroCache.find((item) => String(item.id) === btn.dataset.cadastroDetalhesId);
+        if (!record || !config) return;
+        const primary = config.listColumns?.[0];
+        showHtmlModal({
+          title: `Detalhes — ${(primary && record[primary]) || `ID ${record.id}`}`,
+          html: buildCadastroDetalhesHtml(config, record),
+          confirmText: 'Fechar',
+          wide: true
+        });
       });
     });
   }
