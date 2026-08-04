@@ -285,7 +285,7 @@
       : `<span class="store-logo">${escapeHtml(storeKey)}</span>`;
   }
 
-  function renderEmpresaNotas(item, targetEmpresa) {
+  function renderEmpresaNotas(item, targetEmpresa, highlight = null) {
     const notas = (Array.isArray(item?.notasFiscais) ? item.notasFiscais : Array.isArray(item?.notas) ? item.notas : [])
       .filter((nota) => noteEmpresaMatches(nota, targetEmpresa));
     if (!notas.length) return '<span>-</span>';
@@ -293,12 +293,36 @@
       const numero = `NF ${String(nota?.numeroNf || '-').trim() || '-'}`;
       const serie = String(nota?.serie || '').trim();
       const label = serie ? `${numero} • Série ${serie}` : numero;
-      return `<span class="nf-series-item">${escapeHtml(label)}</span>`;
+      const escaped = escapeHtml(label);
+      const isMatch = highlight?.digits && normalizeDigitsValue(nota?.numeroNf).includes(highlight.digits);
+      return `<span class="nf-series-item${isMatch ? ' nf-series-item-hit' : ''}">${isMatch ? highlightSearchMatch(escaped, { digits: highlight.digits }) : escaped}</span>`;
     }).join('')}</div>`;
   }
 
   function normalizeDigitsValue(value) {
     return String(value || '').replace(/\D/g, '');
+  }
+
+  // Recebe um texto já escapado para HTML e destaca o trecho que casa com a busca.
+  // Para dígitos, ignora pontuação entre eles (ex.: query "230" acha "2.230" ou "230-1").
+  function highlightSearchMatch(escapedText, { digits = '', raw = '' } = {}) {
+    if (digits) {
+      const pattern = digits.split('').join('[^0-9]*');
+      try {
+        const re = new RegExp(pattern);
+        const match = re.exec(escapedText);
+        if (match && match[0]) {
+          return escapedText.slice(0, match.index) + `<mark class="search-hit">${match[0]}</mark>` + escapedText.slice(match.index + match[0].length);
+        }
+      } catch {}
+    }
+    if (raw) {
+      const idx = escapedText.toLowerCase().indexOf(raw.toLowerCase());
+      if (idx >= 0) {
+        return escapedText.slice(0, idx) + `<mark class="search-hit">${escapedText.slice(idx, idx + raw.length)}</mark>` + escapedText.slice(idx + raw.length);
+      }
+    }
+    return escapedText;
   }
 
   function formatRemainingDaysLabel(value) {
@@ -2550,7 +2574,7 @@
     if (countEl) countEl.textContent = `${n} agendamento${n !== 1 ? 's' : ''} selecionado${n !== 1 ? 's' : ''}`;
   }
 
-  function renderOperationalTable(items, { targetId, includeActions = false, includeSelect = false } = {}) {
+  function renderOperationalTable(items, { targetId, includeActions = false, includeSelect = false, highlight = null } = {}) {
     const wrap = byId(targetId);
     const allowDockActions = includeActions && hasPermission('agendamentos.definir_doca');
     if (!wrap) return;
@@ -2586,8 +2610,8 @@
           ${items.map((item) => `
             <tr>
               ${includeSelect ? `<td><input type="checkbox" class="row-check" data-ag-id="${escapeHtml(String(item.id))}" /></td>` : ''}
-              <td>${escapeHtml(item.id ?? '')}</td>
-              <td>${escapeHtml(item.protocolo || '')}</td>
+              <td>${highlightSearchMatch(escapeHtml(String(item.id ?? '')), { digits: highlight?.digits })}</td>
+              <td>${highlightSearchMatch(escapeHtml(item.protocolo || ''), { digits: highlight?.digits, raw: highlight?.raw })}</td>
               <td>${renderStatusBadge(item.status, item.semaforo)}</td>
               <td>${escapeHtml(item.fornecedor || '')}</td>
               <td>${escapeHtml(item.transportadora || '')}</td>
@@ -2596,10 +2620,10 @@
               <td>${escapeHtml(item.placa || '')}</td>
               <td>${escapeHtml(formatDateBR(item.dataAgendada || '') || '')}</td>
               <td>${escapeHtml(formatHour(item.horaAgendada || '') || '')}</td>
-              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'FINITURA')}</td>
-              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'OBJ')}</td>
-              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'AC COELHO')}</td>
-              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'SR ACABAMENTOS')}</td>
+              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'FINITURA', highlight)}</td>
+              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'OBJ', highlight)}</td>
+              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'AC COELHO', highlight)}</td>
+              <td class="empresa-notas-cell">${renderEmpresaNotas(item, 'SR ACABAMENTOS', highlight)}</td>
               <td>${escapeHtml(formatDecimalBR(item.quantidadeVolumes || 0, 3))}</td>
               <td>${escapeHtml(formatDecimalBR(item.pesoTotalKg || 0, 3))}</td>
               ${allowDockActions ? `<td>
@@ -3486,17 +3510,23 @@
     const vProtocoloRaw = byId('confirmFilterProtocolo')?.value || '';
     const vProtocolo = norm(vProtocoloRaw);
     const vProtocoloDigits = normalizeDigitsValue(vProtocoloRaw);
+    const vAgIdRaw = byId('agendamentoId')?.value || '';
+    const vAgIdText = norm(vAgIdRaw);
+    const vAgIdDigits = normalizeDigitsValue(vAgIdRaw);
     const vData = (byId('confirmFilterData')?.value || '').trim();
     const vFornecedor = norm(byId('confirmFilterFornecedor')?.value || '');
     const vTransportadora = norm(byId('confirmFilterTransportadora')?.value || '');
     const vNf = normalizeDigitsValue(byId('confirmFilterNf')?.value || '');
     let list = state.lastAgendamentos || [];
     if (vStatus) list = list.filter((ag) => String(ag.status || '').toUpperCase() === vStatus);
-    if (vProtocolo) {
+    if (vProtocolo || vAgIdText) {
       list = list.filter((ag) => {
-        if (norm(ag.protocolo).includes(vProtocolo)) return true;
+        if (vProtocolo && norm(ag.protocolo).includes(vProtocolo)) return true;
         if (vProtocoloDigits && String(ag.id ?? '').includes(vProtocoloDigits)) return true;
         if (vProtocoloDigits && (ag.notasFiscais || []).some((nf) => normalizeDigitsValue(nf.numeroNf).includes(vProtocoloDigits))) return true;
+        if (vAgIdText && norm(ag.protocolo).includes(vAgIdText)) return true;
+        if (vAgIdDigits && String(ag.id ?? '').includes(vAgIdDigits)) return true;
+        if (vAgIdDigits && (ag.notasFiscais || []).some((nf) => normalizeDigitsValue(nf.numeroNf).includes(vAgIdDigits))) return true;
         return false;
       });
     }
@@ -3515,10 +3545,13 @@
     if (state.confirmPage < 1) state.confirmPage = 1;
     const startIdx = (state.confirmPage - 1) * CONFIRM_PAGE_SIZE;
     const pageItems = list.slice(startIdx, startIdx + CONFIRM_PAGE_SIZE);
+    const highlightDigits = vProtocoloDigits || vAgIdDigits || vNf;
+    const highlightRaw = vProtocolo || vAgIdText;
     renderOperationalTable(pageItems, {
       targetId: 'agendamentosList',
       includeActions: false,
       includeSelect: inConfirmacoes && hasPermission('agendamentos.request_reschedule'),
+      highlight: (highlightDigits || highlightRaw) ? { digits: highlightDigits, raw: highlightRaw } : null,
     });
     renderConfirmacoesPagination(list.length, totalPages);
   }
@@ -3582,7 +3615,7 @@
     renderFilteredAgendamentos();
     updateConfirmacoesToolbar();
     // Wire confirm filters (idempotent via dataset.bound)
-    ['confirmFilterStatus','confirmFilterProtocolo','confirmFilterData','confirmFilterFornecedor','confirmFilterTransportadora','confirmFilterNf'].forEach((id) => {
+    ['confirmFilterStatus','confirmFilterProtocolo','confirmFilterData','confirmFilterFornecedor','confirmFilterTransportadora','confirmFilterNf','agendamentoId'].forEach((id) => {
       const el = byId(id);
       if (el && !el.dataset.bound) {
         el.dataset.bound = '1';
