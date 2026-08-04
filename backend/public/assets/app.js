@@ -2649,7 +2649,9 @@
               <td>${escapeHtml(formatHour(item.horaAgendada || '') || '')}</td>
               <td>${escapeHtml(formatDecimalBR(item.quantidadeVolumes || 0, 3))}</td>
               <td>${escapeHtml(formatDecimalBR(item.pesoTotalKg || 0, 3))}</td>
-              <td><button type="button" class="btn-icon-eye" data-detalhes-id="${escapeHtml(String(item.id))}" title="Ver detalhes">&#128065;</button></td>
+              <td><button type="button" class="btn-icon-eye" data-detalhes-id="${escapeHtml(String(item.id))}" title="Ver detalhes" aria-label="Ver detalhes">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button></td>
               ${allowDockActions ? `<td>
                 <div class="row gap8 wrap action-cell">
                   <button type="button" class="btn-secondary" data-select-agendamento="${escapeHtml(item.id)}">Usar ID</button>
