@@ -28,7 +28,10 @@
       "PowerShell(Set-Location \"Z:\\\\00 - HTML\\\\AGENDAMENTO\\\\backend\\\\public\"; Start-Job -Name viteadmin -ScriptBlock { Set-Location \"Z:\\\\00 - HTML\\\\AGENDAMENTO\\\\backend\\\\public\"; npx vite preview --port 4173 --strictPort } | Out-Null; Start-Sleep -Seconds 4; Get-Job -Name viteadmin | Receive-Job -Keep)",
       "PowerShell(Get-Job -Name viteadmin)",
       "PowerShell(Receive-Job -Keep -ErrorAction SilentlyContinue)",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(node --check src/server.js)",
+      "Bash(node --check backend/public/assets/app.js)",
+      "Bash(timeout 90 npm install --no-audit --no-fund)"
     ]
   }
 }

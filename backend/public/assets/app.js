@@ -26,8 +26,11 @@
     notificacoes: [],
     notifPollInterval: null,
     confirmacoesSelecionados: new Set(),
-    fornecedoresChecklistCache: null
+    fornecedoresChecklistCache: null,
+    confirmPage: 1
   };
+
+  const CONFIRM_PAGE_SIZE = 100;
 
   const PROFILE_PERMISSIONS = {
     ADMIN: [
@@ -3480,28 +3483,80 @@
     const inConfirmacoes = !!byId('confirmacoes')?.classList.contains('active');
     const norm = (s) => String(s || '').toLowerCase();
     const vStatus = (byId('confirmFilterStatus')?.value || '').trim();
-    const vProtocolo = norm(byId('confirmFilterProtocolo')?.value || '');
+    const vProtocoloRaw = byId('confirmFilterProtocolo')?.value || '';
+    const vProtocolo = norm(vProtocoloRaw);
+    const vProtocoloDigits = normalizeDigitsValue(vProtocoloRaw);
     const vData = (byId('confirmFilterData')?.value || '').trim();
     const vFornecedor = norm(byId('confirmFilterFornecedor')?.value || '');
     const vTransportadora = norm(byId('confirmFilterTransportadora')?.value || '');
-    const vNf = norm(byId('confirmFilterNf')?.value || '');
+    const vNf = normalizeDigitsValue(byId('confirmFilterNf')?.value || '');
     let list = state.lastAgendamentos || [];
     if (vStatus) list = list.filter((ag) => String(ag.status || '').toUpperCase() === vStatus);
-    if (vProtocolo) list = list.filter((ag) => norm(ag.protocolo).includes(vProtocolo));
+    if (vProtocolo) {
+      list = list.filter((ag) => {
+        if (norm(ag.protocolo).includes(vProtocolo)) return true;
+        if (vProtocoloDigits && String(ag.id ?? '').includes(vProtocoloDigits)) return true;
+        if (vProtocoloDigits && (ag.notasFiscais || []).some((nf) => normalizeDigitsValue(nf.numeroNf).includes(vProtocoloDigits))) return true;
+        return false;
+      });
+    }
     if (vData) list = list.filter((ag) => String(ag.dataAgendada || '').includes(vData));
     if (vFornecedor) list = list.filter((ag) => norm(ag.fornecedor).includes(vFornecedor));
     if (vTransportadora) list = list.filter((ag) => norm(ag.transportadora).includes(vTransportadora));
-    if (vNf) list = list.filter((ag) => (ag.notasFiscais || []).some((nf) => norm(nf.numeroNf).includes(vNf)));
+    if (vNf) list = list.filter((ag) => (ag.notasFiscais || []).some((nf) => normalizeDigitsValue(nf.numeroNf).includes(vNf)));
     const activeFiltersCount = [vStatus, vProtocolo, vData, vFornecedor, vTransportadora, vNf].filter(Boolean).length;
     const filtersBadge = byId('confirmFiltersCount');
     if (filtersBadge) {
       filtersBadge.textContent = String(activeFiltersCount);
       filtersBadge.classList.toggle('hidden', activeFiltersCount === 0);
     }
-    renderOperationalTable(list, {
+    const totalPages = Math.max(1, Math.ceil(list.length / CONFIRM_PAGE_SIZE));
+    if (state.confirmPage > totalPages) state.confirmPage = totalPages;
+    if (state.confirmPage < 1) state.confirmPage = 1;
+    const startIdx = (state.confirmPage - 1) * CONFIRM_PAGE_SIZE;
+    const pageItems = list.slice(startIdx, startIdx + CONFIRM_PAGE_SIZE);
+    renderOperationalTable(pageItems, {
       targetId: 'agendamentosList',
       includeActions: false,
       includeSelect: inConfirmacoes && hasPermission('agendamentos.request_reschedule'),
+    });
+    renderConfirmacoesPagination(list.length, totalPages);
+  }
+
+  function renderConfirmacoesPagination(totalItems, totalPages) {
+    const wrap = byId('agendamentosPagination');
+    if (!wrap) return;
+    if (!totalItems || totalPages <= 1) {
+      wrap.innerHTML = totalItems ? `<span class="confirmacoes-pagination-info">${totalItems} registro(s)</span>` : '';
+      return;
+    }
+    const page = state.confirmPage;
+    const startItem = (page - 1) * CONFIRM_PAGE_SIZE + 1;
+    const endItem = Math.min(page * CONFIRM_PAGE_SIZE, totalItems);
+    const maxButtons = 7;
+    let firstPage = Math.max(1, page - Math.floor(maxButtons / 2));
+    let lastPage = Math.min(totalPages, firstPage + maxButtons - 1);
+    firstPage = Math.max(1, lastPage - maxButtons + 1);
+    const pageButtons = [];
+    for (let p = firstPage; p <= lastPage; p++) {
+      pageButtons.push(`<button type="button" class="btn-secondary confirmacoes-page-btn${p === page ? ' active' : ''}" data-confirm-page="${p}"${p === page ? ' disabled' : ''}>${p}</button>`);
+    }
+    wrap.innerHTML = `
+      <span class="confirmacoes-pagination-info">Mostrando ${startItem}–${endItem} de ${totalItems}</span>
+      <div class="confirmacoes-pagination-buttons">
+        <button type="button" class="btn-secondary" data-confirm-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>&#8592; Anterior</button>
+        ${pageButtons.join('')}
+        <button type="button" class="btn-secondary" data-confirm-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''}>Próxima &#8594;</button>
+      </div>
+    `;
+    wrap.querySelectorAll('[data-confirm-page]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const target = Number(btn.dataset.confirmPage);
+        if (!target || target === state.confirmPage) return;
+        state.confirmPage = target;
+        renderFilteredAgendamentos();
+        byId('agendamentosList')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     });
   }
 
@@ -3509,22 +3564,37 @@
     if (!hasPermission('agendamentos.view')) return;
     const params = new URLSearchParams();
     Object.entries(currentFilters()).forEach(([k, v]) => { if (v) params.set(k, v); });
-    const _r = await api(`/api/agendamentos?${params.toString()}`);
-    const items = Array.isArray(_r) ? _r : (Array.isArray(_r?.data) ? _r.data : []);
+    params.set('limit', '500');
+    let items = [];
+    let page = 1;
+    let totalPages = 1;
+    do {
+      params.set('page', String(page));
+      const _r = await api(`/api/agendamentos?${params.toString()}`);
+      if (Array.isArray(_r)) { items = _r; break; }
+      items = items.concat(Array.isArray(_r?.data) ? _r.data : []);
+      totalPages = Number(_r?.totalPages || 1);
+      page += 1;
+    } while (page <= totalPages);
     state.lastAgendamentos = items;
     state.confirmacoesSelecionados = new Set();
+    state.confirmPage = 1;
     renderFilteredAgendamentos();
     updateConfirmacoesToolbar();
     // Wire confirm filters (idempotent via dataset.bound)
     ['confirmFilterStatus','confirmFilterProtocolo','confirmFilterData','confirmFilterFornecedor','confirmFilterTransportadora','confirmFilterNf'].forEach((id) => {
       const el = byId(id);
-      if (el && !el.dataset.bound) { el.dataset.bound = '1'; el.addEventListener('input', renderFilteredAgendamentos); }
+      if (el && !el.dataset.bound) {
+        el.dataset.bound = '1';
+        el.addEventListener('input', () => { state.confirmPage = 1; renderFilteredAgendamentos(); });
+      }
     });
     const confirmClearBtn = byId('confirmFilterClear');
     if (confirmClearBtn && !confirmClearBtn.dataset.bound) {
       confirmClearBtn.dataset.bound = '1';
       confirmClearBtn.addEventListener('click', () => {
         ['confirmFilterStatus','confirmFilterProtocolo','confirmFilterData','confirmFilterFornecedor','confirmFilterTransportadora','confirmFilterNf'].forEach((id) => { const el = byId(id); if (el) el.value = ''; });
+        state.confirmPage = 1;
         renderFilteredAgendamentos();
       });
     }
