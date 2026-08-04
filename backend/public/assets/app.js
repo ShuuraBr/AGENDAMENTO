@@ -3546,16 +3546,20 @@
     byId("cadastroList").innerHTML = `
       <table class="table">
         <thead>
-          <tr>${cols.map((col) => `<th>${escapeHtml(colLabel(col))}</th>`).join("")}<th style="width:44px"></th><th>Ações</th></tr>
+          <tr>${cols.map((col) => `<th>${escapeHtml(colLabel(col))}</th>`).join("")}<th>Ações</th></tr>
         </thead>
         <tbody>
           ${state.cadastroCache.map((item) => `
             <tr>
               ${cols.map((col) => `<td>${escapeHtml(col === 'id' ? String(item.id ?? '') : formatCadastroFieldValue(fieldMap.get(col), item[col]))}</td>`).join("")}
-              <td><button type="button" class="btn-icon-eye" data-cadastro-detalhes-id="${escapeHtml(String(item.id))}" title="Ver detalhes" aria-label="Ver detalhes">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>
-              </button></td>
-              <td><button type="button" class="btn-edit" data-edit-id="${item.id}">Editar</button></td>
+              <td>
+                <div class="row gap8">
+                  <button type="button" class="btn-icon-eye" data-cadastro-detalhes-id="${escapeHtml(String(item.id))}" title="Ver detalhes" aria-label="Ver detalhes">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </button>
+                  <button type="button" class="btn-edit" data-edit-id="${item.id}">Editar</button>
+                </div>
+              </td>
             </tr>
           `).join("")}
         </tbody>
