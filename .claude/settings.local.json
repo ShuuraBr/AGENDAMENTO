@@ -31,7 +31,8 @@
       "Bash(git check-ignore *)",
       "Bash(node --check src/server.js)",
       "Bash(node --check backend/public/assets/app.js)",
-      "Bash(timeout 90 npm install --no-audit --no-fund)"
+      "Bash(timeout 90 npm install --no-audit --no-fund)",
+      "Bash(grep -n \"router.post\\(\\\\\"/:id\\(\\\\\\\\\\\\\\\\d+\\)/aprovar\\\\\"\\\\|router.post\\('/:id\\(\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\d+\\)/aprovar'\\\\|/aprovar\\\\\"\" \"H:/00 - HTML/AGENDAMENTO/backend/src/routes/agendamentos.js\")"
     ]
   }
 }

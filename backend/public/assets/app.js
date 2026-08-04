@@ -741,6 +741,8 @@
       btnReprovar: 'agendamentos.reprove',
       btnReagendar: 'agendamentos.reschedule',
       btnCancelar: 'agendamentos.cancel',
+      btnReprovarLote: 'agendamentos.reprove',
+      btnCancelarLote: 'agendamentos.cancel',
       btnEditarAgendamento: 'confirmacoes.view',
       btnIniciar: 'agendamentos.start',
       btnFinalizar: 'agendamentos.finish',
@@ -2572,6 +2574,22 @@
     const n = state.confirmacoesSelecionados.size;
     if (toolbar) toolbar.classList.toggle('hidden', n === 0);
     if (countEl) countEl.textContent = `${n} agendamento${n !== 1 ? 's' : ''} selecionado${n !== 1 ? 's' : ''}`;
+    const btnReprovarLote = byId('btnReprovarLote');
+    const btnCancelarLote = byId('btnCancelarLote');
+    if (btnReprovarLote) btnReprovarLote.disabled = n === 0 || !hasPermission('agendamentos.reprove');
+    if (btnCancelarLote) btnCancelarLote.disabled = n === 0 || !hasPermission('agendamentos.cancel');
+  }
+
+  // Quando só há 1 agendamento marcado, preenche o campo "ID do agendamento" com ele,
+  // para que Aprovar/Reprovar/Reagendar/Cancelar e "Mais ações" já operem sobre a seleção.
+  function syncAgendamentoIdFromSelection() {
+    const ids = [...state.confirmacoesSelecionados];
+    if (ids.length !== 1) return;
+    const field = byId('agendamentoId');
+    if (field && field.value !== ids[0]) {
+      field.value = ids[0];
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    }
   }
 
   function renderOperationalTable(items, { targetId, includeActions = false, includeSelect = false, highlight = null } = {}) {
@@ -2653,6 +2671,7 @@
               else state.confirmacoesSelecionados.delete(id);
             }
           });
+          syncAgendamentoIdFromSelection();
           updateConfirmacoesToolbar();
         });
       }
@@ -2669,6 +2688,7 @@
             chkAll.indeterminate = state.confirmacoesSelecionados.size > 0 && state.confirmacoesSelecionados.size < all.length;
             chkAll.checked = state.confirmacoesSelecionados.size === all.length && all.length > 0;
           }
+          syncAgendamentoIdFromSelection();
           updateConfirmacoesToolbar();
         });
       });
@@ -4658,6 +4678,39 @@
         byId('operacaoMsg').textContent = `Solicitação enviada para ${sucessos} agendamento(s).${falhas.length ? ` ${falhas.length} falhou.` : ''}`;
       } catch (err) { byId('operacaoMsg').textContent = err.message; }
     });
+
+    async function runSelectionBulkAction({ endpointSuffix, body, confirmTitle, confirmMessage, successLabel }) {
+      const ids = [...state.confirmacoesSelecionados];
+      if (!ids.length) return;
+      const ok = await showAppModal({ title: confirmTitle, message: confirmMessage, confirmText: 'Sim, confirmar', cancelText: 'Cancelar', tone: 'warning' });
+      if (!ok) return;
+      const results = await Promise.allSettled(ids.map((id) => api(`/api/agendamentos/${id}/${endpointSuffix}`, { method: 'POST', body: JSON.stringify(body) })));
+      const sucessos = results.filter((r) => r.status === 'fulfilled').length;
+      const falhas = results.length - sucessos;
+      state.confirmacoesSelecionados.clear();
+      document.querySelectorAll('#confirmacoes .row-check').forEach((cb) => { cb.checked = false; });
+      const chkAll = document.querySelector('#confirmacoes #chkSelectAll');
+      if (chkAll) { chkAll.checked = false; chkAll.indeterminate = false; }
+      updateConfirmacoesToolbar();
+      byId('operacaoMsg').textContent = `${successLabel} para ${sucessos} agendamento(s).${falhas ? ` ${falhas} falhou.` : ''}`;
+      await Promise.allSettled([loadAgendamentos(), loadDashboard(), loadDocas(), loadFilterOptions()]);
+    }
+
+    byId('btnReprovarLote')?.addEventListener('click', () => runSelectionBulkAction({
+      endpointSuffix: 'reprovar',
+      body: { motivo: 'Reprovado em lote via painel' },
+      confirmTitle: 'Reprovar selecionados',
+      confirmMessage: `Reprovar ${state.confirmacoesSelecionados.size} agendamento(s) selecionado(s)?`,
+      successLabel: 'Reprovação enviada'
+    }));
+
+    byId('btnCancelarLote')?.addEventListener('click', () => runSelectionBulkAction({
+      endpointSuffix: 'cancelar',
+      body: { motivo: 'Cancelado em lote via painel' },
+      confirmTitle: 'Cancelar selecionados',
+      confirmMessage: `Cancelar ${state.confirmacoesSelecionados.size} agendamento(s) selecionado(s)?`,
+      successLabel: 'Cancelamento enviado'
+    }));
 
     byId('btnEncerrarDia')?.addEventListener('click', async () => {
       const input = byId('encerrarDiaInput');
