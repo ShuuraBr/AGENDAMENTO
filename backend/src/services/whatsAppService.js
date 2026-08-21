@@ -12,7 +12,12 @@ import { env } from '../config/env.js';
  * @param {string}  [opts.horaAgendada]  – Hora agendada (HH:mm) → variável {{2}} do template
  */
 export async function sendWhatsApp({ to, message, name, voucherUrl, dataAgendada, horaAgendada } = {}) {
-  console.log(`[WHATSAPP] sendWhatsApp chamado → to=${to}, name=${name}, provider=${env.whatsappProvider}, apiUrl=${env.whatsappApiUrl ? 'SET' : 'EMPTY'}`);
+  console.log(`[WHATSAPP] sendWhatsApp chamado → to=${to}, name=${name}, provider=${env.whatsappProvider}, enabled=${env.whatsappEnabled}, apiUrl=${env.whatsappApiUrl ? 'SET' : 'EMPTY'}`);
+
+  if (!env.whatsappEnabled) {
+    console.log('[WHATSAPP] WHATSAPP_ENABLED=false. Retornando simulado.');
+    return { ok: false, simulated: true, reason: 'WhatsApp desabilitado (WHATSAPP_ENABLED != true)' };
+  }
 
   if (env.whatsappProvider === 'mock') {
     console.log('[WHATSAPP] Provider=mock, retornando simulado.');
